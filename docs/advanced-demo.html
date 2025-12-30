@@ -390,11 +390,18 @@
     </div>
   </div>
 
-  <!-- Three.js -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Three.js (same version as basic demo) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
 
   <!-- WASM Module -->
   <script type="module">
+    import * as THREE from 'three';
     import init, { TrackerHandle, version } from './pkg/quar_engine.js';
 
     // State
@@ -443,6 +450,10 @@
     // Initialize
     async function initialize() {
       try {
+        // IMPORTANT: Request IMU permission FIRST, before any await
+        // iOS requires this to be in direct response to user gesture
+        await requestIMUPermission();
+
         // Initialize WASM
         await init();
         console.log(`QUAR Engine v${version()} initialized`);
@@ -456,10 +467,7 @@
         // Setup camera
         await setupCamera();
 
-        // Request IMU permission (needed for iOS)
-        await requestIMUPermission();
-
-        // Start IMU
+        // Start IMU (after permission granted)
         setupIMU();
 
         // Hide start screen
