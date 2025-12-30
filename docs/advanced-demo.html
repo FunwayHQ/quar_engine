@@ -412,6 +412,9 @@
     // IMU state
     let imuPermissionGranted = false;
     let imuCalibrated = false;
+    let imuDataReceived = false;
+    let gyroActive = false;
+    let accelActive = false;
     let lastGyro = { alpha: 0, beta: 0, gamma: 0 };
     let gyroHistory = [];
 
@@ -601,36 +604,84 @@
     function setupIMU() {
       if (!imuPermissionGranted) {
         updateIMUStatus('error', 'error', 'error');
+        document.getElementById('calibration-text').textContent = 'Permission denied';
         return;
       }
 
       window.addEventListener('devicemotion', handleDeviceMotion);
       window.addEventListener('deviceorientation', handleDeviceOrientation);
 
-      // Start calibration timer
-      setTimeout(() => {
-        imuCalibrated = true;
-        document.getElementById('calibration-dot').classList.add('active');
-        document.getElementById('calibration-text').textContent = 'Calibrated';
-      }, 2000);
+      // Initially show as waiting for data
+      updateIMUStatus('warning', 'warning', 'warning');
+      document.getElementById('calibration-text').textContent = 'Waiting for sensors...';
 
-      updateIMUStatus('active', 'active', 'warning');
+      // Check if we received data after timeout
+      setTimeout(() => {
+        if (!imuDataReceived) {
+          // No sensor data - probably desktop/laptop
+          updateIMUStatus('error', 'error', 'error');
+          document.getElementById('calibration-text').textContent = 'No sensors detected';
+        }
+      }, 3000);
     }
 
     function handleDeviceMotion(event) {
+      // Check for gyroscope data
       if (event.rotationRate) {
-        lastGyro = {
-          alpha: event.rotationRate.alpha || 0,
-          beta: event.rotationRate.beta || 0,
-          gamma: event.rotationRate.gamma || 0
-        };
+        const alpha = event.rotationRate.alpha;
+        const beta = event.rotationRate.beta;
+        const gamma = event.rotationRate.gamma;
 
-        // Store for visualization
-        const magnitude = Math.sqrt(
-          lastGyro.alpha ** 2 + lastGyro.beta ** 2 + lastGyro.gamma ** 2
-        );
-        gyroHistory.push(magnitude);
-        if (gyroHistory.length > 50) gyroHistory.shift();
+        // Check if we have actual data (not null/undefined)
+        if (alpha !== null || beta !== null || gamma !== null) {
+          if (!gyroActive) {
+            gyroActive = true;
+            document.getElementById('gyro-dot').className = 'imu-dot active';
+          }
+
+          lastGyro = {
+            alpha: alpha || 0,
+            beta: beta || 0,
+            gamma: gamma || 0
+          };
+
+          // Store for visualization
+          const magnitude = Math.sqrt(
+            lastGyro.alpha ** 2 + lastGyro.beta ** 2 + lastGyro.gamma ** 2
+          );
+          gyroHistory.push(magnitude);
+          if (gyroHistory.length > 50) gyroHistory.shift();
+        }
+      }
+
+      // Check for accelerometer data
+      if (event.accelerationIncludingGravity) {
+        const x = event.accelerationIncludingGravity.x;
+        const y = event.accelerationIncludingGravity.y;
+        const z = event.accelerationIncludingGravity.z;
+
+        if (x !== null || y !== null || z !== null) {
+          if (!accelActive) {
+            accelActive = true;
+            document.getElementById('accel-dot').className = 'imu-dot active';
+          }
+        }
+      }
+
+      // Mark data received and start calibration
+      if ((gyroActive || accelActive) && !imuDataReceived) {
+        imuDataReceived = true;
+        document.getElementById('calibration-dot').className = 'imu-dot warning';
+        document.getElementById('calibration-text').textContent = 'Calibrating...';
+
+        // Calibration complete after 2 seconds of data
+        setTimeout(() => {
+          if (imuDataReceived) {
+            imuCalibrated = true;
+            document.getElementById('calibration-dot').className = 'imu-dot active';
+            document.getElementById('calibration-text').textContent = 'Calibrated';
+          }
+        }, 2000);
       }
     }
 
