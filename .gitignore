@@ -36,3 +36,7 @@ coverage/
 # Rust
 Cargo.lock
 **/*.rs.bk
+
+# Dev certificates
+.dev-cert.pem
+.dev-key.pem

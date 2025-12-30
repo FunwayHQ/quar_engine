@@ -25,12 +25,21 @@
       margin-bottom: 20px;
       color: #4cc9f0;
     }
+    .canvas-container {
+      position: relative;
+    }
     #ar-canvas {
       width: 640px;
       height: 480px;
       background: #16213e;
       border: 2px solid #4cc9f0;
       border-radius: 8px;
+    }
+    #overlay-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
     }
     #status {
       margin-top: 20px;
@@ -76,17 +85,47 @@
       display: flex;
       gap: 10px;
       margin-top: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .slider-group {
+      margin-top: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .slider-group label {
+      min-width: 80px;
+    }
+    input[type="range"] {
+      width: 150px;
+    }
+    input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
     }
   </style>
 </head>
 <body>
   <h1>QUAR WebAR Engine Test</h1>
-  <canvas id="ar-canvas" width="640" height="480"></canvas>
+  <div class="canvas-container">
+    <canvas id="ar-canvas" width="640" height="480"></canvas>
+    <canvas id="overlay-canvas" width="640" height="480"></canvas>
+  </div>
   <div id="status" class="info">Click "Start Camera" to begin</div>
   <div class="button-group">
     <button id="start-btn">Start Camera</button>
     <button id="switch-btn" disabled>Switch Camera</button>
     <button id="stop-btn" disabled>Stop</button>
+  </div>
+  <div class="slider-group">
+    <label>Threshold:</label>
+    <input type="range" id="threshold" min="10" max="80" value="30">
+    <span id="threshold-value">30</span>
+  </div>
+  <div class="slider-group">
+    <input type="checkbox" id="detect-features" checked>
+    <label>Detect Features</label>
   </div>
   <div id="debug">
 QUAR Engine Debug Info
@@ -95,31 +134,60 @@ State: waiting
 Camera: --
 FPS: --
 Resolution: --
+Features: --
+Detection: --
   </div>
 
   <script type="module">
-    // Import the SDK (we'll use a simple inline version for testing)
-    // In production, you'd import from the built SDK
+    // Import WASM module
+    let wasmModule = null;
+    let detect_features = null;
+
+    // Try to load the WASM module
+    async function loadWasm() {
+      try {
+        const pkg = await import('../pkg/quar_engine.js');
+        await pkg.default();
+        wasmModule = pkg;
+        detect_features = pkg.detect_features;
+        console.log('WASM module loaded successfully');
+        return true;
+      } catch (err) {
+        console.warn('WASM module not available:', err.message);
+        return false;
+      }
+    }
 
     const canvas = document.getElementById('ar-canvas');
+    const overlayCanvas = document.getElementById('overlay-canvas');
     const status = document.getElementById('status');
     const startBtn = document.getElementById('start-btn');
     const switchBtn = document.getElementById('switch-btn');
     const stopBtn = document.getElementById('stop-btn');
     const debug = document.getElementById('debug');
+    const thresholdSlider = document.getElementById('threshold');
+    const thresholdValue = document.getElementById('threshold-value');
+    const detectFeaturesCheckbox = document.getElementById('detect-features');
 
-    // Simple camera manager for testing (inline version)
+    const ctx = canvas.getContext('2d');
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    thresholdSlider.addEventListener('input', () => {
+      thresholdValue.textContent = thresholdSlider.value;
+    });
+
+    // Camera manager
     class TestCameraManager {
       constructor() {
         this.video = null;
         this.stream = null;
-        this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
         this.animationId = null;
         this.facingMode = 'environment';
         this.fps = 0;
         this.frameCount = 0;
         this.lastFpsTime = 0;
+        this.featureCount = 0;
+        this.detectionTime = 0;
       }
 
       async start() {
@@ -172,23 +240,66 @@ Resolution: --
 
           // Draw video to canvas
           const videoAspect = this.video.videoWidth / this.video.videoHeight;
-          const canvasAspect = this.canvas.width / this.canvas.height;
+          const canvasAspect = canvas.width / canvas.height;
 
           let drawWidth, drawHeight, offsetX, offsetY;
 
           if (videoAspect > canvasAspect) {
-            drawHeight = this.canvas.height;
-            drawWidth = this.canvas.height * videoAspect;
-            offsetX = (this.canvas.width - drawWidth) / 2;
+            drawHeight = canvas.height;
+            drawWidth = canvas.height * videoAspect;
+            offsetX = (canvas.width - drawWidth) / 2;
             offsetY = 0;
           } else {
-            drawWidth = this.canvas.width;
-            drawHeight = this.canvas.width / videoAspect;
+            drawWidth = canvas.width;
+            drawHeight = canvas.width / videoAspect;
             offsetX = 0;
-            offsetY = (this.canvas.height - drawHeight) / 2;
+            offsetY = (canvas.height - drawHeight) / 2;
           }
 
-          this.ctx.drawImage(this.video, offsetX, offsetY, drawWidth, drawHeight);
+          ctx.drawImage(this.video, offsetX, offsetY, drawWidth, drawHeight);
+
+          // Feature detection
+          if (detectFeaturesCheckbox.checked && detect_features) {
+            const startTime = performance.now();
+
+            try {
+              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              const threshold = parseInt(thresholdSlider.value);
+              const keypoints = detect_features(imageData.data, canvas.width, canvas.height, threshold);
+
+              this.detectionTime = performance.now() - startTime;
+              this.featureCount = keypoints ? keypoints.length : 0;
+
+              // Draw keypoints on overlay
+              overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+              if (keypoints && keypoints.length > 0) {
+                overlayCtx.fillStyle = '#4ade80';
+                overlayCtx.strokeStyle = '#22c55e';
+
+                for (const kp of keypoints) {
+                  overlayCtx.beginPath();
+                  overlayCtx.arc(kp.x, kp.y, 3, 0, Math.PI * 2);
+                  overlayCtx.fill();
+
+                  // Draw a larger circle for high-score features
+                  if (kp.score > 40) {
+                    overlayCtx.beginPath();
+                    overlayCtx.arc(kp.x, kp.y, 6, 0, Math.PI * 2);
+                    overlayCtx.stroke();
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('Feature detection error:', err);
+              this.featureCount = 0;
+              this.detectionTime = 0;
+            }
+          } else {
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            this.featureCount = 0;
+            this.detectionTime = 0;
+          }
 
           this.animationId = requestAnimationFrame(render);
         };
@@ -215,8 +326,9 @@ Resolution: --
           this.video.srcObject = null;
           this.video = null;
         }
-        this.ctx.fillStyle = '#16213e';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillStyle = '#16213e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
       }
 
       getDebugInfo() {
@@ -225,13 +337,16 @@ Resolution: --
           facingMode: this.facingMode,
           resolution: this.video
             ? `${this.video.videoWidth}x${this.video.videoHeight}`
-            : '--'
+            : '--',
+          featureCount: this.featureCount,
+          detectionTime: this.detectionTime.toFixed(1)
         };
       }
     }
 
     let camera = new TestCameraManager();
     let debugInterval = null;
+    let wasmLoaded = false;
 
     function setStatus(message, type = 'info') {
       status.textContent = message;
@@ -245,7 +360,10 @@ Resolution: --
 State: ${camera.video ? 'tracking' : 'stopped'}
 Camera: ${info.facingMode}
 FPS: ${info.fps}
-Resolution: ${info.resolution}`;
+Resolution: ${info.resolution}
+Features: ${info.featureCount}
+Detection: ${info.detectionTime}ms
+WASM: ${wasmLoaded ? 'loaded' : 'not available'}`;
     }
 
     startBtn.addEventListener('click', async () => {
@@ -318,14 +436,19 @@ Resolution: ${info.resolution}`;
       updateDebug();
     });
 
-    // Initial debug display
-    updateDebug();
+    // Initialize
+    (async () => {
+      wasmLoaded = await loadWasm();
+      updateDebug();
 
-    // Check secure context on load
-    if (!window.isSecureContext) {
-      setStatus('⚠️ Not secure context! Use: python3 -m http.server 8080', 'warning');
-      debug.textContent += `\n\nURL: ${window.location.href}\nSecure: ${window.isSecureContext}`;
-    }
+      // Check secure context on load
+      if (!window.isSecureContext) {
+        setStatus('⚠️ Not secure context! Use: python3 -m http.server 8080', 'warning');
+        debug.textContent += `\n\nURL: ${window.location.href}\nSecure: ${window.isSecureContext}`;
+      } else if (wasmLoaded) {
+        setStatus('WASM loaded. Click "Start Camera" to begin.', 'success');
+      }
+    })();
   </script>
 </body>
 </html>
