@@ -432,11 +432,11 @@
             smoothedRotation.yaw = lerp(smoothedRotation.yaw, euler.yaw, smoothingFactor);
 
             // Apply rotation to Three.js camera to match phone orientation
-            // Axes were swapped - fixing mapping
+            // Using only pitch (vertical) and yaw (horizontal), disable roll
             const sensitivity = 0.7; // 30% less sensitive
-            camera.rotation.x = -smoothedRotation.yaw * sensitivity;  // up/down
-            camera.rotation.y = smoothedRotation.pitch * sensitivity; // left/right
-            camera.rotation.z = smoothedRotation.roll * sensitivity;
+            camera.rotation.x = smoothedRotation.pitch * sensitivity;  // tilt up/down
+            camera.rotation.y = smoothedRotation.yaw * sensitivity;    // rotate left/right
+            camera.rotation.z = 0; // disable roll - causes interference
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';
