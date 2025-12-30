@@ -1,0 +1,29 @@
+# Cargo configuration for WASM target
+# Note: Don't set default target here as it breaks cargo test
+# Use wasm-pack for WASM builds instead
+
+[target.wasm32-unknown-unknown]
+# Use wasm-pack for building
+rustflags = [
+    # Enable SIMD (when supported by target browsers)
+    # "-C", "target-feature=+simd128",
+
+    # Optimize for size in release builds
+    "-C", "link-arg=--export-table",
+]
+
+# Enable unstable features for better WASM output
+# runner = "wasm-bindgen-test-runner"
+
+[alias]
+# Shortcuts for common commands
+wasm-build = "build --target wasm32-unknown-unknown --release"
+wasm-dev = "build --target wasm32-unknown-unknown"
+
+[env]
+# Environment variables for builds
+CARGO_ENCODED_RUSTFLAGS = ""
+
+[net]
+# Use git CLI for fetching crates (better for large repos)
+git-fetch-with-cli = true

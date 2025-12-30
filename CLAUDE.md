@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Project Aether (QUAR Engine)** is a Rust-based WebAR SLAM engine targeting 60FPS markerless 6DoF tracking in the browser. It uses Rust compiled to WebAssembly for computer vision, with a TypeScript SDK for Three.js/Babylon.js integration.
+**QUAR Engine** is a Rust-based WebAR SLAM engine targeting 60FPS markerless 6DoF tracking in the browser. It uses Rust compiled to WebAssembly for computer vision, with a TypeScript SDK for Three.js/Babylon.js integration.
+
+## Current Progress
+
+### Completed Sprints
+- **Sprint 1: Project Foundation** - Rust/WASM scaffold, build pipeline, TypeScript SDK structure
+- **Sprint 2: Camera Access** - CameraManager, frame capture, iOS Safari support, grayscale conversion
+
+### Next Sprint
+- **Sprint 3: Feature Detection (FAST Corners)** - FAST-9 corner detector in Rust/WASM
 
 ## Technology Stack
 
@@ -12,21 +21,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Target:** WebAssembly via `wasm-bindgen` and `wasm-pack`
 - **Math:** `nalgebra` for linear algebra and matrix operations
 - **Parallelism:** `rayon` adapted for Web Workers
-- **Serialization:** `bincode` or `serde` for WASM-JS data passing
+- **Serialization:** `serde` + `serde-wasm-bindgen` for WASM-JS data passing
 - **Frontend SDK:** TypeScript with adapters for Three.js, Babylon.js, PlayCanvas
 - **Memory Sharing:** SharedArrayBuffer for zero-copy video frame access
 
 ## Build Commands
 
 ```bash
-# Build WASM module
-wasm-pack build --target web
+# Setup (first time)
+make setup
 
-# Run tests
+# Build WASM module (release)
+make build
+
+# Build WASM module (development)
+make build-dev
+
+# Run Rust tests
 cargo test
 
-# Run tests with coverage
-cargo tarpaulin
+# Run SDK tests
+cd sdk && npm test
 
 # Check formatting
 cargo fmt --check
@@ -34,8 +49,8 @@ cargo fmt --check
 # Run lints
 cargo clippy -- -D warnings
 
-# Build optimized release
-wasm-pack build --target web --release
+# Start dev server
+make serve
 ```
 
 ## Architecture
@@ -60,14 +75,20 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 - **Long-term:** Loop closure via DBoW2 place recognition
 - **Multi-map:** Match across separate mapping sessions
 
-### Key Modules (Planned)
-- `feature_detector` - FAST corners / ORB feature extraction
-- `tracker` - Optical flow tracking between frames
-- `pose_estimator` - 6DoF pose calculation with Bundle Adjustment
-- `imu_fusion` - Extended Kalman Filter for Visual-Inertial Odometry
-- `relocalization` - Keyframe-based recovery when tracking lost
-- `place_recognition` - DBoW2 bag-of-words for loop detection
-- `map_manager` - Atlas multi-map system
+### Key Modules
+
+**Implemented:**
+- `src/lib.rs` - WASM entry point, Pose3D, EngineConfig exports
+- `src/error.rs` - QuarError types
+- `sdk/src/camera/CameraManager.ts` - Camera access, getUserMedia, iOS Safari support
+- `sdk/src/camera/FrameCapture.ts` - Grayscale conversion, image pyramids
+
+**Planned:**
+- `src/features/` - FAST corners / ORB feature extraction
+- `src/tracker/` - Optical flow tracking between frames
+- `src/vio/` - Visual-Inertial Odometry with IMU preintegration
+- `src/mapping/` - Keyframe management, relocalization
+- `src/lighting/` - Scene lighting estimation
 
 ### Performance Targets
 - Tracking loop: <16ms (60 FPS) on high-end devices
@@ -78,15 +99,26 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 
 The user-facing SDK follows this pattern:
 ```javascript
-import { AetherEngine } from '@quar/sdk';
-const engine = await AetherEngine.init({ canvas, licenseKey });
+import { QuarEngine } from '@quar/sdk';
+
+const engine = await QuarEngine.init({
+  canvas: document.getElementById('ar-canvas'),
+  camera: { facing: 'environment', resolution: 'hd' },
+  tracking: { enableIMU: true },
+  debug: { showFPS: true }
+});
+
 engine.connectCamera(threeCamera); // Auto-updates position/quaternion
+engine.on('pose', (pose) => console.log(pose));
 engine.start();
 ```
 
 Key APIs:
-- `raycast(screenX, screenY)` - Hit testing against point cloud
-- Lighting estimation from video feed luminance
+- `QuarEngine.init(config)` - Initialize engine with camera
+- `connectCamera(camera)` - Connect Three.js camera for pose updates
+- `on('pose' | 'tracking' | 'lost', handler)` - Event subscription
+- `getCameraManager()` - Direct camera access
+- `getDebugInfo()` - FPS, processing time, feature count
 
 ## Development Guidelines
 
