@@ -27,6 +27,9 @@ export * from './camera';
 // Re-export worker module
 export * from './worker';
 
+// Re-export performance module
+export * from './performance';
+
 // WASM module type definitions
 interface WasmModule {
   default: () => Promise<void>;

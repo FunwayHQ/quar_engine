@@ -7,7 +7,8 @@ A Rust-based WebAR SLAM engine targeting 60FPS markerless 6DoF tracking in the b
 QUAR Engine is the core computer vision component for WebAR applications. It compiles to WebAssembly and provides:
 
 - **Feature Detection**: FAST-9 corner detection with non-maximum suppression
-- **6DoF Tracking**: Real-time pose estimation using optical flow (coming soon)
+- **6DoF Tracking**: Real-time pose estimation using optical flow
+- **Web Worker Pipeline**: Off-main-thread processing with SharedArrayBuffer
 - **Visual-Inertial Odometry**: IMU fusion for robust tracking (planned)
 - **Relocalization**: Recovery from tracking loss using bag-of-words (planned)
 
@@ -19,7 +20,8 @@ QUAR Engine is the core computer vision component for WebAR applications. It com
 | 2 | Camera Access & Frame Capture | ✅ Complete |
 | 3 | Feature Detection (FAST Corners) | ✅ Complete |
 | 4 | Optical Flow & 3DoF Tracking | ✅ Complete |
-| 5 | Web Worker Architecture | 🔜 Next |
+| 5 | Web Worker Architecture | ✅ Complete |
+| 6 | Pipeline Optimization & Profiling | 🔜 Next |
 
 ### WASM Binary Size
 - **Uncompressed**: 60KB
@@ -91,6 +93,11 @@ quar_engine/
 ├── sdk/                     # TypeScript SDK
 │   ├── src/
 │   │   ├── camera/          # Camera access
+│   │   ├── worker/          # Web Worker pipeline
+│   │   │   ├── types.ts     # Worker message types
+│   │   │   ├── SharedFrameBuffer.ts  # Double-buffered SharedArrayBuffer
+│   │   │   ├── WorkerBridge.ts       # Main thread bridge
+│   │   │   └── AetherWorker.ts       # Worker script
 │   │   ├── types/           # TypeScript types
 │   │   └── index.ts         # Main SDK entry
 │   └── package.json

@@ -1,6 +1,107 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class AdaptiveConfig {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Create configuration for 30 FPS target.
+   */
+  static target_30fps(): AdaptiveConfig;
+  /**
+   * Create default configuration targeting 60 FPS.
+   */
+  constructor();
+  /**
+   * Target FPS (default: 60)
+   */
+  target_fps: number;
+  /**
+   * Minimum acceptable FPS (default: 30)
+   */
+  min_fps: number;
+  /**
+   * Enable adaptive quality adjustment
+   */
+  enabled: boolean;
+  /**
+   * Smoothing factor for frame time averaging (0-1)
+   */
+  smoothing: number;
+  /**
+   * Number of frames to wait before adjusting
+   */
+  adjustment_delay: number;
+}
+
+export class AdaptiveHandle {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get frame skip setting.
+   */
+  frame_skip(): number;
+  /**
+   * Check if degraded.
+   */
+  is_degraded(): boolean;
+  /**
+   * Reset statistics.
+   */
+  reset_stats(): void;
+  /**
+   * Get current window size setting.
+   */
+  window_size(): number;
+  /**
+   * Get current max features setting.
+   */
+  max_features(): number;
+  /**
+   * Record a frame time and check if quality changed.
+   */
+  record_frame(frame_time_ms: number): boolean;
+  /**
+   * Get estimated FPS.
+   */
+  estimated_fps(): number;
+  /**
+   * Get current quality level (0=High, 1=Medium, 2=Low, 3=Minimal).
+   */
+  quality_level(): number;
+  /**
+   * Get current FAST threshold.
+   */
+  fast_threshold(): number;
+  /**
+   * Get current pyramid levels setting.
+   */
+  pyramid_levels(): number;
+  /**
+   * Get average frame time in ms.
+   */
+  avg_frame_time_ms(): number;
+  /**
+   * Force a quality level.
+   */
+  set_quality_level(level: number): void;
+  /**
+   * Create a new adaptive controller.
+   */
+  constructor();
+}
+
+export class BreakdownReport {
+  private constructor();
+  free(): void;
+  [Symbol.dispose](): void;
+  grayscale_pct: number;
+  detection_pct: number;
+  tracking_pct: number;
+  pose_pct: number;
+  other_pct: number;
+}
+
 export class EngineConfig {
   free(): void;
   [Symbol.dispose](): void;
@@ -20,6 +121,43 @@ export class EngineConfig {
    * Check if debug mode is enabled.
    */
   debug: boolean;
+}
+
+export class FrameTiming {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Create a new frame timing.
+   */
+  constructor();
+  /**
+   * Total frame processing time
+   */
+  total_ms: number;
+  /**
+   * Grayscale conversion time
+   */
+  grayscale_ms: number;
+  /**
+   * Feature detection time
+   */
+  detection_ms: number;
+  /**
+   * Optical flow tracking time
+   */
+  tracking_ms: number;
+  /**
+   * Pose estimation time
+   */
+  pose_ms: number;
+  /**
+   * Number of features detected
+   */
+  feature_count: number;
+  /**
+   * Number of points tracked
+   */
+  tracked_count: number;
 }
 
 export class Pose3D {
@@ -73,6 +211,120 @@ export class Pose3D {
    * Quaternion W component
    */
   qw: number;
+}
+
+/**
+ * Quality level for tracking.
+ */
+export enum QualityLevel {
+  /**
+   * Highest quality - all features enabled
+   */
+  High = 0,
+  /**
+   * Medium quality - reduced features
+   */
+  Medium = 1,
+  /**
+   * Low quality - minimal processing for weak devices
+   */
+  Low = 2,
+  /**
+   * Minimal quality - emergency mode
+   */
+  Minimal = 3,
+}
+
+export class QualitySettings {
+  private constructor();
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get settings for a quality level.
+   */
+  static for_level(level: QualityLevel): QualitySettings;
+  /**
+   * Maximum features to track
+   */
+  max_features: number;
+  /**
+   * Number of pyramid levels
+   */
+  pyramid_levels: number;
+  /**
+   * Lucas-Kanade window size
+   */
+  window_size: number;
+  /**
+   * FAST detection threshold
+   */
+  fast_threshold: number;
+  /**
+   * Frame skip interval (1 = no skip, 2 = every other frame)
+   */
+  frame_skip: number;
+  /**
+   * Enable pose smoothing
+   */
+  pose_smoothing: boolean;
+}
+
+export class TimingReport {
+  private constructor();
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get breakdown as percentages.
+   */
+  breakdown_percentages(): BreakdownReport;
+  /**
+   * Convert to JSON string.
+   */
+  to_json(): string;
+  /**
+   * Check if meeting 30 FPS target (< 33.33ms).
+   */
+  readonly meets_30fps: boolean;
+  /**
+   * Check if meeting 60 FPS target (< 16.67ms).
+   */
+  readonly meets_60fps: boolean;
+  /**
+   * Get estimated FPS based on average frame time.
+   */
+  readonly estimated_fps: number;
+  /**
+   * Number of frames measured
+   */
+  frame_count: number;
+  /**
+   * Average total frame time in ms
+   */
+  avg_total_ms: number;
+  /**
+   * Average grayscale conversion time
+   */
+  avg_grayscale_ms: number;
+  /**
+   * Average feature detection time
+   */
+  avg_detection_ms: number;
+  /**
+   * Average tracking time
+   */
+  avg_tracking_ms: number;
+  /**
+   * Average pose estimation time
+   */
+  avg_pose_ms: number;
+  /**
+   * Maximum frame time
+   */
+  max_total_ms: number;
+  /**
+   * Minimum frame time
+   */
+  min_total_ms: number;
 }
 
 export class TrackerHandle {
@@ -187,23 +439,77 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly __wbg_adaptiveconfig_free: (a: number, b: number) => void;
+  readonly __wbg_adaptivehandle_free: (a: number, b: number) => void;
+  readonly __wbg_breakdownreport_free: (a: number, b: number) => void;
   readonly __wbg_engineconfig_free: (a: number, b: number) => void;
+  readonly __wbg_frametiming_free: (a: number, b: number) => void;
+  readonly __wbg_get_adaptiveconfig_adjustment_delay: (a: number) => number;
+  readonly __wbg_get_adaptiveconfig_enabled: (a: number) => number;
+  readonly __wbg_get_adaptiveconfig_min_fps: (a: number) => number;
+  readonly __wbg_get_adaptiveconfig_smoothing: (a: number) => number;
+  readonly __wbg_get_adaptiveconfig_target_fps: (a: number) => number;
+  readonly __wbg_get_breakdownreport_detection_pct: (a: number) => number;
+  readonly __wbg_get_breakdownreport_grayscale_pct: (a: number) => number;
+  readonly __wbg_get_breakdownreport_other_pct: (a: number) => number;
+  readonly __wbg_get_breakdownreport_pose_pct: (a: number) => number;
+  readonly __wbg_get_breakdownreport_tracking_pct: (a: number) => number;
+  readonly __wbg_get_frametiming_feature_count: (a: number) => number;
+  readonly __wbg_get_frametiming_tracked_count: (a: number) => number;
   readonly __wbg_get_pose3d_qw: (a: number) => number;
   readonly __wbg_get_pose3d_qx: (a: number) => number;
   readonly __wbg_get_pose3d_qy: (a: number) => number;
   readonly __wbg_get_pose3d_qz: (a: number) => number;
   readonly __wbg_get_pose3d_x: (a: number) => number;
   readonly __wbg_get_pose3d_y: (a: number) => number;
-  readonly __wbg_get_pose3d_z: (a: number) => number;
+  readonly __wbg_get_qualitysettings_fast_threshold: (a: number) => number;
+  readonly __wbg_get_qualitysettings_pose_smoothing: (a: number) => number;
+  readonly __wbg_get_qualitysettings_window_size: (a: number) => number;
+  readonly __wbg_get_timingreport_frame_count: (a: number) => number;
+  readonly __wbg_get_timingreport_max_total_ms: (a: number) => number;
+  readonly __wbg_get_timingreport_min_total_ms: (a: number) => number;
   readonly __wbg_pose3d_free: (a: number, b: number) => void;
+  readonly __wbg_set_adaptiveconfig_adjustment_delay: (a: number, b: number) => void;
+  readonly __wbg_set_adaptiveconfig_enabled: (a: number, b: number) => void;
+  readonly __wbg_set_adaptiveconfig_min_fps: (a: number, b: number) => void;
+  readonly __wbg_set_adaptiveconfig_smoothing: (a: number, b: number) => void;
+  readonly __wbg_set_adaptiveconfig_target_fps: (a: number, b: number) => void;
+  readonly __wbg_set_breakdownreport_detection_pct: (a: number, b: number) => void;
+  readonly __wbg_set_breakdownreport_grayscale_pct: (a: number, b: number) => void;
+  readonly __wbg_set_breakdownreport_other_pct: (a: number, b: number) => void;
+  readonly __wbg_set_breakdownreport_pose_pct: (a: number, b: number) => void;
+  readonly __wbg_set_breakdownreport_tracking_pct: (a: number, b: number) => void;
+  readonly __wbg_set_frametiming_feature_count: (a: number, b: number) => void;
+  readonly __wbg_set_frametiming_tracked_count: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_qw: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_qx: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_qy: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_qz: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_x: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_y: (a: number, b: number) => void;
-  readonly __wbg_set_pose3d_z: (a: number, b: number) => void;
+  readonly __wbg_set_qualitysettings_fast_threshold: (a: number, b: number) => void;
+  readonly __wbg_set_qualitysettings_pose_smoothing: (a: number, b: number) => void;
+  readonly __wbg_set_qualitysettings_window_size: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_frame_count: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_max_total_ms: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_min_total_ms: (a: number, b: number) => void;
+  readonly __wbg_timingreport_free: (a: number, b: number) => void;
   readonly __wbg_trackerhandle_free: (a: number, b: number) => void;
+  readonly adaptiveconfig_new: () => number;
+  readonly adaptiveconfig_target_30fps: () => number;
+  readonly adaptivehandle_avg_frame_time_ms: (a: number) => number;
+  readonly adaptivehandle_estimated_fps: (a: number) => number;
+  readonly adaptivehandle_fast_threshold: (a: number) => number;
+  readonly adaptivehandle_frame_skip: (a: number) => number;
+  readonly adaptivehandle_is_degraded: (a: number) => number;
+  readonly adaptivehandle_max_features: (a: number) => number;
+  readonly adaptivehandle_new: () => number;
+  readonly adaptivehandle_pyramid_levels: (a: number) => number;
+  readonly adaptivehandle_quality_level: (a: number) => number;
+  readonly adaptivehandle_record_frame: (a: number, b: number) => number;
+  readonly adaptivehandle_reset_stats: (a: number) => void;
+  readonly adaptivehandle_set_quality_level: (a: number, b: number) => void;
+  readonly adaptivehandle_window_size: (a: number) => number;
   readonly count_features: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly detect_features: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly detect_features_advanced: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
@@ -215,6 +521,7 @@ export interface InitOutput {
   readonly engineconfig_set_target_fps: (a: number, b: number) => void;
   readonly engineconfig_target_fps: (a: number) => number;
   readonly error: (a: number, b: number) => void;
+  readonly frametiming_new: () => number;
   readonly get_grayscale: (a: number, b: number) => [number, number];
   readonly get_performance_now: () => number;
   readonly greet: (a: number, b: number) => [number, number];
@@ -225,6 +532,12 @@ export interface InitOutput {
   readonly pose3d_position: (a: number) => [number, number];
   readonly pose3d_quaternion: (a: number) => [number, number];
   readonly pose3d_to_matrix4: (a: number) => [number, number];
+  readonly qualitysettings_for_level: (a: number) => number;
+  readonly timingreport_breakdown_percentages: (a: number) => number;
+  readonly timingreport_estimated_fps: (a: number) => number;
+  readonly timingreport_meets_30fps: (a: number) => number;
+  readonly timingreport_meets_60fps: (a: number) => number;
+  readonly timingreport_to_json: (a: number) => [number, number];
   readonly trackerhandle_get_pose: (a: number) => any;
   readonly trackerhandle_new: () => number;
   readonly trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
@@ -233,6 +546,35 @@ export interface InitOutput {
   readonly trackerhandle_with_config: (a: number, b: number, c: number, d: number) => number;
   readonly version: () => [number, number];
   readonly warn: (a: number, b: number) => void;
+  readonly __wbg_set_frametiming_detection_ms: (a: number, b: number) => void;
+  readonly __wbg_set_frametiming_grayscale_ms: (a: number, b: number) => void;
+  readonly __wbg_set_frametiming_pose_ms: (a: number, b: number) => void;
+  readonly __wbg_set_frametiming_total_ms: (a: number, b: number) => void;
+  readonly __wbg_set_frametiming_tracking_ms: (a: number, b: number) => void;
+  readonly __wbg_set_pose3d_z: (a: number, b: number) => void;
+  readonly __wbg_set_qualitysettings_frame_skip: (a: number, b: number) => void;
+  readonly __wbg_set_qualitysettings_max_features: (a: number, b: number) => void;
+  readonly __wbg_set_qualitysettings_pyramid_levels: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_avg_detection_ms: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_avg_grayscale_ms: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_avg_pose_ms: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_avg_total_ms: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_avg_tracking_ms: (a: number, b: number) => void;
+  readonly __wbg_get_qualitysettings_frame_skip: (a: number) => number;
+  readonly __wbg_get_qualitysettings_max_features: (a: number) => number;
+  readonly __wbg_get_qualitysettings_pyramid_levels: (a: number) => number;
+  readonly __wbg_get_frametiming_detection_ms: (a: number) => number;
+  readonly __wbg_get_frametiming_grayscale_ms: (a: number) => number;
+  readonly __wbg_get_frametiming_pose_ms: (a: number) => number;
+  readonly __wbg_get_frametiming_total_ms: (a: number) => number;
+  readonly __wbg_get_frametiming_tracking_ms: (a: number) => number;
+  readonly __wbg_get_pose3d_z: (a: number) => number;
+  readonly __wbg_get_timingreport_avg_detection_ms: (a: number) => number;
+  readonly __wbg_get_timingreport_avg_grayscale_ms: (a: number) => number;
+  readonly __wbg_get_timingreport_avg_pose_ms: (a: number) => number;
+  readonly __wbg_get_timingreport_avg_total_ms: (a: number) => number;
+  readonly __wbg_get_timingreport_avg_tracking_ms: (a: number) => number;
+  readonly __wbg_qualitysettings_free: (a: number, b: number) => void;
   readonly __wbindgen_exn_store: (a: number) => void;
   readonly __externref_table_alloc: () => number;
   readonly __wbindgen_externrefs: WebAssembly.Table;

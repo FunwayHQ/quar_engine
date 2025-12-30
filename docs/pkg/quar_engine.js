@@ -131,17 +131,366 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
+const AdaptiveConfigFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_adaptiveconfig_free(ptr >>> 0, 1));
+
+const AdaptiveHandleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_adaptivehandle_free(ptr >>> 0, 1));
+
+const BreakdownReportFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_breakdownreport_free(ptr >>> 0, 1));
+
 const EngineConfigFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_engineconfig_free(ptr >>> 0, 1));
+
+const FrameTimingFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_frametiming_free(ptr >>> 0, 1));
 
 const Pose3DFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_pose3d_free(ptr >>> 0, 1));
 
+const QualitySettingsFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_qualitysettings_free(ptr >>> 0, 1));
+
+const TimingReportFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_timingreport_free(ptr >>> 0, 1));
+
 const TrackerHandleFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_trackerhandle_free(ptr >>> 0, 1));
+
+/**
+ * Configuration for adaptive quality control.
+ */
+export class AdaptiveConfig {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(AdaptiveConfig.prototype);
+        obj.__wbg_ptr = ptr;
+        AdaptiveConfigFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        AdaptiveConfigFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_adaptiveconfig_free(ptr, 0);
+    }
+    /**
+     * Create configuration for 30 FPS target.
+     * @returns {AdaptiveConfig}
+     */
+    static target_30fps() {
+        const ret = wasm.adaptiveconfig_target_30fps();
+        return AdaptiveConfig.__wrap(ret);
+    }
+    /**
+     * Create default configuration targeting 60 FPS.
+     */
+    constructor() {
+        const ret = wasm.adaptiveconfig_new();
+        this.__wbg_ptr = ret >>> 0;
+        AdaptiveConfigFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Target FPS (default: 60)
+     * @returns {number}
+     */
+    get target_fps() {
+        const ret = wasm.__wbg_get_adaptiveconfig_target_fps(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Target FPS (default: 60)
+     * @param {number} arg0
+     */
+    set target_fps(arg0) {
+        wasm.__wbg_set_adaptiveconfig_target_fps(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Minimum acceptable FPS (default: 30)
+     * @returns {number}
+     */
+    get min_fps() {
+        const ret = wasm.__wbg_get_adaptiveconfig_min_fps(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Minimum acceptable FPS (default: 30)
+     * @param {number} arg0
+     */
+    set min_fps(arg0) {
+        wasm.__wbg_set_adaptiveconfig_min_fps(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Enable adaptive quality adjustment
+     * @returns {boolean}
+     */
+    get enabled() {
+        const ret = wasm.__wbg_get_adaptiveconfig_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Enable adaptive quality adjustment
+     * @param {boolean} arg0
+     */
+    set enabled(arg0) {
+        wasm.__wbg_set_adaptiveconfig_enabled(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Smoothing factor for frame time averaging (0-1)
+     * @returns {number}
+     */
+    get smoothing() {
+        const ret = wasm.__wbg_get_adaptiveconfig_smoothing(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Smoothing factor for frame time averaging (0-1)
+     * @param {number} arg0
+     */
+    set smoothing(arg0) {
+        wasm.__wbg_set_adaptiveconfig_smoothing(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Number of frames to wait before adjusting
+     * @returns {number}
+     */
+    get adjustment_delay() {
+        const ret = wasm.__wbg_get_adaptiveconfig_adjustment_delay(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Number of frames to wait before adjusting
+     * @param {number} arg0
+     */
+    set adjustment_delay(arg0) {
+        wasm.__wbg_set_adaptiveconfig_adjustment_delay(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) AdaptiveConfig.prototype[Symbol.dispose] = AdaptiveConfig.prototype.free;
+
+/**
+ * WASM-exported adaptive controller.
+ */
+export class AdaptiveHandle {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        AdaptiveHandleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_adaptivehandle_free(ptr, 0);
+    }
+    /**
+     * Get frame skip setting.
+     * @returns {number}
+     */
+    frame_skip() {
+        const ret = wasm.adaptivehandle_frame_skip(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Check if degraded.
+     * @returns {boolean}
+     */
+    is_degraded() {
+        const ret = wasm.adaptivehandle_is_degraded(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Reset statistics.
+     */
+    reset_stats() {
+        wasm.adaptivehandle_reset_stats(this.__wbg_ptr);
+    }
+    /**
+     * Get current window size setting.
+     * @returns {number}
+     */
+    window_size() {
+        const ret = wasm.adaptivehandle_window_size(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get current max features setting.
+     * @returns {number}
+     */
+    max_features() {
+        const ret = wasm.adaptivehandle_max_features(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Record a frame time and check if quality changed.
+     * @param {number} frame_time_ms
+     * @returns {boolean}
+     */
+    record_frame(frame_time_ms) {
+        const ret = wasm.adaptivehandle_record_frame(this.__wbg_ptr, frame_time_ms);
+        return ret !== 0;
+    }
+    /**
+     * Get estimated FPS.
+     * @returns {number}
+     */
+    estimated_fps() {
+        const ret = wasm.adaptivehandle_estimated_fps(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get current quality level (0=High, 1=Medium, 2=Low, 3=Minimal).
+     * @returns {number}
+     */
+    quality_level() {
+        const ret = wasm.adaptivehandle_quality_level(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get current FAST threshold.
+     * @returns {number}
+     */
+    fast_threshold() {
+        const ret = wasm.adaptivehandle_fast_threshold(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get current pyramid levels setting.
+     * @returns {number}
+     */
+    pyramid_levels() {
+        const ret = wasm.adaptivehandle_pyramid_levels(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Get average frame time in ms.
+     * @returns {number}
+     */
+    avg_frame_time_ms() {
+        const ret = wasm.adaptivehandle_avg_frame_time_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Force a quality level.
+     * @param {number} level
+     */
+    set_quality_level(level) {
+        wasm.adaptivehandle_set_quality_level(this.__wbg_ptr, level);
+    }
+    /**
+     * Create a new adaptive controller.
+     */
+    constructor() {
+        const ret = wasm.adaptivehandle_new();
+        this.__wbg_ptr = ret >>> 0;
+        AdaptiveHandleFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) AdaptiveHandle.prototype[Symbol.dispose] = AdaptiveHandle.prototype.free;
+
+/**
+ * Breakdown of time spent in each stage as percentages.
+ */
+export class BreakdownReport {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(BreakdownReport.prototype);
+        obj.__wbg_ptr = ptr;
+        BreakdownReportFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        BreakdownReportFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_breakdownreport_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    get grayscale_pct() {
+        const ret = wasm.__wbg_get_breakdownreport_grayscale_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set grayscale_pct(arg0) {
+        wasm.__wbg_set_breakdownreport_grayscale_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get detection_pct() {
+        const ret = wasm.__wbg_get_breakdownreport_detection_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set detection_pct(arg0) {
+        wasm.__wbg_set_breakdownreport_detection_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get tracking_pct() {
+        const ret = wasm.__wbg_get_breakdownreport_tracking_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set tracking_pct(arg0) {
+        wasm.__wbg_set_breakdownreport_tracking_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get pose_pct() {
+        const ret = wasm.__wbg_get_breakdownreport_pose_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set pose_pct(arg0) {
+        wasm.__wbg_set_breakdownreport_pose_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * @returns {number}
+     */
+    get other_pct() {
+        const ret = wasm.__wbg_get_breakdownreport_other_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @param {number} arg0
+     */
+    set other_pct(arg0) {
+        wasm.__wbg_set_breakdownreport_other_pct(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) BreakdownReport.prototype[Symbol.dispose] = BreakdownReport.prototype.free;
 
 /**
  * Engine configuration options passed from JavaScript.
@@ -215,6 +564,137 @@ export class EngineConfig {
 if (Symbol.dispose) EngineConfig.prototype[Symbol.dispose] = EngineConfig.prototype.free;
 
 /**
+ * Timing report for a single frame.
+ */
+export class FrameTiming {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        FrameTimingFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_frametiming_free(ptr, 0);
+    }
+    /**
+     * Create a new frame timing.
+     */
+    constructor() {
+        const ret = wasm.frametiming_new();
+        this.__wbg_ptr = ret >>> 0;
+        FrameTimingFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Total frame processing time
+     * @returns {number}
+     */
+    get total_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_grayscale_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Total frame processing time
+     * @param {number} arg0
+     */
+    set total_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_grayscale_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Grayscale conversion time
+     * @returns {number}
+     */
+    get grayscale_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_detection_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Grayscale conversion time
+     * @param {number} arg0
+     */
+    set grayscale_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_detection_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Feature detection time
+     * @returns {number}
+     */
+    get detection_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_tracking_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Feature detection time
+     * @param {number} arg0
+     */
+    set detection_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_tracking_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Optical flow tracking time
+     * @returns {number}
+     */
+    get tracking_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_pose_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Optical flow tracking time
+     * @param {number} arg0
+     */
+    set tracking_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_pose_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Pose estimation time
+     * @returns {number}
+     */
+    get pose_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_other_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Pose estimation time
+     * @param {number} arg0
+     */
+    set pose_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_other_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Number of features detected
+     * @returns {number}
+     */
+    get feature_count() {
+        const ret = wasm.__wbg_get_frametiming_feature_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Number of features detected
+     * @param {number} arg0
+     */
+    set feature_count(arg0) {
+        wasm.__wbg_set_frametiming_feature_count(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Number of points tracked
+     * @returns {number}
+     */
+    get tracked_count() {
+        const ret = wasm.__wbg_get_frametiming_tracked_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Number of points tracked
+     * @param {number} arg0
+     */
+    set tracked_count(arg0) {
+        wasm.__wbg_set_frametiming_tracked_count(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) FrameTiming.prototype[Symbol.dispose] = FrameTiming.prototype.free;
+
+/**
  * Pose3D represents a 6DoF pose (position + rotation).
  * Used to communicate tracking results back to JavaScript.
  */
@@ -271,7 +751,7 @@ export class Pose3D {
      * @returns {number}
      */
     get z() {
-        const ret = wasm.__wbg_get_pose3d_z(this.__wbg_ptr);
+        const ret = wasm.__wbg_get_adaptiveconfig_smoothing(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -279,7 +759,7 @@ export class Pose3D {
      * @param {number} arg0
      */
     set z(arg0) {
-        wasm.__wbg_set_pose3d_z(this.__wbg_ptr, arg0);
+        wasm.__wbg_set_adaptiveconfig_smoothing(this.__wbg_ptr, arg0);
     }
     /**
      * Quaternion X component
@@ -397,6 +877,337 @@ export class Pose3D {
     }
 }
 if (Symbol.dispose) Pose3D.prototype[Symbol.dispose] = Pose3D.prototype.free;
+
+/**
+ * Quality level for tracking.
+ * @enum {0 | 1 | 2 | 3}
+ */
+export const QualityLevel = Object.freeze({
+    /**
+     * Highest quality - all features enabled
+     */
+    High: 0, "0": "High",
+    /**
+     * Medium quality - reduced features
+     */
+    Medium: 1, "1": "Medium",
+    /**
+     * Low quality - minimal processing for weak devices
+     */
+    Low: 2, "2": "Low",
+    /**
+     * Minimal quality - emergency mode
+     */
+    Minimal: 3, "3": "Minimal",
+});
+
+/**
+ * Current quality settings derived from the quality level.
+ */
+export class QualitySettings {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(QualitySettings.prototype);
+        obj.__wbg_ptr = ptr;
+        QualitySettingsFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        QualitySettingsFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_qualitysettings_free(ptr, 0);
+    }
+    /**
+     * Get settings for a quality level.
+     * @param {QualityLevel} level
+     * @returns {QualitySettings}
+     */
+    static for_level(level) {
+        const ret = wasm.qualitysettings_for_level(level);
+        return QualitySettings.__wrap(ret);
+    }
+    /**
+     * Maximum features to track
+     * @returns {number}
+     */
+    get max_features() {
+        const ret = wasm.__wbg_get_adaptiveconfig_target_fps(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Maximum features to track
+     * @param {number} arg0
+     */
+    set max_features(arg0) {
+        wasm.__wbg_set_adaptiveconfig_target_fps(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Number of pyramid levels
+     * @returns {number}
+     */
+    get pyramid_levels() {
+        const ret = wasm.__wbg_get_adaptiveconfig_min_fps(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Number of pyramid levels
+     * @param {number} arg0
+     */
+    set pyramid_levels(arg0) {
+        wasm.__wbg_set_adaptiveconfig_min_fps(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Lucas-Kanade window size
+     * @returns {number}
+     */
+    get window_size() {
+        const ret = wasm.__wbg_get_qualitysettings_window_size(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Lucas-Kanade window size
+     * @param {number} arg0
+     */
+    set window_size(arg0) {
+        wasm.__wbg_set_qualitysettings_window_size(this.__wbg_ptr, arg0);
+    }
+    /**
+     * FAST detection threshold
+     * @returns {number}
+     */
+    get fast_threshold() {
+        const ret = wasm.__wbg_get_qualitysettings_fast_threshold(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * FAST detection threshold
+     * @param {number} arg0
+     */
+    set fast_threshold(arg0) {
+        wasm.__wbg_set_qualitysettings_fast_threshold(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Frame skip interval (1 = no skip, 2 = every other frame)
+     * @returns {number}
+     */
+    get frame_skip() {
+        const ret = wasm.__wbg_get_adaptiveconfig_adjustment_delay(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Frame skip interval (1 = no skip, 2 = every other frame)
+     * @param {number} arg0
+     */
+    set frame_skip(arg0) {
+        wasm.__wbg_set_adaptiveconfig_adjustment_delay(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Enable pose smoothing
+     * @returns {boolean}
+     */
+    get pose_smoothing() {
+        const ret = wasm.__wbg_get_qualitysettings_pose_smoothing(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Enable pose smoothing
+     * @param {boolean} arg0
+     */
+    set pose_smoothing(arg0) {
+        wasm.__wbg_set_qualitysettings_pose_smoothing(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) QualitySettings.prototype[Symbol.dispose] = QualitySettings.prototype.free;
+
+/**
+ * Summary report of timing statistics.
+ */
+export class TimingReport {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        TimingReportFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_timingreport_free(ptr, 0);
+    }
+    /**
+     * Check if meeting 30 FPS target (< 33.33ms).
+     * @returns {boolean}
+     */
+    get meets_30fps() {
+        const ret = wasm.timingreport_meets_30fps(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Check if meeting 60 FPS target (< 16.67ms).
+     * @returns {boolean}
+     */
+    get meets_60fps() {
+        const ret = wasm.timingreport_meets_60fps(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Get estimated FPS based on average frame time.
+     * @returns {number}
+     */
+    get estimated_fps() {
+        const ret = wasm.timingreport_estimated_fps(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get breakdown as percentages.
+     * @returns {BreakdownReport}
+     */
+    breakdown_percentages() {
+        const ret = wasm.timingreport_breakdown_percentages(this.__wbg_ptr);
+        return BreakdownReport.__wrap(ret);
+    }
+    /**
+     * Convert to JSON string.
+     * @returns {string}
+     */
+    to_json() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.timingreport_to_json(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Number of frames measured
+     * @returns {number}
+     */
+    get frame_count() {
+        const ret = wasm.__wbg_get_timingreport_frame_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Number of frames measured
+     * @param {number} arg0
+     */
+    set frame_count(arg0) {
+        wasm.__wbg_set_timingreport_frame_count(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Average total frame time in ms
+     * @returns {number}
+     */
+    get avg_total_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_grayscale_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Average total frame time in ms
+     * @param {number} arg0
+     */
+    set avg_total_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_grayscale_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Average grayscale conversion time
+     * @returns {number}
+     */
+    get avg_grayscale_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_detection_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Average grayscale conversion time
+     * @param {number} arg0
+     */
+    set avg_grayscale_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_detection_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Average feature detection time
+     * @returns {number}
+     */
+    get avg_detection_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_tracking_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Average feature detection time
+     * @param {number} arg0
+     */
+    set avg_detection_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_tracking_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Average tracking time
+     * @returns {number}
+     */
+    get avg_tracking_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_pose_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Average tracking time
+     * @param {number} arg0
+     */
+    set avg_tracking_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_pose_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Average pose estimation time
+     * @returns {number}
+     */
+    get avg_pose_ms() {
+        const ret = wasm.__wbg_get_breakdownreport_other_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Average pose estimation time
+     * @param {number} arg0
+     */
+    set avg_pose_ms(arg0) {
+        wasm.__wbg_set_breakdownreport_other_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Maximum frame time
+     * @returns {number}
+     */
+    get max_total_ms() {
+        const ret = wasm.__wbg_get_timingreport_max_total_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Maximum frame time
+     * @param {number} arg0
+     */
+    set max_total_ms(arg0) {
+        wasm.__wbg_set_timingreport_max_total_ms(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Minimum frame time
+     * @returns {number}
+     */
+    get min_total_ms() {
+        const ret = wasm.__wbg_get_timingreport_min_total_ms(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Minimum frame time
+     * @param {number} arg0
+     */
+    set min_total_ms(arg0) {
+        wasm.__wbg_set_timingreport_min_total_ms(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) TimingReport.prototype[Symbol.dispose] = TimingReport.prototype.free;
 
 /**
  * Opaque handle to a tracker instance.

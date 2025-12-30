@@ -11,6 +11,11 @@ pub mod error;
 pub mod features;
 pub mod tracker;
 
+// Sprint 6: Performance optimization modules
+pub mod memory;
+pub mod profiling;
+pub mod adaptive;
+
 /// Initialize the WASM module with panic hook for better error messages.
 /// This function is automatically called when the WASM module is loaded.
 #[wasm_bindgen(start)]
