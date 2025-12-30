@@ -431,12 +431,12 @@
             smoothedRotation.pitch = lerp(smoothedRotation.pitch, euler.pitch, smoothingFactor);
             smoothedRotation.yaw = lerp(smoothedRotation.yaw, euler.yaw, smoothingFactor);
 
-            // Apply rotation to Three.js CAMERA (not the object)
-            // This makes the cube stay fixed in world space
-            // When you rotate phone away, cube moves out of view naturally
-            camera.rotation.x = smoothedRotation.pitch;
-            camera.rotation.y = smoothedRotation.yaw;
-            camera.rotation.z = smoothedRotation.roll;
+            // Apply INVERSE rotation to Three.js camera
+            // When phone rotates left, camera.rotation.y goes positive (looks left)
+            // So cube at origin appears on the RIGHT - proper AR behavior
+            camera.rotation.x = -smoothedRotation.pitch;
+            camera.rotation.y = -smoothedRotation.yaw;
+            camera.rotation.z = -smoothedRotation.roll;
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';
