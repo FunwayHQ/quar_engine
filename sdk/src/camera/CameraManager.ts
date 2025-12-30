@@ -221,6 +221,14 @@ export class CameraManager {
   }
 
   /**
+   * Get the video element for direct rendering.
+   * Use this for efficient canvas drawing instead of getFrame().
+   */
+  getVideoElement(): HTMLVideoElement | null {
+    return this.videoElement;
+  }
+
+  /**
    * Pause the video stream (reduces CPU usage when not processing).
    */
   pause(): void {

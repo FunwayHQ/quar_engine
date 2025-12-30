@@ -78,11 +78,17 @@ export class QuarEngine {
   private lastFpsTime = 0;
   private currentFps = 0;
 
+  // Canvas rendering
+  private canvasCtx: CanvasRenderingContext2D | null = null;
+
   private constructor(config: Required<QuarConfig>) {
     this.config = config;
     this.canvas = config.canvas;
     this.cameraManager = new CameraManager();
     this.frameCapture = new FrameCapture();
+
+    // Get canvas context for rendering camera feed
+    this.canvasCtx = this.canvas.getContext('2d');
   }
 
   /**
@@ -378,6 +384,9 @@ export class QuarEngine {
     }
 
     try {
+      // Draw camera feed to canvas
+      this.renderCameraFeed();
+
       // Get frame and convert to grayscale for processing
       const frame = this.cameraManager.getFrame();
       const _grayFrame = this.frameCapture.toGrayscale(frame);
@@ -404,6 +413,45 @@ export class QuarEngine {
         this.emit('lost');
       }
     }
+  }
+
+  /**
+   * Render the camera feed to the canvas.
+   */
+  private renderCameraFeed(): void {
+    if (!this.canvasCtx) return;
+
+    const video = this.cameraManager.getVideoElement();
+    if (!video) return;
+
+    const { width: canvasWidth, height: canvasHeight } = this.canvas;
+    const { width: videoWidth, height: videoHeight } = this.cameraManager.getResolution();
+
+    // Calculate scaling to cover canvas while maintaining aspect ratio
+    const videoAspect = videoWidth / videoHeight;
+    const canvasAspect = canvasWidth / canvasHeight;
+
+    let drawWidth: number;
+    let drawHeight: number;
+    let offsetX: number;
+    let offsetY: number;
+
+    if (videoAspect > canvasAspect) {
+      // Video is wider - fit height, crop width
+      drawHeight = canvasHeight;
+      drawWidth = canvasHeight * videoAspect;
+      offsetX = (canvasWidth - drawWidth) / 2;
+      offsetY = 0;
+    } else {
+      // Video is taller - fit width, crop height
+      drawWidth = canvasWidth;
+      drawHeight = canvasWidth / videoAspect;
+      offsetX = 0;
+      offsetY = (canvasHeight - drawHeight) / 2;
+    }
+
+    // Draw video frame to canvas
+    this.canvasCtx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
   }
 
   private updateCameraPose(pose: Pose3D): void {
