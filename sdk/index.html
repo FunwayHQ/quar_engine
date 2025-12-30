@@ -249,6 +249,20 @@ Resolution: ${info.resolution}`;
     }
 
     startBtn.addEventListener('click', async () => {
+      // Check for secure context (HTTPS or localhost)
+      if (!window.isSecureContext) {
+        setStatus('Camera requires HTTPS. Please use localhost or HTTPS.', 'error');
+        console.error('Not a secure context. URL:', window.location.href);
+        return;
+      }
+
+      // Check for camera API
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus('Camera API not available. Use HTTPS or localhost.', 'error');
+        console.error('mediaDevices not available. Secure context:', window.isSecureContext);
+        return;
+      }
+
       try {
         setStatus('Requesting camera access...', 'info');
         startBtn.disabled = true;
@@ -306,6 +320,12 @@ Resolution: ${info.resolution}`;
 
     // Initial debug display
     updateDebug();
+
+    // Check secure context on load
+    if (!window.isSecureContext) {
+      setStatus('⚠️ Not secure context! Use: python3 -m http.server 8080', 'warning');
+      debug.textContent += `\n\nURL: ${window.location.href}\nSecure: ${window.isSecureContext}`;
+    }
   </script>
 </body>
 </html>
