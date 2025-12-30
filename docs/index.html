@@ -3,544 +3,328 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QUAR Engine Demo</title>
+  <title>QUAR Engine - WebAR Demos</title>
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a2e;
-      color: #eee;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
+      color: white;
+      padding: 40px 20px;
     }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
     h1 {
-      margin-bottom: 10px;
-      color: #4cc9f0;
-      font-size: 24px;
+      font-size: 48px;
+      margin-bottom: 16px;
+      background: linear-gradient(90deg, #4ade80, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
     }
+
     .subtitle {
-      color: #888;
+      font-size: 20px;
+      opacity: 0.8;
+      margin-bottom: 24px;
+    }
+
+    .badges {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .demos {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      margin-bottom: 60px;
+    }
+
+    .demo-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 28px;
+      transition: all 0.3s;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+
+    .demo-card:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-4px);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .demo-card h2 {
+      font-size: 22px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .demo-card p {
+      opacity: 0.7;
+      line-height: 1.6;
       margin-bottom: 20px;
       font-size: 14px;
     }
-    .canvas-container {
-      position: relative;
-      max-width: 100%;
+
+    .demo-card .features {
+      list-style: none;
+      font-size: 13px;
     }
-    #ar-canvas {
-      width: 100%;
-      max-width: 640px;
-      height: auto;
-      aspect-ratio: 4/3;
-      background: #16213e;
-      border: 2px solid #4cc9f0;
-      border-radius: 8px;
-    }
-    #overlay-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-    #status {
-      margin-top: 20px;
-      padding: 10px 20px;
-      background: #16213e;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 14px;
-      text-align: center;
-    }
-    .success { color: #4ade80; }
-    .error { color: #f87171; }
-    .info { color: #60a5fa; }
-    .warning { color: #fbbf24; }
-    button {
-      padding: 12px 30px;
-      background: #4cc9f0;
-      color: #1a1a2e;
-      border: none;
-      border-radius: 4px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-    button:hover {
-      background: #7dd3fc;
-    }
-    button:disabled {
-      background: #4b5563;
-      cursor: not-allowed;
-    }
-    #debug {
-      margin-top: 20px;
-      padding: 15px;
-      background: #16213e;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 12px;
-      white-space: pre;
-      max-width: 640px;
-      width: 100%;
-    }
-    .button-group {
-      display: flex;
-      gap: 10px;
-      margin-top: 20px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    .controls {
-      margin-top: 15px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      max-width: 640px;
-      width: 100%;
-    }
-    .slider-group {
+
+    .demo-card .features li {
+      padding: 5px 0;
       display: flex;
       align-items: center;
-      gap: 10px;
-      background: #16213e;
-      padding: 10px 15px;
-      border-radius: 4px;
+      gap: 8px;
     }
-    .slider-group label {
-      min-width: 100px;
+
+    .demo-card .features li::before {
+      content: '✓';
+      color: #4ade80;
+    }
+
+    .demo-tag {
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .tag-basic { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
+    .tag-advanced { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+    .tag-debug { background: rgba(250, 204, 21, 0.2); color: #facc15; }
+
+    .tech-stack {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 16px;
+      padding: 32px;
+      margin-bottom: 40px;
+    }
+
+    .tech-stack h3 {
+      font-size: 14px;
+      margin-bottom: 20px;
+      opacity: 0.6;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 16px;
+    }
+
+    .tech-item {
+      text-align: center;
+      padding: 12px;
+    }
+
+    .tech-item .icon {
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+
+    .tech-item .name {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+
+    .tech-item .desc {
+      font-size: 11px;
+      opacity: 0.6;
+    }
+
+    footer {
+      text-align: center;
+      opacity: 0.5;
+      font-size: 13px;
+    }
+
+    footer a {
+      color: #60a5fa;
+      text-decoration: none;
+    }
+
+    .requirements {
+      background: rgba(250, 204, 21, 0.1);
+      border: 1px solid rgba(250, 204, 21, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 40px;
       font-size: 14px;
     }
-    input[type="range"] {
-      flex: 1;
-      max-width: 200px;
+
+    .requirements h4 {
+      color: #facc15;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
     }
-    input[type="checkbox"] {
-      width: 20px;
-      height: 20px;
-      cursor: pointer;
+
+    .requirements ul {
+      margin-left: 24px;
+      opacity: 0.8;
     }
-    .value-display {
-      min-width: 30px;
-      text-align: right;
-      font-family: monospace;
+
+    .requirements li {
+      margin-bottom: 4px;
     }
-    @media (max-width: 640px) {
-      h1 { font-size: 20px; }
-      button { padding: 10px 20px; font-size: 14px; }
-      .slider-group { flex-wrap: wrap; }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 32px; }
+      .subtitle { font-size: 16px; }
+      .demo-card { padding: 20px; }
     }
   </style>
 </head>
 <body>
-  <h1>QUAR WebAR Engine</h1>
-  <p class="subtitle">FAST Corner Detection Demo | <a href="ar-demo.html" style="color: #4cc9f0;">AR Cube Demo</a></p>
+  <div class="container">
+    <header>
+      <h1>QUAR Engine</h1>
+      <p class="subtitle">Rust/WASM WebAR SLAM Engine for 60FPS Markerless Tracking</p>
+      <div class="badges">
+        <span class="badge">Rust + WASM</span>
+        <span class="badge">Three.js</span>
+        <span class="badge">Visual-Inertial</span>
+        <span class="badge">85KB gzipped</span>
+      </div>
+    </header>
 
-  <div class="canvas-container">
-    <canvas id="ar-canvas" width="640" height="480"></canvas>
-    <canvas id="overlay-canvas" width="640" height="480"></canvas>
-  </div>
-
-  <div id="status" class="info">Click "Start Camera" to begin</div>
-
-  <div class="button-group">
-    <button id="start-btn">Start Camera</button>
-    <button id="switch-btn" disabled>Switch Camera</button>
-    <button id="stop-btn" disabled>Stop</button>
-  </div>
-
-  <div class="controls">
-    <div class="slider-group">
-      <label>Threshold:</label>
-      <input type="range" id="threshold" min="10" max="80" value="30">
-      <span id="threshold-value" class="value-display">30</span>
+    <div class="requirements">
+      <h4>Requirements</h4>
+      <ul>
+        <li>Modern browser (Chrome 90+, Safari 14+, Firefox 90+)</li>
+        <li>Camera access permission</li>
+        <li>HTTPS connection (required for camera/sensors)</li>
+        <li>For IMU features: Device with motion sensors</li>
+      </ul>
     </div>
-    <div class="slider-group">
-      <input type="checkbox" id="detect-features" checked>
-      <label>Detect Features</label>
+
+    <div class="demos">
+      <a href="ar-demo.html" class="demo-card">
+        <h2>
+          AR Cube Demo
+          <span class="demo-tag tag-basic">Basic</span>
+        </h2>
+        <p>Simple AR demo with a tracked red cube. Perfect for testing basic tracking functionality.</p>
+        <ul class="features">
+          <li>3DoF rotation tracking</li>
+          <li>Real-time pose updates</li>
+          <li>Three.js integration</li>
+          <li>Camera feed background</li>
+        </ul>
+      </a>
+
+      <a href="advanced-demo.html" class="demo-card">
+        <h2>
+          Advanced AR Demo
+          <span class="demo-tag tag-advanced">Advanced</span>
+        </h2>
+        <p>Full-featured demo with IMU fusion, performance dashboard, and adaptive quality.</p>
+        <ul class="features">
+          <li>IMU sensor fusion</li>
+          <li>Real-time FPS monitoring</li>
+          <li>Adaptive quality control</li>
+          <li>Feature point visualization</li>
+          <li>Gyroscope waveform display</li>
+        </ul>
+      </a>
+
+      <a href="feature-demo.html" class="demo-card">
+        <h2>
+          Feature Detection
+          <span class="demo-tag tag-debug">Debug</span>
+        </h2>
+        <p>Interactive FAST corner detection with adjustable threshold. Great for tuning parameters.</p>
+        <ul class="features">
+          <li>Adjustable FAST threshold</li>
+          <li>Real-time feature count</li>
+          <li>Detection timing display</li>
+          <li>Camera switching support</li>
+        </ul>
+      </a>
     </div>
+
+    <div class="tech-stack">
+      <h3>Technology Stack</h3>
+      <div class="tech-grid">
+        <div class="tech-item">
+          <div class="icon">🦀</div>
+          <div class="name">Rust</div>
+          <div class="desc">Core SLAM engine</div>
+        </div>
+        <div class="tech-item">
+          <div class="icon">⚡</div>
+          <div class="name">WebAssembly</div>
+          <div class="desc">Near-native speed</div>
+        </div>
+        <div class="tech-item">
+          <div class="icon">📦</div>
+          <div class="name">Three.js</div>
+          <div class="desc">3D rendering</div>
+        </div>
+        <div class="tech-item">
+          <div class="icon">📱</div>
+          <div class="name">DeviceMotion</div>
+          <div class="desc">IMU sensors</div>
+        </div>
+        <div class="tech-item">
+          <div class="icon">🎯</div>
+          <div class="name">FAST</div>
+          <div class="desc">Corner detection</div>
+        </div>
+        <div class="tech-item">
+          <div class="icon">🔄</div>
+          <div class="name">Lucas-Kanade</div>
+          <div class="desc">Optical flow</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <p>
+        Built with Rust + WASM |
+        <a href="https://github.com/FunwayHQ/quar_engine">GitHub</a> |
+        Based on ORB-SLAM3 architecture
+      </p>
+    </footer>
   </div>
-
-  <div id="debug">
-QUAR Engine Debug Info
-----------------------
-State: waiting
-Camera: --
-FPS: --
-Resolution: --
-Features: --
-Detection: --
-  </div>
-
-  <script type="module">
-    const canvas = document.getElementById('ar-canvas');
-    const overlayCanvas = document.getElementById('overlay-canvas');
-    const status = document.getElementById('status');
-    const startBtn = document.getElementById('start-btn');
-    const switchBtn = document.getElementById('switch-btn');
-    const stopBtn = document.getElementById('stop-btn');
-    const debug = document.getElementById('debug');
-    const thresholdSlider = document.getElementById('threshold');
-    const thresholdValueEl = document.getElementById('threshold-value');
-    const detectFeaturesCheckbox = document.getElementById('detect-features');
-
-    const ctx = canvas.getContext('2d');
-    const overlayCtx = overlayCanvas.getContext('2d');
-
-    // WASM module placeholder - for GitHub Pages demo, we'll use JS fallback
-    let wasmLoaded = false;
-    let detect_features = null;
-
-    // Try to load WASM (will fail on GitHub Pages without pkg folder)
-    async function loadWasm() {
-      try {
-        const pkg = await import('./pkg/quar_engine.js');
-        await pkg.default();
-        detect_features = pkg.detect_features;
-        console.log('WASM module loaded');
-        return true;
-      } catch (err) {
-        console.log('WASM not available, using JS fallback');
-        // Simple JS fallback for FAST-like detection
-        detect_features = jsFastDetect;
-        return false;
-      }
-    }
-
-    // Simple JavaScript FAST-like corner detection (fallback)
-    function jsFastDetect(data, width, height, threshold) {
-      const keypoints = [];
-      const gray = new Uint8Array(width * height);
-
-      // Convert to grayscale
-      for (let i = 0; i < width * height; i++) {
-        const r = data[i * 4];
-        const g = data[i * 4 + 1];
-        const b = data[i * 4 + 2];
-        gray[i] = (77 * r + 150 * g + 29 * b) >> 8;
-      }
-
-      // Simple corner detection using 4-pixel pattern
-      for (let y = 3; y < height - 3; y += 2) {
-        for (let x = 3; x < width - 3; x += 2) {
-          const center = gray[y * width + x];
-
-          const p0 = gray[(y - 3) * width + x];
-          const p4 = gray[y * width + x + 3];
-          const p8 = gray[(y + 3) * width + x];
-          const p12 = gray[y * width + x - 3];
-
-          let brighter = 0, darker = 0;
-          if (p0 > center + threshold) brighter++;
-          else if (p0 < center - threshold) darker++;
-          if (p4 > center + threshold) brighter++;
-          else if (p4 < center - threshold) darker++;
-          if (p8 > center + threshold) brighter++;
-          else if (p8 < center - threshold) darker++;
-          if (p12 > center + threshold) brighter++;
-          else if (p12 < center - threshold) darker++;
-
-          if (brighter >= 3 || darker >= 3) {
-            keypoints.push({ x, y, score: Math.max(brighter, darker) * 10 });
-          }
-        }
-      }
-
-      // Simple NMS
-      const filtered = [];
-      for (const kp of keypoints) {
-        let isMax = true;
-        for (const other of keypoints) {
-          if (other !== kp) {
-            const dx = kp.x - other.x;
-            const dy = kp.y - other.y;
-            if (dx * dx + dy * dy < 16 && other.score > kp.score) {
-              isMax = false;
-              break;
-            }
-          }
-        }
-        if (isMax) filtered.push(kp);
-      }
-
-      return filtered.slice(0, 500); // Limit for performance
-    }
-
-    thresholdSlider.addEventListener('input', () => {
-      thresholdValueEl.textContent = thresholdSlider.value;
-    });
-
-    // Camera manager
-    class CameraManager {
-      constructor() {
-        this.video = null;
-        this.stream = null;
-        this.animationId = null;
-        this.facingMode = 'environment';
-        this.fps = 0;
-        this.frameCount = 0;
-        this.lastFpsTime = 0;
-        this.featureCount = 0;
-        this.detectionTime = 0;
-      }
-
-      async start() {
-        this.video = document.createElement('video');
-        this.video.setAttribute('playsinline', '');
-        this.video.setAttribute('webkit-playsinline', '');
-        this.video.muted = true;
-        this.video.autoplay = true;
-
-        const constraints = {
-          video: {
-            facingMode: { ideal: this.facingMode },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        };
-
-        this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-        this.video.srcObject = this.stream;
-
-        await new Promise((resolve) => {
-          this.video.onloadedmetadata = resolve;
-        });
-
-        await this.video.play();
-        this.startRenderLoop();
-
-        return {
-          width: this.video.videoWidth,
-          height: this.video.videoHeight
-        };
-      }
-
-      startRenderLoop() {
-        const render = () => {
-          if (!this.video) return;
-
-          this.frameCount++;
-          const now = performance.now();
-          if (now - this.lastFpsTime >= 1000) {
-            this.fps = this.frameCount;
-            this.frameCount = 0;
-            this.lastFpsTime = now;
-          }
-
-          // Draw video to canvas
-          const videoAspect = this.video.videoWidth / this.video.videoHeight;
-          const canvasAspect = canvas.width / canvas.height;
-
-          let drawWidth, drawHeight, offsetX, offsetY;
-
-          if (videoAspect > canvasAspect) {
-            drawHeight = canvas.height;
-            drawWidth = canvas.height * videoAspect;
-            offsetX = (canvas.width - drawWidth) / 2;
-            offsetY = 0;
-          } else {
-            drawWidth = canvas.width;
-            drawHeight = canvas.width / videoAspect;
-            offsetX = 0;
-            offsetY = (canvas.height - drawHeight) / 2;
-          }
-
-          ctx.drawImage(this.video, offsetX, offsetY, drawWidth, drawHeight);
-
-          // Feature detection
-          if (detectFeaturesCheckbox.checked && detect_features) {
-            const startTime = performance.now();
-
-            try {
-              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const threshold = parseInt(thresholdSlider.value);
-              const keypoints = detect_features(imageData.data, canvas.width, canvas.height, threshold);
-
-              this.detectionTime = performance.now() - startTime;
-              this.featureCount = keypoints ? keypoints.length : 0;
-
-              // Draw keypoints on overlay
-              overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-
-              if (keypoints && keypoints.length > 0) {
-                overlayCtx.fillStyle = '#4ade80';
-                overlayCtx.strokeStyle = '#22c55e';
-
-                for (const kp of keypoints) {
-                  overlayCtx.beginPath();
-                  overlayCtx.arc(kp.x, kp.y, 3, 0, Math.PI * 2);
-                  overlayCtx.fill();
-
-                  if (kp.score > 40) {
-                    overlayCtx.beginPath();
-                    overlayCtx.arc(kp.x, kp.y, 6, 0, Math.PI * 2);
-                    overlayCtx.stroke();
-                  }
-                }
-              }
-            } catch (err) {
-              console.error('Feature detection error:', err);
-              this.featureCount = 0;
-              this.detectionTime = 0;
-            }
-          } else {
-            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-            this.featureCount = 0;
-            this.detectionTime = 0;
-          }
-
-          this.animationId = requestAnimationFrame(render);
-        };
-
-        this.animationId = requestAnimationFrame(render);
-      }
-
-      async switchCamera() {
-        this.facingMode = this.facingMode === 'environment' ? 'user' : 'environment';
-        this.stop();
-        return await this.start();
-      }
-
-      stop() {
-        if (this.animationId) {
-          cancelAnimationFrame(this.animationId);
-          this.animationId = null;
-        }
-        if (this.stream) {
-          this.stream.getTracks().forEach(track => track.stop());
-          this.stream = null;
-        }
-        if (this.video) {
-          this.video.srcObject = null;
-          this.video = null;
-        }
-        ctx.fillStyle = '#16213e';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-      }
-
-      getDebugInfo() {
-        return {
-          fps: this.fps,
-          facingMode: this.facingMode,
-          resolution: this.video
-            ? `${this.video.videoWidth}x${this.video.videoHeight}`
-            : '--',
-          featureCount: this.featureCount,
-          detectionTime: this.detectionTime.toFixed(1)
-        };
-      }
-    }
-
-    let camera = new CameraManager();
-    let debugInterval = null;
-
-    function setStatus(message, type = 'info') {
-      status.textContent = message;
-      status.className = type;
-    }
-
-    function updateDebug() {
-      const info = camera.getDebugInfo();
-      debug.textContent = `QUAR Engine Debug Info
-----------------------
-State: ${camera.video ? 'tracking' : 'stopped'}
-Camera: ${info.facingMode}
-FPS: ${info.fps}
-Resolution: ${info.resolution}
-Features: ${info.featureCount}
-Detection: ${info.detectionTime}ms
-Backend: ${wasmLoaded ? 'WASM' : 'JavaScript'}`;
-    }
-
-    startBtn.addEventListener('click', async () => {
-      if (!window.isSecureContext) {
-        setStatus('Camera requires HTTPS or localhost.', 'error');
-        return;
-      }
-
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus('Camera API not available.', 'error');
-        return;
-      }
-
-      try {
-        setStatus('Requesting camera access...', 'info');
-        startBtn.disabled = true;
-
-        const resolution = await camera.start();
-
-        setStatus(`Camera active: ${resolution.width}x${resolution.height}`, 'success');
-        switchBtn.disabled = false;
-        stopBtn.disabled = false;
-
-        debugInterval = setInterval(updateDebug, 500);
-
-      } catch (err) {
-        console.error('Camera error:', err);
-
-        if (err.name === 'NotAllowedError') {
-          setStatus('Camera permission denied.', 'error');
-        } else if (err.name === 'NotFoundError') {
-          setStatus('No camera found.', 'error');
-        } else {
-          setStatus(`Camera error: ${err.message}`, 'error');
-        }
-
-        startBtn.disabled = false;
-      }
-    });
-
-    switchBtn.addEventListener('click', async () => {
-      try {
-        setStatus('Switching camera...', 'info');
-        switchBtn.disabled = true;
-
-        const resolution = await camera.switchCamera();
-
-        setStatus(`Camera switched: ${resolution.width}x${resolution.height}`, 'success');
-        switchBtn.disabled = false;
-
-      } catch (err) {
-        setStatus(`Switch failed: ${err.message}`, 'error');
-        switchBtn.disabled = false;
-      }
-    });
-
-    stopBtn.addEventListener('click', () => {
-      camera.stop();
-      clearInterval(debugInterval);
-
-      setStatus('Camera stopped', 'warning');
-      startBtn.disabled = false;
-      switchBtn.disabled = true;
-      stopBtn.disabled = true;
-
-      updateDebug();
-    });
-
-    // Initialize
-    (async () => {
-      wasmLoaded = await loadWasm();
-      updateDebug();
-
-      if (!window.isSecureContext) {
-        setStatus('Not secure context - camera requires HTTPS', 'warning');
-      } else {
-        setStatus('Ready. Click "Start Camera" to begin.', 'success');
-      }
-    })();
-  </script>
 </body>
 </html>

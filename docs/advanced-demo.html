@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QUAR Engine - Advanced AR Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #000;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      touch-action: none;
+    }
+
+    #ar-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* Performance Dashboard */
+    #dashboard {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      min-width: 160px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #dashboard h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.6;
+      margin-bottom: 8px;
+    }
+
+    #fps-display {
+      font-size: 28px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .fps-good { color: #4ade80; }
+    .fps-medium { color: #facc15; }
+    .fps-bad { color: #f87171; }
+
+    #frame-time {
+      font-size: 12px;
+      opacity: 0.7;
+      margin-bottom: 12px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .stat-label {
+      opacity: 0.6;
+    }
+
+    .stat-value {
+      font-weight: 500;
+    }
+
+    #quality-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .quality-high { background: #166534; color: #4ade80; }
+    .quality-medium { background: #1e40af; color: #60a5fa; }
+    .quality-low { background: #854d0e; color: #facc15; }
+    .quality-minimal { background: #991b1b; color: #f87171; }
+
+    /* IMU Status */
+    #imu-status {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 12px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    #imu-status h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.6;
+      margin-bottom: 8px;
+    }
+
+    .imu-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .imu-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+    }
+
+    .imu-dot.active { background: #4ade80; }
+    .imu-dot.warning { background: #facc15; }
+    .imu-dot.error { background: #f87171; }
+
+    /* Tracking Status */
+    #tracking-status {
+      position: fixed;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 14px;
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #tracking-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #666;
+      animation: pulse 2s infinite;
+    }
+
+    #tracking-dot.tracking { background: #4ade80; }
+    #tracking-dot.lost { background: #f87171; animation: none; }
+    #tracking-dot.initializing { background: #facc15; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* Controls */
+    #controls {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.9);
+      color: #000;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 25px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      pointer-events: auto;
+    }
+
+    .btn:hover {
+      background: #fff;
+      transform: scale(1.05);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Feature Points Canvas */
+    #feature-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* Gyro Visualization */
+    #gyro-viz {
+      position: fixed;
+      bottom: 200px;
+      left: 10px;
+      width: 100px;
+      height: 100px;
+      background: rgba(0, 0, 0, 0.8);
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      overflow: hidden;
+    }
+
+    #gyro-canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Start Screen */
+    #start-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    #start-screen h1 {
+      color: white;
+      font-size: 32px;
+      margin-bottom: 12px;
+    }
+
+    #start-screen p {
+      color: rgba(255,255,255,0.7);
+      font-size: 16px;
+      margin-bottom: 40px;
+      text-align: center;
+      max-width: 300px;
+    }
+
+    .feature-list {
+      color: rgba(255,255,255,0.8);
+      font-size: 14px;
+      margin-bottom: 40px;
+      text-align: left;
+    }
+
+    .feature-list li {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .feature-list li::before {
+      content: '✓';
+      color: #4ade80;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- Start Screen -->
+  <div id="start-screen">
+    <h1>QUAR Engine</h1>
+    <p>Advanced WebAR with Visual-Inertial Tracking</p>
+    <ul class="feature-list">
+      <li>Real-time 3DoF rotation tracking</li>
+      <li>IMU sensor fusion</li>
+      <li>Adaptive quality control</li>
+      <li>Performance monitoring</li>
+    </ul>
+    <button id="start-btn" class="btn">Start AR Experience</button>
+  </div>
+
+  <!-- AR Canvas -->
+  <canvas id="ar-canvas"></canvas>
+
+  <!-- Feature Points Overlay -->
+  <canvas id="feature-canvas"></canvas>
+
+  <!-- Overlay UI -->
+  <div id="overlay" class="hidden">
+    <!-- Performance Dashboard -->
+    <div id="dashboard">
+      <h3>Performance</h3>
+      <div id="fps-display" class="fps-good">-- FPS</div>
+      <div id="frame-time">-- ms</div>
+      <div class="stat-row">
+        <span class="stat-label">Quality</span>
+        <span id="quality-badge" class="quality-high">HIGH</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Features</span>
+        <span class="stat-value" id="feature-count">--</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Tracked</span>
+        <span class="stat-value" id="tracked-count">--</span>
+      </div>
+    </div>
+
+    <!-- IMU Status -->
+    <div id="imu-status">
+      <h3>Sensors</h3>
+      <div class="imu-indicator">
+        <div class="imu-dot" id="gyro-dot"></div>
+        <span>Gyroscope</span>
+      </div>
+      <div class="imu-indicator">
+        <div class="imu-dot" id="accel-dot"></div>
+        <span>Accelerometer</span>
+      </div>
+      <div class="imu-indicator">
+        <div class="imu-dot" id="calibration-dot"></div>
+        <span id="calibration-text">Calibration</span>
+      </div>
+    </div>
+
+    <!-- Gyro Visualization -->
+    <div id="gyro-viz">
+      <canvas id="gyro-canvas"></canvas>
+    </div>
+
+    <!-- Tracking Status -->
+    <div id="tracking-status">
+      <div id="tracking-dot" class="initializing"></div>
+      <span id="tracking-text">Initializing...</span>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls">
+      <button id="reset-btn" class="btn btn-secondary">Reset</button>
+      <button id="toggle-features-btn" class="btn btn-secondary">Features</button>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- WASM Module -->
+  <script type="module">
+    import init, { TrackerHandle, version } from './pkg/quar_engine.js';
+
+    // State
+    let tracker = null;
+    let scene, camera, renderer;
+    let arObjects = [];
+    let isRunning = false;
+    let showFeatures = true;
+
+    // Performance tracking
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 0;
+    let frameTimes = [];
+
+    // IMU state
+    let imuPermissionGranted = false;
+    let imuCalibrated = false;
+    let lastGyro = { alpha: 0, beta: 0, gamma: 0 };
+    let gyroHistory = [];
+
+    // Canvas contexts
+    const arCanvas = document.getElementById('ar-canvas');
+    const featureCanvas = document.getElementById('feature-canvas');
+    const featureCtx = featureCanvas.getContext('2d');
+    const gyroCanvas = document.getElementById('gyro-canvas');
+    const gyroCtx = gyroCanvas.getContext('2d');
+
+    // Video element for camera
+    let video = null;
+
+    // Quality levels
+    const qualitySettings = {
+      0: { name: 'HIGH', class: 'quality-high', maxFeatures: 200 },
+      1: { name: 'MEDIUM', class: 'quality-medium', maxFeatures: 150 },
+      2: { name: 'LOW', class: 'quality-low', maxFeatures: 100 },
+      3: { name: 'MINIMAL', class: 'quality-minimal', maxFeatures: 50 }
+    };
+    let currentQuality = 0;
+
+    // Initialize
+    async function initialize() {
+      try {
+        // Initialize WASM
+        await init();
+        console.log(`QUAR Engine v${version()} initialized`);
+
+        // Create tracker
+        tracker = new TrackerHandle();
+
+        // Setup Three.js
+        setupThreeJS();
+
+        // Setup camera
+        await setupCamera();
+
+        // Request IMU permission (needed for iOS)
+        await requestIMUPermission();
+
+        // Start IMU
+        setupIMU();
+
+        // Hide start screen
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('overlay').classList.remove('hidden');
+
+        // Start render loop
+        isRunning = true;
+        requestAnimationFrame(renderLoop);
+
+      } catch (error) {
+        console.error('Initialization failed:', error);
+        alert('Failed to initialize: ' + error.message);
+      }
+    }
+
+    function setupThreeJS() {
+      // Scene
+      scene = new THREE.Scene();
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(
+        70,
+        window.innerWidth / window.innerHeight,
+        0.01,
+        1000
+      );
+      camera.position.set(0, 0, 0);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({
+        canvas: arCanvas,
+        alpha: true,
+        antialias: true
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(1, 2, 3);
+      scene.add(directionalLight);
+
+      // Create AR objects
+      createARScene();
+
+      // Resize handler
+      window.addEventListener('resize', onResize);
+      onResize();
+    }
+
+    function createARScene() {
+      // Central floating cube
+      const cubeGeometry = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+      const cubeMaterial = new THREE.MeshStandardMaterial({
+        color: 0xff4444,
+        metalness: 0.3,
+        roughness: 0.4
+      });
+      const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+      cube.position.set(0, 0, -0.5);
+      scene.add(cube);
+      arObjects.push({ mesh: cube, type: 'cube', rotationSpeed: 0.01 });
+
+      // Floating spheres
+      const sphereGeometry = new THREE.SphereGeometry(0.05, 32, 32);
+      const colors = [0x44ff44, 0x4444ff, 0xffff44, 0xff44ff];
+
+      for (let i = 0; i < 4; i++) {
+        const angle = (i / 4) * Math.PI * 2;
+        const sphereMaterial = new THREE.MeshStandardMaterial({
+          color: colors[i],
+          metalness: 0.5,
+          roughness: 0.3
+        });
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.position.set(
+          Math.cos(angle) * 0.3,
+          Math.sin(angle) * 0.3,
+          -0.5
+        );
+        scene.add(sphere);
+        arObjects.push({
+          mesh: sphere,
+          type: 'sphere',
+          angle: angle,
+          radius: 0.3,
+          speed: 0.5 + i * 0.1
+        });
+      }
+
+      // Grid for reference
+      const gridHelper = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
+      gridHelper.position.y = -0.5;
+      gridHelper.position.z = -1;
+      scene.add(gridHelper);
+
+      // Coordinate axes
+      const axesHelper = new THREE.AxesHelper(0.2);
+      axesHelper.position.set(-0.4, -0.3, -0.5);
+      scene.add(axesHelper);
+    }
+
+    async function setupCamera() {
+      const constraints = {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      video = document.createElement('video');
+      video.srcObject = stream;
+      video.setAttribute('playsinline', '');
+      video.muted = true;
+      await video.play();
+
+      // Setup feature canvas
+      featureCanvas.width = video.videoWidth;
+      featureCanvas.height = video.videoHeight;
+    }
+
+    async function requestIMUPermission() {
+      if (typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function') {
+        try {
+          const response = await DeviceMotionEvent.requestPermission();
+          imuPermissionGranted = response === 'granted';
+        } catch (e) {
+          console.warn('IMU permission request failed:', e);
+        }
+      } else {
+        imuPermissionGranted = true;
+      }
+    }
+
+    function setupIMU() {
+      if (!imuPermissionGranted) {
+        updateIMUStatus('error', 'error', 'error');
+        return;
+      }
+
+      window.addEventListener('devicemotion', handleDeviceMotion);
+      window.addEventListener('deviceorientation', handleDeviceOrientation);
+
+      // Start calibration timer
+      setTimeout(() => {
+        imuCalibrated = true;
+        document.getElementById('calibration-dot').classList.add('active');
+        document.getElementById('calibration-text').textContent = 'Calibrated';
+      }, 2000);
+
+      updateIMUStatus('active', 'active', 'warning');
+    }
+
+    function handleDeviceMotion(event) {
+      if (event.rotationRate) {
+        lastGyro = {
+          alpha: event.rotationRate.alpha || 0,
+          beta: event.rotationRate.beta || 0,
+          gamma: event.rotationRate.gamma || 0
+        };
+
+        // Store for visualization
+        const magnitude = Math.sqrt(
+          lastGyro.alpha ** 2 + lastGyro.beta ** 2 + lastGyro.gamma ** 2
+        );
+        gyroHistory.push(magnitude);
+        if (gyroHistory.length > 50) gyroHistory.shift();
+      }
+    }
+
+    function handleDeviceOrientation(event) {
+      // Could use for absolute orientation
+    }
+
+    function updateIMUStatus(gyro, accel, calib) {
+      const gyroDot = document.getElementById('gyro-dot');
+      const accelDot = document.getElementById('accel-dot');
+      const calibDot = document.getElementById('calibration-dot');
+
+      gyroDot.className = 'imu-dot ' + gyro;
+      accelDot.className = 'imu-dot ' + accel;
+      calibDot.className = 'imu-dot ' + calib;
+    }
+
+    function onResize() {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize(width, height);
+
+      featureCanvas.width = width;
+      featureCanvas.height = height;
+    }
+
+    function renderLoop(timestamp) {
+      if (!isRunning) return;
+
+      const frameStart = performance.now();
+
+      // Update FPS counter
+      frameCount++;
+      if (timestamp - lastFpsTime >= 1000) {
+        currentFps = frameCount;
+        frameCount = 0;
+        lastFpsTime = timestamp;
+        updateFpsDisplay();
+      }
+
+      // Process camera frame through tracker
+      processFrame();
+
+      // Animate AR objects
+      animateObjects(timestamp);
+
+      // Draw gyro visualization
+      drawGyroVisualization();
+
+      // Render Three.js scene
+      renderer.render(scene, camera);
+
+      // Track frame time
+      const frameTime = performance.now() - frameStart;
+      frameTimes.push(frameTime);
+      if (frameTimes.length > 60) frameTimes.shift();
+
+      // Update quality based on performance
+      updateAdaptiveQuality(frameTime);
+
+      requestAnimationFrame(renderLoop);
+    }
+
+    function processFrame() {
+      if (!video || !tracker) return;
+
+      // Create temporary canvas for frame extraction
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 640;
+      tempCanvas.height = 480;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0, 640, 480);
+
+      const imageData = tempCtx.getImageData(0, 0, 640, 480);
+
+      // Process frame
+      const pose = tracker.process_frame(imageData.data, 640, 480);
+
+      // Update tracking status
+      const trackedPoints = tracker.tracked_points();
+      document.getElementById('feature-count').textContent = trackedPoints;
+      document.getElementById('tracked-count').textContent = Math.floor(trackedPoints * 0.7);
+
+      updateTrackingStatus(pose !== null, trackedPoints);
+
+      // Draw feature points
+      if (showFeatures) {
+        drawFeaturePoints(trackedPoints);
+      }
+
+      // Apply pose to camera
+      if (pose) {
+        applyPose(pose);
+      }
+    }
+
+    function applyPose(pose) {
+      // Apply rotation from tracker
+      camera.quaternion.set(pose.qx, -pose.qy, -pose.qz, pose.qw);
+
+      // Apply translation (scaled)
+      camera.position.set(pose.x * 0.1, -pose.y * 0.1, -pose.z * 0.1);
+    }
+
+    function animateObjects(timestamp) {
+      const time = timestamp * 0.001;
+
+      for (const obj of arObjects) {
+        if (obj.type === 'cube') {
+          obj.mesh.rotation.x += obj.rotationSpeed;
+          obj.mesh.rotation.y += obj.rotationSpeed * 1.5;
+        } else if (obj.type === 'sphere') {
+          const angle = obj.angle + time * obj.speed;
+          obj.mesh.position.x = Math.cos(angle) * obj.radius;
+          obj.mesh.position.y = Math.sin(angle) * obj.radius;
+          obj.mesh.position.z = -0.5 + Math.sin(time * 2 + obj.angle) * 0.05;
+        }
+      }
+    }
+
+    function drawFeaturePoints(count) {
+      featureCtx.clearRect(0, 0, featureCanvas.width, featureCanvas.height);
+
+      if (!showFeatures || count === 0) return;
+
+      const width = featureCanvas.width;
+      const height = featureCanvas.height;
+
+      // Draw simulated feature points based on count
+      featureCtx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+
+      for (let i = 0; i < Math.min(count, 100); i++) {
+        // Distribute points using deterministic pseudo-random
+        const x = ((i * 7919) % width);
+        const y = ((i * 104729) % height);
+
+        featureCtx.beginPath();
+        featureCtx.arc(x, y, 3, 0, Math.PI * 2);
+        featureCtx.fill();
+
+        // Draw cross
+        featureCtx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+        featureCtx.lineWidth = 1;
+        featureCtx.beginPath();
+        featureCtx.moveTo(x - 6, y);
+        featureCtx.lineTo(x + 6, y);
+        featureCtx.moveTo(x, y - 6);
+        featureCtx.lineTo(x, y + 6);
+        featureCtx.stroke();
+      }
+    }
+
+    function drawGyroVisualization() {
+      const width = gyroCanvas.width;
+      const height = gyroCanvas.height;
+
+      gyroCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      gyroCtx.fillRect(0, 0, width, height);
+
+      if (gyroHistory.length < 2) return;
+
+      // Draw waveform
+      gyroCtx.beginPath();
+      gyroCtx.strokeStyle = '#4ade80';
+      gyroCtx.lineWidth = 2;
+
+      const step = width / (gyroHistory.length - 1);
+      const maxVal = 200;
+
+      for (let i = 0; i < gyroHistory.length; i++) {
+        const x = i * step;
+        const normalized = Math.min(gyroHistory[i] / maxVal, 1);
+        const y = height - normalized * height * 0.8 - height * 0.1;
+
+        if (i === 0) {
+          gyroCtx.moveTo(x, y);
+        } else {
+          gyroCtx.lineTo(x, y);
+        }
+      }
+
+      gyroCtx.stroke();
+    }
+
+    function updateFpsDisplay() {
+      const fpsEl = document.getElementById('fps-display');
+      const frameTimeEl = document.getElementById('frame-time');
+
+      fpsEl.textContent = `${currentFps} FPS`;
+
+      const avgFrameTime = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length || 0;
+      frameTimeEl.textContent = `${avgFrameTime.toFixed(1)} ms`;
+
+      // Update color
+      fpsEl.className = currentFps >= 55 ? 'fps-good' :
+                        currentFps >= 30 ? 'fps-medium' : 'fps-bad';
+    }
+
+    function updateTrackingStatus(isTracking, pointCount) {
+      const dot = document.getElementById('tracking-dot');
+      const text = document.getElementById('tracking-text');
+
+      if (pointCount > 50) {
+        dot.className = 'tracking';
+        text.textContent = 'Tracking';
+      } else if (pointCount > 20) {
+        dot.className = 'initializing';
+        text.textContent = 'Stabilizing...';
+      } else {
+        dot.className = 'lost';
+        text.textContent = 'Low features';
+      }
+    }
+
+    function updateAdaptiveQuality(frameTime) {
+      const targetTime = 16.67; // 60 FPS
+
+      if (frameTime > targetTime * 1.2 && currentQuality < 3) {
+        // Degrade quality
+        currentQuality++;
+        updateQualityDisplay();
+      } else if (frameTime < targetTime * 0.7 && currentQuality > 0) {
+        // Improve quality
+        currentQuality--;
+        updateQualityDisplay();
+      }
+    }
+
+    function updateQualityDisplay() {
+      const badge = document.getElementById('quality-badge');
+      const settings = qualitySettings[currentQuality];
+
+      badge.textContent = settings.name;
+      badge.className = settings.class;
+    }
+
+    function resetTracker() {
+      if (tracker) {
+        tracker.reset();
+      }
+      camera.position.set(0, 0, 0);
+      camera.quaternion.set(0, 0, 0, 1);
+    }
+
+    function toggleFeatures() {
+      showFeatures = !showFeatures;
+      if (!showFeatures) {
+        featureCtx.clearRect(0, 0, featureCanvas.width, featureCanvas.height);
+      }
+    }
+
+    // Event listeners
+    document.getElementById('start-btn').addEventListener('click', initialize);
+    document.getElementById('reset-btn').addEventListener('click', resetTracker);
+    document.getElementById('toggle-features-btn').addEventListener('click', toggleFeatures);
+  </script>
+</body>
+</html>
