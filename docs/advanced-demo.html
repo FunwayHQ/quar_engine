@@ -18,12 +18,22 @@
       touch-action: none;
     }
 
+    #video-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
     #ar-canvas {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
+      z-index: 2;
     }
 
     #overlay {
@@ -314,6 +324,9 @@
     <button id="start-btn" class="btn">Start AR Experience</button>
   </div>
 
+  <!-- Video Background Canvas -->
+  <canvas id="video-canvas"></canvas>
+
   <!-- AR Canvas -->
   <canvas id="ar-canvas"></canvas>
 
@@ -403,6 +416,8 @@
     let gyroHistory = [];
 
     // Canvas contexts
+    const videoCanvas = document.getElementById('video-canvas');
+    const videoCtx = videoCanvas.getContext('2d');
     const arCanvas = document.getElementById('ar-canvas');
     const featureCanvas = document.getElementById('feature-canvas');
     const featureCtx = featureCanvas.getContext('2d');
@@ -642,14 +657,42 @@
 
       renderer.setSize(width, height);
 
+      videoCanvas.width = width;
+      videoCanvas.height = height;
       featureCanvas.width = width;
       featureCanvas.height = height;
+    }
+
+    function drawVideo() {
+      if (!video || video.readyState < 2) return;
+
+      const videoAspect = video.videoWidth / video.videoHeight;
+      const canvasAspect = videoCanvas.width / videoCanvas.height;
+
+      let drawWidth, drawHeight, offsetX, offsetY;
+
+      if (videoAspect > canvasAspect) {
+        drawHeight = videoCanvas.height;
+        drawWidth = videoCanvas.height * videoAspect;
+        offsetX = (videoCanvas.width - drawWidth) / 2;
+        offsetY = 0;
+      } else {
+        drawWidth = videoCanvas.width;
+        drawHeight = videoCanvas.width / videoAspect;
+        offsetX = 0;
+        offsetY = (videoCanvas.height - drawHeight) / 2;
+      }
+
+      videoCtx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
     }
 
     function renderLoop(timestamp) {
       if (!isRunning) return;
 
       const frameStart = performance.now();
+
+      // Draw camera feed
+      drawVideo();
 
       // Update FPS counter
       frameCount++;
