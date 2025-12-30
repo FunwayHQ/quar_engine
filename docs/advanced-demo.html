@@ -409,9 +409,9 @@
             stateEl.style.color = '#4ade80';
 
             // Get quaternion directly from tracker
-            // Swap axes: tracker [x,y,z,w] -> Three.js [y,x,z,w]
+            // Swap axes: tracker [x,y,z,w] -> Three.js [x,z,y,w]
             const q = pose.rotation;
-            const targetQuat = new THREE.Quaternion(q[1], q[0], q[2], q[3]);
+            const targetQuat = new THREE.Quaternion(q[0], q[2], q[1], q[3]);
 
             // Smooth the quaternion using SLERP
             smoothedQuat.slerp(targetQuat, smoothingFactor);
