@@ -409,9 +409,15 @@
             stateEl.style.color = '#4ade80';
 
             // Get quaternion directly from tracker
-            // Swap axes and invert: tracker [x,y,z,w] -> Three.js [-x,-z,-y,w]
+            // Swap axes, invert horizontal, keep vertical: [x,-z,-y,w]
             const q = pose.rotation;
-            const targetQuat = new THREE.Quaternion(-q[0], -q[2], -q[1], q[3]);
+            const sensitivity = 0.7;
+            const targetQuat = new THREE.Quaternion(
+              q[0] * sensitivity,    // pitch (up/down) - not inverted
+              -q[2] * sensitivity,   // yaw (left/right) - inverted
+              -q[1] * sensitivity,   // roll
+              q[3]
+            );
 
             // Smooth the quaternion using SLERP
             smoothedQuat.slerp(targetQuat, smoothingFactor);
