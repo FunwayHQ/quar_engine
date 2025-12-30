@@ -5,378 +5,176 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>QUAR Engine - Advanced AR Demo</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: #000;
-      overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      touch-action: none;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
     }
 
-    #ar-canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+    /* EXACT same structure as basic demo */
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
     }
-
-    #overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+    #video-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #three-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       pointer-events: none;
+    }
+
+    /* HUD Panel */
+    #hud {
+      position: absolute;
+      top: 20px; left: 20px;
+      background: rgba(0,0,0,0.7);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 14px;
       z-index: 100;
     }
-
-    /* Performance Dashboard */
-    #dashboard {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 13px;
-      min-width: 160px;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.1);
+    #hud h2 {
+      color: #4cc9f0;
+      margin-bottom: 10px;
+      font-size: 16px;
     }
+    .stat { margin: 5px 0; }
+    .stat-label { color: #888; }
+    .stat-value { color: #4ade80; }
 
-    #dashboard h3 {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      opacity: 0.6;
-      margin-bottom: 8px;
+    /* IMU Panel */
+    #imu-panel {
+      position: absolute;
+      top: 20px; right: 20px;
+      background: rgba(0,0,0,0.7);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 100;
     }
-
-    #fps-display {
-      font-size: 28px;
-      font-weight: bold;
-      margin-bottom: 4px;
+    #imu-panel h3 {
+      color: #4cc9f0;
+      margin-bottom: 10px;
+      font-size: 14px;
     }
-
-    .fps-good { color: #4ade80; }
-    .fps-medium { color: #facc15; }
-    .fps-bad { color: #f87171; }
-
-    #frame-time {
-      font-size: 12px;
-      opacity: 0.7;
-      margin-bottom: 12px;
-    }
-
-    .stat-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 6px;
-      font-size: 12px;
-    }
-
-    .stat-label {
-      opacity: 0.6;
-    }
-
-    .stat-value {
-      font-weight: 500;
-    }
-
-    #quality-badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: bold;
-    }
-
-    .quality-high { background: #166534; color: #4ade80; }
-    .quality-medium { background: #1e40af; color: #60a5fa; }
-    .quality-low { background: #854d0e; color: #facc15; }
-    .quality-minimal { background: #991b1b; color: #f87171; }
-
-    /* IMU Status */
-    #imu-status {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 12px;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.1);
-    }
-
-    #imu-status h3 {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      opacity: 0.6;
-      margin-bottom: 8px;
-    }
-
-    .imu-indicator {
+    .imu-row {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 6px;
+      margin: 6px 0;
     }
-
     .imu-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #666;
-    }
-
-    .imu-dot.active { background: #4ade80; }
-    .imu-dot.warning { background: #facc15; }
-    .imu-dot.error { background: #f87171; }
-
-    /* Tracking Status */
-    #tracking-status {
-      position: fixed;
-      bottom: 120px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.8);
-      color: white;
-      padding: 10px 20px;
-      border-radius: 20px;
-      font-size: 14px;
-      backdrop-filter: blur(10px);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    #tracking-dot {
       width: 10px;
       height: 10px;
       border-radius: 50%;
       background: #666;
-      animation: pulse 2s infinite;
     }
-
-    #tracking-dot.tracking { background: #4ade80; }
-    #tracking-dot.lost { background: #f87171; animation: none; }
-    #tracking-dot.initializing { background: #facc15; }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
+    .imu-dot.active { background: #4ade80; }
+    .imu-dot.warning { background: #facc15; }
+    .imu-dot.error { background: #f87171; }
 
     /* Controls */
     #controls {
-      position: fixed;
-      bottom: 30px;
-      left: 50%;
+      position: absolute;
+      bottom: 40px; left: 50%;
       transform: translateX(-50%);
       display: flex;
-      gap: 12px;
-      pointer-events: auto;
+      gap: 10px;
+      z-index: 100;
     }
-
-    .btn {
-      background: rgba(255, 255, 255, 0.9);
-      color: #000;
+    button {
+      padding: 12px 25px;
+      background: #4cc9f0;
+      color: #1a1a2e;
       border: none;
-      padding: 14px 28px;
-      border-radius: 25px;
-      font-size: 16px;
+      border-radius: 6px;
+      font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s;
-      pointer-events: auto;
     }
+    button:hover { background: #7dd3fc; }
+    button:disabled { background: #4b5563; cursor: not-allowed; }
 
-    .btn:hover {
-      background: #fff;
-      transform: scale(1.05);
-    }
-
-    .btn:active {
-      transform: scale(0.98);
-    }
-
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.2);
-      color: #fff;
-    }
-
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.3);
-    }
-
-    /* Feature Points Canvas */
-    #feature-canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-
-    /* Gyro Visualization */
-    #gyro-viz {
-      position: fixed;
-      bottom: 200px;
-      left: 10px;
-      width: 100px;
-      height: 100px;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.1);
-      overflow: hidden;
-    }
-
-    #gyro-canvas {
-      width: 100%;
-      height: 100%;
-    }
-
-    /* Start Screen */
-    #start-screen {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+    /* Start overlay */
+    #start-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      z-index: 1000;
+      z-index: 200;
     }
-
-    #start-screen h1 {
-      color: white;
+    #start-overlay h1 {
       font-size: 32px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
-
-    #start-screen p {
-      color: rgba(255,255,255,0.7);
-      font-size: 16px;
-      margin-bottom: 40px;
-      text-align: center;
-      max-width: 300px;
+    #start-overlay p {
+      color: #888;
+      margin-bottom: 30px;
     }
-
-    .feature-list {
-      color: rgba(255,255,255,0.8);
-      font-size: 14px;
-      margin-bottom: 40px;
-      text-align: left;
-    }
-
-    .feature-list li {
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .feature-list li::before {
-      content: '✓';
-      color: #4ade80;
-    }
-
-    .hidden {
-      display: none !important;
-    }
+    #start-overlay.hidden { display: none; }
   </style>
 </head>
 <body>
-  <!-- Start Screen -->
-  <div id="start-screen">
-    <h1>QUAR Engine</h1>
-    <p>Advanced WebAR with Visual-Inertial Tracking</p>
-    <ul class="feature-list">
-      <li>Real-time 3DoF rotation tracking</li>
-      <li>IMU sensor fusion</li>
-      <li>Adaptive quality control</li>
-      <li>Performance monitoring</li>
-    </ul>
-    <button id="start-btn" class="btn">Start AR Experience</button>
-  </div>
+  <div id="container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="three-canvas"></canvas>
 
-  <!-- Single AR Canvas - video will be rendered as background texture -->
-  <canvas id="ar-canvas"></canvas>
-
-  <!-- Feature Points Overlay -->
-  <canvas id="feature-canvas"></canvas>
-
-  <!-- Overlay UI -->
-  <div id="overlay" class="hidden">
-    <!-- Performance Dashboard -->
-    <div id="dashboard">
-      <h3>Performance</h3>
-      <div id="fps-display" class="fps-good">-- FPS</div>
-      <div id="frame-time">-- ms</div>
-      <div class="stat-row">
-        <span class="stat-label">Quality</span>
-        <span id="quality-badge" class="quality-high">HIGH</span>
+    <div id="hud">
+      <h2>Advanced AR</h2>
+      <div class="stat">
+        <span class="stat-label">FPS: </span>
+        <span class="stat-value" id="fps">--</span>
       </div>
-      <div class="stat-row">
-        <span class="stat-label">Features</span>
-        <span class="stat-value" id="feature-count">--</span>
+      <div class="stat">
+        <span class="stat-label">Features: </span>
+        <span class="stat-value" id="features">--</span>
       </div>
-      <div class="stat-row">
-        <span class="stat-label">Tracked</span>
-        <span class="stat-value" id="tracked-count">--</span>
+      <div class="stat">
+        <span class="stat-label">State: </span>
+        <span class="stat-value" id="state">initializing</span>
       </div>
     </div>
 
-    <!-- IMU Status -->
-    <div id="imu-status">
-      <h3>Sensors</h3>
-      <div class="imu-indicator">
+    <div id="imu-panel">
+      <h3>IMU Sensors</h3>
+      <div class="imu-row">
         <div class="imu-dot" id="gyro-dot"></div>
         <span>Gyroscope</span>
       </div>
-      <div class="imu-indicator">
+      <div class="imu-row">
         <div class="imu-dot" id="accel-dot"></div>
         <span>Accelerometer</span>
       </div>
-      <div class="imu-indicator">
-        <div class="imu-dot" id="calibration-dot"></div>
-        <span id="calibration-text">Calibration</span>
+      <div class="imu-row">
+        <div class="imu-dot" id="calib-dot"></div>
+        <span id="calib-text">Calibration</span>
       </div>
     </div>
 
-    <!-- Gyro Visualization -->
-    <div id="gyro-viz">
-      <canvas id="gyro-canvas"></canvas>
-    </div>
-
-    <!-- Tracking Status -->
-    <div id="tracking-status">
-      <div id="tracking-dot" class="initializing"></div>
-      <span id="tracking-text">Initializing...</span>
-    </div>
-
-    <!-- Controls -->
     <div id="controls">
-      <button id="reset-btn" class="btn btn-secondary">Reset</button>
-      <button id="toggle-features-btn" class="btn btn-secondary">Features</button>
+      <button id="reset-btn" disabled>Reset</button>
+    </div>
+
+    <div id="start-overlay">
+      <h1>QUAR Engine</h1>
+      <p>Advanced AR with IMU Fusion</p>
+      <button id="start-btn">Start AR</button>
     </div>
   </div>
 
-  <!-- Three.js (same version as basic demo) -->
   <script type="importmap">
   {
     "imports": {
@@ -385,181 +183,116 @@
   }
   </script>
 
-  <!-- WASM Module -->
   <script type="module">
     import * as THREE from 'three';
     import init, { TrackerHandle, version } from './pkg/quar_engine.js';
 
+    // DOM elements
+    const videoCanvas = document.getElementById('video-canvas');
+    const threeCanvas = document.getElementById('three-canvas');
+    const startOverlay = document.getElementById('start-overlay');
+    const startBtn = document.getElementById('start-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const fpsEl = document.getElementById('fps');
+    const featuresEl = document.getElementById('features');
+    const stateEl = document.getElementById('state');
+    const gyroDot = document.getElementById('gyro-dot');
+    const accelDot = document.getElementById('accel-dot');
+    const calibDot = document.getElementById('calib-dot');
+    const calibText = document.getElementById('calib-text');
+
+    const videoCtx = videoCanvas.getContext('2d');
+
+    // Three.js
+    let scene, camera, renderer, cube;
+
     // State
-    let tracker = null;
-    let scene, camera, renderer;
-    let arObjects = [];
+    let wasmModule = null;
+    let trackerHandle = null;
+    let video = null;
+    let stream = null;
+    let animationId = null;
     let isRunning = false;
-    let showFeatures = true;
 
-    // Performance tracking
+    // FPS
     let frameCount = 0;
-    let lastFpsTime = performance.now();
-    let currentFps = 0;
-    let frameTimes = [];
+    let lastFpsTime = 0;
 
-    // IMU state
-    let imuPermissionGranted = false;
-    let imuCalibrated = false;
+    // IMU
     let imuDataReceived = false;
     let gyroActive = false;
     let accelActive = false;
-    let lastGyro = { alpha: 0, beta: 0, gamma: 0 };
-    let gyroHistory = [];
 
-    // Canvas contexts
-    const arCanvas = document.getElementById('ar-canvas');
-    const featureCanvas = document.getElementById('feature-canvas');
-    const featureCtx = featureCanvas.getContext('2d');
-    const gyroCanvas = document.getElementById('gyro-canvas');
-    const gyroCtx = gyroCanvas.getContext('2d');
-
-    // Video element for camera
-    let video = null;
-    let videoTexture = null;
-
-    // Quality levels
-    const qualitySettings = {
-      0: { name: 'HIGH', class: 'quality-high', maxFeatures: 200 },
-      1: { name: 'MEDIUM', class: 'quality-medium', maxFeatures: 150 },
-      2: { name: 'LOW', class: 'quality-low', maxFeatures: 100 },
-      3: { name: 'MINIMAL', class: 'quality-minimal', maxFeatures: 50 }
-    };
-    let currentQuality = 0;
-
-    // Initialize
-    async function initialize() {
-      try {
-        // IMPORTANT: Request IMU permission FIRST, before any await
-        // iOS requires this to be in direct response to user gesture
-        await requestIMUPermission();
-
-        // Initialize WASM
-        await init();
-        console.log(`QUAR Engine v${version()} initialized`);
-
-        // Create tracker
-        tracker = new TrackerHandle();
-
-        // Setup Three.js
-        setupThreeJS();
-
-        // Setup camera
-        await setupCamera();
-
-        // Start IMU (after permission granted)
-        setupIMU();
-
-        // Hide start screen
-        document.getElementById('start-screen').classList.add('hidden');
-        document.getElementById('overlay').classList.remove('hidden');
-
-        // Ensure feature canvas is sized
-        featureCanvas.width = window.innerWidth;
-        featureCanvas.height = window.innerHeight;
-
-        // Start render loop
-        isRunning = true;
-        requestAnimationFrame(renderLoop);
-
-      } catch (error) {
-        console.error('Initialization failed:', error);
-        alert('Failed to initialize: ' + error.message);
-      }
+    async function loadWasm() {
+      await init();
+      trackerHandle = new TrackerHandle();
+      console.log('WASM loaded:', version());
     }
 
-    function setupThreeJS() {
-      // Scene
+    function initThreeJS() {
       scene = new THREE.Scene();
 
-      // Camera
       camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(0, 0, 3);
 
-      // Renderer - NO alpha, we'll use video texture as background
       renderer = new THREE.WebGLRenderer({
-        canvas: arCanvas,
+        canvas: threeCanvas,
+        alpha: true,
         antialias: true
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x000000, 0);
 
-      // Lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-      scene.add(ambientLight);
-
-      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-      directionalLight.position.set(5, 5, 5);
-      scene.add(directionalLight);
-
-      const backLight = new THREE.DirectionalLight(0x4cc9f0, 0.3);
-      backLight.position.set(-5, -5, -5);
-      scene.add(backLight);
-
-      // Create AR objects
-      createARScene();
-
-      // Resize handler
-      window.addEventListener('resize', onResize);
-    }
-
-    function createARScene() {
-      // Red cube with proper material
+      // Cube
       const geometry = new THREE.BoxGeometry(1, 1, 1);
       const material = new THREE.MeshStandardMaterial({
         color: 0xff3333,
         roughness: 0.4,
         metalness: 0.3
       });
-      const cube = new THREE.Mesh(geometry, material);
+      cube = new THREE.Mesh(geometry, material);
       scene.add(cube);
-      arObjects.push({ mesh: cube, type: 'cube', rotationSpeed: 0.02 });
 
-      // Add white edges for visibility
+      // Edges
       const edges = new THREE.EdgesGeometry(geometry);
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
-      const wireframe = new THREE.LineSegments(edges, lineMaterial);
-      cube.add(wireframe);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+      cube.add(new THREE.LineSegments(edges, lineMat));
+
+      // Lights
+      scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+      dirLight.position.set(5, 5, 5);
+      scene.add(dirLight);
+
+      window.addEventListener('resize', onResize);
     }
 
-    async function setupCamera() {
-      const constraints = {
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      };
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      videoCanvas.width = window.innerWidth;
+      videoCanvas.height = window.innerHeight;
+    }
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-
+    async function startCamera() {
       video = document.createElement('video');
-      video.srcObject = stream;
       video.setAttribute('playsinline', '');
       video.muted = true;
       video.autoplay = true;
 
-      // Wait for video metadata to load
-      await new Promise(resolve => {
-        video.onloadedmetadata = resolve;
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
       });
+      video.srcObject = stream;
 
+      await new Promise(r => { video.onloadedmetadata = r; });
       await video.play();
 
-      // Create video texture for Three.js background
-      videoTexture = new THREE.VideoTexture(video);
-      videoTexture.minFilter = THREE.LinearFilter;
-      videoTexture.magFilter = THREE.LinearFilter;
-      scene.background = videoTexture;
-
-      // Setup feature canvas
-      featureCanvas.width = video.videoWidth;
-      featureCanvas.height = video.videoHeight;
+      videoCanvas.width = window.innerWidth;
+      videoCanvas.height = window.innerHeight;
     }
 
     async function requestIMUPermission() {
@@ -567,347 +300,144 @@
           typeof DeviceMotionEvent.requestPermission === 'function') {
         try {
           const response = await DeviceMotionEvent.requestPermission();
-          imuPermissionGranted = response === 'granted';
+          return response === 'granted';
         } catch (e) {
-          console.warn('IMU permission request failed:', e);
+          return false;
         }
-      } else {
-        imuPermissionGranted = true;
       }
+      return true;
     }
 
     function setupIMU() {
-      if (!imuPermissionGranted) {
-        updateIMUStatus('error', 'error', 'error');
-        document.getElementById('calibration-text').textContent = 'Permission denied';
-        return;
-      }
+      gyroDot.classList.add('warning');
+      accelDot.classList.add('warning');
+      calibDot.classList.add('warning');
+      calibText.textContent = 'Waiting...';
 
-      window.addEventListener('devicemotion', handleDeviceMotion);
-      window.addEventListener('deviceorientation', handleDeviceOrientation);
+      window.addEventListener('devicemotion', (e) => {
+        if (e.rotationRate && (e.rotationRate.alpha !== null || e.rotationRate.beta !== null)) {
+          if (!gyroActive) {
+            gyroActive = true;
+            gyroDot.className = 'imu-dot active';
+          }
+        }
+        if (e.accelerationIncludingGravity && e.accelerationIncludingGravity.x !== null) {
+          if (!accelActive) {
+            accelActive = true;
+            accelDot.className = 'imu-dot active';
+          }
+        }
+        if ((gyroActive || accelActive) && !imuDataReceived) {
+          imuDataReceived = true;
+          calibDot.className = 'imu-dot warning';
+          calibText.textContent = 'Calibrating...';
+          setTimeout(() => {
+            calibDot.className = 'imu-dot active';
+            calibText.textContent = 'Calibrated';
+          }, 2000);
+        }
+      });
 
-      // Initially show as waiting for data
-      updateIMUStatus('warning', 'warning', 'warning');
-      document.getElementById('calibration-text').textContent = 'Waiting for sensors...';
-
-      // Check if we received data after timeout
       setTimeout(() => {
         if (!imuDataReceived) {
-          // No sensor data - probably desktop/laptop
-          updateIMUStatus('error', 'error', 'error');
-          document.getElementById('calibration-text').textContent = 'No sensors detected';
+          gyroDot.className = 'imu-dot error';
+          accelDot.className = 'imu-dot error';
+          calibDot.className = 'imu-dot error';
+          calibText.textContent = 'No sensors';
         }
       }, 3000);
     }
 
-    function handleDeviceMotion(event) {
-      // Check for gyroscope data
-      if (event.rotationRate) {
-        const alpha = event.rotationRate.alpha;
-        const beta = event.rotationRate.beta;
-        const gamma = event.rotationRate.gamma;
-
-        // Check if we have actual data (not null/undefined)
-        if (alpha !== null || beta !== null || gamma !== null) {
-          if (!gyroActive) {
-            gyroActive = true;
-            document.getElementById('gyro-dot').className = 'imu-dot active';
-          }
-
-          lastGyro = {
-            alpha: alpha || 0,
-            beta: beta || 0,
-            gamma: gamma || 0
-          };
-
-          // Store for visualization
-          const magnitude = Math.sqrt(
-            lastGyro.alpha ** 2 + lastGyro.beta ** 2 + lastGyro.gamma ** 2
-          );
-          gyroHistory.push(magnitude);
-          if (gyroHistory.length > 50) gyroHistory.shift();
-        }
-      }
-
-      // Check for accelerometer data
-      if (event.accelerationIncludingGravity) {
-        const x = event.accelerationIncludingGravity.x;
-        const y = event.accelerationIncludingGravity.y;
-        const z = event.accelerationIncludingGravity.z;
-
-        if (x !== null || y !== null || z !== null) {
-          if (!accelActive) {
-            accelActive = true;
-            document.getElementById('accel-dot').className = 'imu-dot active';
-          }
-        }
-      }
-
-      // Mark data received and start calibration
-      if ((gyroActive || accelActive) && !imuDataReceived) {
-        imuDataReceived = true;
-        document.getElementById('calibration-dot').className = 'imu-dot warning';
-        document.getElementById('calibration-text').textContent = 'Calibrating...';
-
-        // Calibration complete after 2 seconds of data
-        setTimeout(() => {
-          if (imuDataReceived) {
-            imuCalibrated = true;
-            document.getElementById('calibration-dot').className = 'imu-dot active';
-            document.getElementById('calibration-text').textContent = 'Calibrated';
-          }
-        }, 2000);
-      }
-    }
-
-    function handleDeviceOrientation(event) {
-      // Could use for absolute orientation
-    }
-
-    function updateIMUStatus(gyro, accel, calib) {
-      const gyroDot = document.getElementById('gyro-dot');
-      const accelDot = document.getElementById('accel-dot');
-      const calibDot = document.getElementById('calibration-dot');
-
-      gyroDot.className = 'imu-dot ' + gyro;
-      accelDot.className = 'imu-dot ' + accel;
-      calibDot.className = 'imu-dot ' + calib;
-    }
-
-    function onResize() {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
-
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-
-      renderer.setSize(width, height);
-
-      featureCanvas.width = width;
-      featureCanvas.height = height;
-    }
-
-    function renderLoop(timestamp) {
+    function render() {
       if (!isRunning) return;
 
-      const frameStart = performance.now();
-
-      // Update FPS counter
       frameCount++;
-      if (timestamp - lastFpsTime >= 1000) {
-        currentFps = frameCount;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsEl.textContent = frameCount;
         frameCount = 0;
-        lastFpsTime = timestamp;
-        updateFpsDisplay();
+        lastFpsTime = now;
       }
 
-      // Process camera frame through tracker
-      processFrame();
+      // Draw video
+      if (video && video.readyState >= 2) {
+        const vAspect = video.videoWidth / video.videoHeight;
+        const cAspect = videoCanvas.width / videoCanvas.height;
+        let dw, dh, ox, oy;
+        if (vAspect > cAspect) {
+          dh = videoCanvas.height;
+          dw = dh * vAspect;
+          ox = (videoCanvas.width - dw) / 2;
+          oy = 0;
+        } else {
+          dw = videoCanvas.width;
+          dh = dw / vAspect;
+          ox = 0;
+          oy = (videoCanvas.height - dh) / 2;
+        }
+        videoCtx.drawImage(video, ox, oy, dw, dh);
 
-      // Animate AR objects
-      animateObjects(timestamp);
+        // Process frame
+        if (trackerHandle) {
+          const pCanvas = document.createElement('canvas');
+          pCanvas.width = 640;
+          pCanvas.height = 480;
+          const pCtx = pCanvas.getContext('2d');
+          pCtx.drawImage(video, 0, 0, 640, 480);
+          const imgData = pCtx.getImageData(0, 0, 640, 480);
+          const pose = trackerHandle.process_frame(imgData.data, 640, 480);
+          const tracked = trackerHandle.tracked_points();
 
-      // Draw gyro visualization
-      drawGyroVisualization();
+          featuresEl.textContent = tracked;
+          stateEl.textContent = tracked > 30 ? 'tracking' : tracked > 10 ? 'initializing' : 'searching';
+          stateEl.style.color = tracked > 30 ? '#4ade80' : tracked > 10 ? '#facc15' : '#f87171';
+        }
+      }
 
-      // Render Three.js scene
+      // Animate cube
+      cube.rotation.x += 0.01;
+      cube.rotation.y += 0.015;
+
+      // Render
       renderer.render(scene, camera);
 
-      // Track frame time
-      const frameTime = performance.now() - frameStart;
-      frameTimes.push(frameTime);
-      if (frameTimes.length > 60) frameTimes.shift();
-
-      // Update quality based on performance
-      updateAdaptiveQuality(frameTime);
-
-      requestAnimationFrame(renderLoop);
+      animationId = requestAnimationFrame(render);
     }
 
-    function processFrame() {
-      if (!video || !tracker) return;
+    function reset() {
+      if (trackerHandle) trackerHandle.reset();
+      cube.rotation.set(0, 0, 0);
+    }
 
-      // Create temporary canvas for frame extraction
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = 640;
-      tempCanvas.height = 480;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(video, 0, 0, 640, 480);
+    // Start button
+    startBtn.addEventListener('click', async () => {
+      try {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Loading...';
 
-      const imageData = tempCtx.getImageData(0, 0, 640, 480);
+        // Request IMU first (must be in user gesture)
+        await requestIMUPermission();
 
-      // Process frame
-      const pose = tracker.process_frame(imageData.data, 640, 480);
+        await loadWasm();
+        await startCamera();
+        initThreeJS();
+        onResize();
+        setupIMU();
 
-      // Update tracking status
-      const trackedPoints = tracker.tracked_points();
-      document.getElementById('feature-count').textContent = trackedPoints;
-      document.getElementById('tracked-count').textContent = Math.floor(trackedPoints * 0.7);
-
-      updateTrackingStatus(pose !== null, trackedPoints);
-
-      // Draw feature points
-      if (showFeatures) {
-        drawFeaturePoints(trackedPoints);
+        startOverlay.classList.add('hidden');
+        resetBtn.disabled = false;
+        isRunning = true;
+        lastFpsTime = performance.now();
+        render();
+      } catch (err) {
+        console.error(err);
+        alert('Error: ' + err.message);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start AR';
       }
+    });
 
-      // Apply pose to camera
-      if (pose) {
-        applyPose(pose);
-      }
-    }
-
-    function applyPose(pose) {
-      // Only apply rotation, keep camera position fixed at z=3
-      // This prevents the tracker from moving camera to positions where cube isn't visible
-      camera.quaternion.set(pose.qx, -pose.qy, -pose.qz, pose.qw);
-      // Don't modify camera.position - keep it at (0, 0, 3)
-    }
-
-    function animateObjects(timestamp) {
-      for (const obj of arObjects) {
-        if (obj.type === 'cube') {
-          obj.mesh.rotation.x += obj.rotationSpeed;
-          obj.mesh.rotation.y += obj.rotationSpeed * 1.5;
-        }
-      }
-    }
-
-    function drawFeaturePoints(count) {
-      featureCtx.clearRect(0, 0, featureCanvas.width, featureCanvas.height);
-
-      if (!showFeatures || count === 0) return;
-
-      const width = featureCanvas.width;
-      const height = featureCanvas.height;
-
-      // Draw simulated feature points based on count
-      featureCtx.fillStyle = 'rgba(0, 255, 0, 0.8)';
-
-      for (let i = 0; i < Math.min(count, 100); i++) {
-        // Distribute points using deterministic pseudo-random
-        const x = ((i * 7919) % width);
-        const y = ((i * 104729) % height);
-
-        featureCtx.beginPath();
-        featureCtx.arc(x, y, 3, 0, Math.PI * 2);
-        featureCtx.fill();
-
-        // Draw cross
-        featureCtx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
-        featureCtx.lineWidth = 1;
-        featureCtx.beginPath();
-        featureCtx.moveTo(x - 6, y);
-        featureCtx.lineTo(x + 6, y);
-        featureCtx.moveTo(x, y - 6);
-        featureCtx.lineTo(x, y + 6);
-        featureCtx.stroke();
-      }
-    }
-
-    function drawGyroVisualization() {
-      const width = gyroCanvas.width;
-      const height = gyroCanvas.height;
-
-      gyroCtx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      gyroCtx.fillRect(0, 0, width, height);
-
-      if (gyroHistory.length < 2) return;
-
-      // Draw waveform
-      gyroCtx.beginPath();
-      gyroCtx.strokeStyle = '#4ade80';
-      gyroCtx.lineWidth = 2;
-
-      const step = width / (gyroHistory.length - 1);
-      const maxVal = 200;
-
-      for (let i = 0; i < gyroHistory.length; i++) {
-        const x = i * step;
-        const normalized = Math.min(gyroHistory[i] / maxVal, 1);
-        const y = height - normalized * height * 0.8 - height * 0.1;
-
-        if (i === 0) {
-          gyroCtx.moveTo(x, y);
-        } else {
-          gyroCtx.lineTo(x, y);
-        }
-      }
-
-      gyroCtx.stroke();
-    }
-
-    function updateFpsDisplay() {
-      const fpsEl = document.getElementById('fps-display');
-      const frameTimeEl = document.getElementById('frame-time');
-
-      fpsEl.textContent = `${currentFps} FPS`;
-
-      const avgFrameTime = frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length || 0;
-      frameTimeEl.textContent = `${avgFrameTime.toFixed(1)} ms`;
-
-      // Update color
-      fpsEl.className = currentFps >= 55 ? 'fps-good' :
-                        currentFps >= 30 ? 'fps-medium' : 'fps-bad';
-    }
-
-    function updateTrackingStatus(isTracking, pointCount) {
-      const dot = document.getElementById('tracking-dot');
-      const text = document.getElementById('tracking-text');
-
-      if (pointCount > 50) {
-        dot.className = 'tracking';
-        text.textContent = 'Tracking';
-      } else if (pointCount > 20) {
-        dot.className = 'initializing';
-        text.textContent = 'Stabilizing...';
-      } else {
-        dot.className = 'lost';
-        text.textContent = 'Low features';
-      }
-    }
-
-    function updateAdaptiveQuality(frameTime) {
-      const targetTime = 16.67; // 60 FPS
-
-      if (frameTime > targetTime * 1.2 && currentQuality < 3) {
-        // Degrade quality
-        currentQuality++;
-        updateQualityDisplay();
-      } else if (frameTime < targetTime * 0.7 && currentQuality > 0) {
-        // Improve quality
-        currentQuality--;
-        updateQualityDisplay();
-      }
-    }
-
-    function updateQualityDisplay() {
-      const badge = document.getElementById('quality-badge');
-      const settings = qualitySettings[currentQuality];
-
-      badge.textContent = settings.name;
-      badge.className = settings.class;
-    }
-
-    function resetTracker() {
-      if (tracker) {
-        tracker.reset();
-      }
-      camera.position.set(0, 0, 3);
-      camera.quaternion.set(0, 0, 0, 1);
-    }
-
-    function toggleFeatures() {
-      showFeatures = !showFeatures;
-      if (!showFeatures) {
-        featureCtx.clearRect(0, 0, featureCanvas.width, featureCanvas.height);
-      }
-    }
-
-    // Event listeners
-    document.getElementById('start-btn').addEventListener('click', initialize);
-    document.getElementById('reset-btn').addEventListener('click', resetTracker);
-    document.getElementById('toggle-features-btn').addEventListener('click', toggleFeatures);
+    resetBtn.addEventListener('click', reset);
   </script>
 </body>
 </html>
