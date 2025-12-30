@@ -18,11 +18,12 @@ QUAR Engine is the core computer vision component for WebAR applications. It com
 | 1 | Project Foundation & WASM Scaffold | ✅ Complete |
 | 2 | Camera Access & Frame Capture | ✅ Complete |
 | 3 | Feature Detection (FAST Corners) | ✅ Complete |
-| 4 | Optical Flow & 3DoF Tracking | 🔜 Next |
+| 4 | Optical Flow & 3DoF Tracking | ✅ Complete |
+| 5 | Web Worker Architecture | 🔜 Next |
 
 ### WASM Binary Size
-- **Uncompressed**: 45KB
-- **Gzipped**: ~20KB
+- **Uncompressed**: 60KB
+- **Gzipped**: ~27KB
 
 ## Requirements
 
@@ -75,17 +76,22 @@ quar_engine/
 ├── src/
 │   ├── lib.rs               # WASM entry point
 │   ├── error.rs             # Error types
-│   └── features/            # Feature detection module
-│       ├── mod.rs           # WASM bindings
-│       ├── fast.rs          # FAST-9 corner detector
-│       ├── grayscale.rs     # RGBA to grayscale conversion
-│       ├── keypoint.rs      # KeyPoint struct
-│       └── nms.rs           # Non-maximum suppression
+│   ├── features/            # Feature detection module
+│   │   ├── mod.rs           # WASM bindings
+│   │   ├── fast.rs          # FAST-9 corner detector
+│   │   ├── grayscale.rs     # RGBA to grayscale conversion
+│   │   ├── keypoint.rs      # KeyPoint struct
+│   │   └── nms.rs           # Non-maximum suppression
+│   └── tracker/             # Optical flow tracking module
+│       ├── mod.rs           # Tracker + WASM bindings
+│       ├── optical_flow.rs  # Lucas-Kanade tracker
+│       ├── pyramid.rs       # Image pyramid generation
+│       ├── rotation.rs      # 3DoF rotation estimation
+│       └── types.rs         # Pose3D, Point2, TrackResult
 ├── sdk/                     # TypeScript SDK
 │   ├── src/
 │   │   ├── camera/          # Camera access
-│   │   │   ├── CameraManager.ts
-│   │   │   └── FrameCapture.ts
+│   │   ├── types/           # TypeScript types
 │   │   └── index.ts         # Main SDK entry
 │   └── package.json
 ├── benches/                 # Performance benchmarks
@@ -107,8 +113,39 @@ const engine = await QuarEngine.init({
   camera: { facing: 'environment' }
 });
 
-// Start camera
-await engine.start();
+// Connect to Three.js camera (optional)
+engine.connectCamera(threeCamera);
+
+// Subscribe to pose updates
+engine.on('pose', (pose) => {
+  console.log('Rotation:', pose.qx, pose.qy, pose.qz, pose.qw);
+});
+
+// Start tracking
+engine.start();
+```
+
+### Tracker API (WASM)
+
+```javascript
+import init, { TrackerHandle } from 'quar-engine';
+
+await init();
+
+const tracker = new TrackerHandle();
+
+// Process each frame
+const pose = tracker.process_frame(rgbaData, width, height);
+if (pose) {
+  // pose.rotation = [qx, qy, qz, qw]
+  // pose.translation = [x, y, z]
+}
+
+// Get tracked point count
+const points = tracker.tracked_points();
+
+// Reset tracker
+tracker.reset();
 ```
 
 ### Feature Detection (WASM API)

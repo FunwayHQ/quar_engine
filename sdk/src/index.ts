@@ -13,8 +13,9 @@ import type {
   QuarEvents,
   CompatibilityResult,
   LightEstimate,
+  TrackerPose,
 } from './types';
-import { QuarError, QuarErrorCode } from './types';
+import { QuarError, QuarErrorCode, trackerPoseToPose3D } from './types';
 import { CameraManager, ResolutionPresets, FrameCapture } from './camera';
 
 // Re-export all types
@@ -22,6 +23,27 @@ export * from './types';
 
 // Re-export camera module
 export * from './camera';
+
+// WASM module type definitions
+interface WasmModule {
+  default: () => Promise<void>;
+  TrackerHandle: new () => TrackerHandle;
+  detect_features: (data: Uint8ClampedArray, width: number, height: number, threshold: number) => KeyPoint[];
+  version: () => string;
+}
+
+interface TrackerHandle {
+  process_frame(data: Uint8ClampedArray, width: number, height: number): TrackerPose | null;
+  reset(): void;
+  tracked_points(): number;
+  get_pose(): TrackerPose | null;
+}
+
+interface KeyPoint {
+  x: number;
+  y: number;
+  score: number;
+}
 
 /**
  * Check browser compatibility for QUAR Engine.
@@ -68,7 +90,8 @@ export class QuarEngine {
   private connectedCamera: PerspectiveCamera | null = null;
   private eventHandlers: Map<keyof QuarEvents, Set<(...args: unknown[]) => void>> = new Map();
   private animationFrameId: number | null = null;
-  private wasmModule: unknown = null;
+  private wasmModule: WasmModule | null = null;
+  private trackerHandle: TrackerHandle | null = null;
   private isRunning = false;
 
   // Camera and frame capture
@@ -293,10 +316,29 @@ export class QuarEngine {
     return {
       fps: this.currentFps,
       processingTime: this.frameCapture.getFrameDelta(),
-      featureCount: 0, // TODO: Get from WASM
+      featureCount: this.trackerHandle?.tracked_points() ?? 0,
       confidence: this.state === 'tracking' ? 1.0 : 0.0,
-      memoryUsage: 0, // TODO: Get from WASM
+      memoryUsage: 0,
     };
+  }
+
+  /**
+   * Get the number of currently tracked feature points.
+   */
+  getTrackedPointCount(): number {
+    return this.trackerHandle?.tracked_points() ?? 0;
+  }
+
+  /**
+   * Reset the tracker state.
+   * Call this to re-initialize tracking from scratch.
+   */
+  resetTracker(): void {
+    this.trackerHandle?.reset();
+    this.currentPose = null;
+    this.state = 'initializing';
+    this.emit('tracking', this.state);
+    this.log('info', 'Tracker reset');
   }
 
   /**
@@ -351,10 +393,25 @@ export class QuarEngine {
   // Private methods
 
   private async loadWasm(): Promise<void> {
-    // TODO: Load actual WASM module
-    // For now, simulate initialization
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    this.wasmModule = {};
+    try {
+      // Dynamic import of WASM module
+      const wasmPath = this.config.debug?.logLevel === 'debug'
+        ? '../pkg/quar_engine.js'  // Development
+        : '../pkg/quar_engine.js'; // Production (could be CDN path)
+
+      const module = await import(/* webpackIgnore: true */ wasmPath) as WasmModule;
+      await module.default();
+
+      this.wasmModule = module;
+      this.trackerHandle = new module.TrackerHandle();
+
+      this.log('info', `WASM loaded (v${module.version()})`);
+    } catch (error) {
+      // Fallback: continue without WASM for basic camera functionality
+      this.log('warn', `WASM not available: ${error}. Running in camera-only mode.`);
+      this.wasmModule = null;
+      this.trackerHandle = null;
+    }
   }
 
   private startTrackingLoop(): void {
@@ -387,23 +444,42 @@ export class QuarEngine {
       // Draw camera feed to canvas
       this.renderCameraFeed();
 
-      // Get frame and convert to grayscale for processing
-      const frame = this.cameraManager.getFrame();
-      const _grayFrame = this.frameCapture.toGrayscale(frame);
+      // Process frame through WASM tracker if available
+      if (this.trackerHandle && this.canvasCtx) {
+        const { width, height } = this.canvas;
+        const imageData = this.canvasCtx.getImageData(0, 0, width, height);
 
-      // TODO: Pass grayFrame to WASM for processing
-      // const pose = this.wasmModule.processFrame(_grayFrame.data, _grayFrame.width, _grayFrame.height);
+        // Run tracker
+        const trackerPose = this.trackerHandle.process_frame(imageData.data, width, height);
 
-      // Simulate tracking after initialization
-      if (this.state === 'initializing') {
-        this.state = 'tracking';
-        this.emit('tracking', this.state);
-      }
+        if (trackerPose) {
+          // Convert tracker pose to Pose3D
+          this.currentPose = trackerPoseToPose3D(trackerPose);
 
-      // Update connected camera with pose
-      if (this.connectedCamera && this.currentPose) {
-        this.updateCameraPose(this.currentPose);
-        this.emit('pose', this.currentPose);
+          // Update state
+          if (this.state !== 'tracking') {
+            this.state = 'tracking';
+            this.emit('tracking', this.state);
+          }
+
+          // Update connected Three.js camera
+          if (this.connectedCamera) {
+            this.updateCameraPose(this.currentPose);
+          }
+
+          this.emit('pose', this.currentPose);
+        } else if (this.state === 'tracking') {
+          // Lost tracking
+          this.state = 'lost';
+          this.emit('tracking', this.state);
+          this.emit('lost');
+        }
+      } else {
+        // No tracker - just show camera feed
+        if (this.state === 'initializing') {
+          this.state = 'tracking';
+          this.emit('tracking', this.state);
+        }
       }
     } catch (error) {
       this.log('error', `Frame processing error: ${error}`);

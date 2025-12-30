@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::*;
 // Re-export core types for use by other modules
 pub mod error;
 pub mod features;
+pub mod tracker;
 
 /// Initialize the WASM module with panic hook for better error messages.
 /// This function is automatically called when the WASM module is loaded.

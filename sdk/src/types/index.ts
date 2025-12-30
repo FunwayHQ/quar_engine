@@ -25,6 +25,32 @@ export interface Pose3D {
 }
 
 /**
+ * Pose data from WASM tracker.
+ * Matches the Rust Pose3D struct serialization.
+ */
+export interface TrackerPose {
+  /** Rotation as quaternion [x, y, z, w] */
+  rotation: [number, number, number, number];
+  /** Translation [x, y, z] */
+  translation: [number, number, number];
+}
+
+/**
+ * Convert TrackerPose to Pose3D.
+ */
+export function trackerPoseToPose3D(pose: TrackerPose): Pose3D {
+  return {
+    x: pose.translation[0],
+    y: pose.translation[1],
+    z: pose.translation[2],
+    qx: pose.rotation[0],
+    qy: pose.rotation[1],
+    qz: pose.rotation[2],
+    qw: pose.rotation[3],
+  };
+}
+
+/**
  * Current tracking state of the engine.
  */
 export type TrackingState = 'initializing' | 'tracking' | 'lost';

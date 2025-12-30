@@ -64,6 +64,7 @@ pub fn rgba_to_grayscale(rgba: &[u8]) -> Vec<u8> {
 
 /// Convert a single RGBA pixel to grayscale.
 #[inline(always)]
+#[allow(dead_code)]
 pub fn pixel_to_grayscale(r: u8, g: u8, b: u8) -> u8 {
     ((77 * r as u32 + 150 * g as u32 + 29 * b as u32) >> 8) as u8
 }
