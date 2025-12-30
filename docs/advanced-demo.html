@@ -504,6 +504,7 @@
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x000000, 0); // Transparent background
 
       // Lighting
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -522,20 +523,26 @@
     }
 
     function createARScene() {
-      // Central floating cube
-      const cubeGeometry = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+      // Central floating cube - larger and further away for visibility
+      const cubeGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
       const cubeMaterial = new THREE.MeshStandardMaterial({
         color: 0xff4444,
         metalness: 0.3,
         roughness: 0.4
       });
       const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-      cube.position.set(0, 0, -0.5);
+      cube.position.set(0, 0, -2);
       scene.add(cube);
-      arObjects.push({ mesh: cube, type: 'cube', rotationSpeed: 0.01 });
+      arObjects.push({ mesh: cube, type: 'cube', rotationSpeed: 0.02 });
 
-      // Floating spheres
-      const sphereGeometry = new THREE.SphereGeometry(0.05, 32, 32);
+      // Add edges for better visibility
+      const edges = new THREE.EdgesGeometry(cubeGeometry);
+      const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+      const wireframe = new THREE.LineSegments(edges, lineMaterial);
+      cube.add(wireframe);
+
+      // Floating spheres - larger
+      const sphereGeometry = new THREE.SphereGeometry(0.15, 32, 32);
       const colors = [0x44ff44, 0x4444ff, 0xffff44, 0xff44ff];
 
       for (let i = 0; i < 4; i++) {
@@ -547,24 +554,24 @@
         });
         const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
         sphere.position.set(
-          Math.cos(angle) * 0.3,
-          Math.sin(angle) * 0.3,
-          -0.5
+          Math.cos(angle) * 0.8,
+          Math.sin(angle) * 0.8,
+          -2
         );
         scene.add(sphere);
         arObjects.push({
           mesh: sphere,
           type: 'sphere',
           angle: angle,
-          radius: 0.3,
+          radius: 0.8,
           speed: 0.5 + i * 0.1
         });
       }
 
       // Grid for reference
-      const gridHelper = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
-      gridHelper.position.y = -0.5;
-      gridHelper.position.z = -1;
+      const gridHelper = new THREE.GridHelper(4, 20, 0x444444, 0x222222);
+      gridHelper.position.y = -1;
+      gridHelper.position.z = -3;
       scene.add(gridHelper);
 
       // Coordinate axes
@@ -852,7 +859,7 @@
           const angle = obj.angle + time * obj.speed;
           obj.mesh.position.x = Math.cos(angle) * obj.radius;
           obj.mesh.position.y = Math.sin(angle) * obj.radius;
-          obj.mesh.position.z = -0.5 + Math.sin(time * 2 + obj.angle) * 0.05;
+          obj.mesh.position.z = -2 + Math.sin(time * 2 + obj.angle) * 0.1;
         }
       }
     }
