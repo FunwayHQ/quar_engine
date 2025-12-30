@@ -18,22 +18,26 @@
       touch-action: none;
     }
 
+    #canvas-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
     #video-canvas {
-      position: fixed;
+      position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      z-index: 1;
     }
 
     #ar-canvas {
-      position: fixed;
+      position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      z-index: 2;
       pointer-events: none;
     }
 
@@ -325,11 +329,11 @@
     <button id="start-btn" class="btn">Start AR Experience</button>
   </div>
 
-  <!-- Video Background Canvas -->
-  <canvas id="video-canvas"></canvas>
-
-  <!-- AR Canvas -->
-  <canvas id="ar-canvas"></canvas>
+  <!-- Canvas Container - like basic demo -->
+  <div id="canvas-container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="ar-canvas"></canvas>
+  </div>
 
   <!-- Feature Points Overlay -->
   <canvas id="feature-canvas"></canvas>
