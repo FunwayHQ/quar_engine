@@ -30,6 +30,9 @@ export * from './worker';
 // Re-export performance module
 export * from './performance';
 
+// Re-export IMU module
+export * from './imu';
+
 // WASM module type definitions
 interface WasmModule {
   default: () => Promise<void>;

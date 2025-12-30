@@ -348,7 +348,7 @@ Target metrics:
 
 **LLM Prompt:**
 ```
-You are implementing IMU sensor integration for the Aether VIO system.
+You are implementing IMU sensor integration for the Quar VIO system.
 
 Create the IMU module in /sdk/src/imu/:
 
