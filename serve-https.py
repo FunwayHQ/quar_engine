@@ -87,8 +87,10 @@ def main():
 ║                    QUAR Engine HTTPS Server                   ║
 ╠══════════════════════════════════════════════════════════════╣
 ║                                                              ║
-║  Local:   https://localhost:{PORT}/sdk/index.html            ║
-║  Network: https://{local_ip}:{PORT}/sdk/index.html{' ' * (10 - len(str(PORT)))}       ║
+║  Feature Demo:  https://localhost:{PORT}/sdk/index.html      ║
+║  AR Cube Demo:  https://localhost:{PORT}/sdk/ar-demo.html    ║
+║                                                              ║
+║  Network: https://{local_ip}:{PORT}/sdk/ar-demo.html         ║
 ║                                                              ║
 ║  ⚠️  On mobile, you'll see a certificate warning.            ║
 ║      Tap "Advanced" → "Proceed" to continue.                 ║

@@ -3,6 +3,9 @@ node_modules/
 target/
 pkg/
 
+# Exception: include docs/pkg for GitHub Pages
+!docs/pkg/
+
 # Build outputs
 dist/
 *.wasm
