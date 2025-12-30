@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+target/
+pkg/
+
+# Build outputs
+dist/
+*.wasm
+*.js.map
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# PDFs (large files, copyright)
+*.pdf
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+*.lcov
+
+# Rust
+Cargo.lock
+**/*.rs.bk
