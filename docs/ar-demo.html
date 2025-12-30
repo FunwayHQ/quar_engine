@@ -384,12 +384,12 @@
             pitchEl.textContent = (smoothedRotation.pitch * 180 / Math.PI).toFixed(1) + '°';
             yawEl.textContent = (smoothedRotation.yaw * 180 / Math.PI).toFixed(1) + '°';
 
-            // Apply INVERTED rotation to arGroup so cube stays fixed in world space
-            // When camera rotates, arGroup rotates opposite direction
-            // Use 1:1 mapping (no scale factor)
-            arGroup.rotation.x = -smoothedRotation.pitch;
-            arGroup.rotation.y = -smoothedRotation.yaw;
-            arGroup.rotation.z = -smoothedRotation.roll;
+            // Apply rotation to Three.js CAMERA (not the object)
+            // This makes the cube stay fixed in world space
+            // When you rotate phone away, cube moves out of view naturally
+            camera.rotation.x = smoothedRotation.pitch;
+            camera.rotation.y = smoothedRotation.yaw;
+            camera.rotation.z = smoothedRotation.roll;
 
           } else {
             stateEl.textContent = trackedPoints > 0 ? 'initializing' : 'lost';

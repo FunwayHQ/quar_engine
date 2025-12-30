@@ -431,12 +431,12 @@
             smoothedRotation.pitch = lerp(smoothedRotation.pitch, euler.pitch, smoothingFactor);
             smoothedRotation.yaw = lerp(smoothedRotation.yaw, euler.yaw, smoothingFactor);
 
-            // Apply INVERTED rotation to arGroup so cube stays fixed in world space
-            // When camera rotates, arGroup rotates opposite direction
-            // Use 1:1 mapping (no scale factor)
-            arGroup.rotation.x = -smoothedRotation.pitch;
-            arGroup.rotation.y = -smoothedRotation.yaw;
-            arGroup.rotation.z = -smoothedRotation.roll;
+            // Apply rotation to Three.js CAMERA (not the object)
+            // This makes the cube stay fixed in world space
+            // When you rotate phone away, cube moves out of view naturally
+            camera.rotation.x = smoothedRotation.pitch;
+            camera.rotation.y = smoothedRotation.yaw;
+            camera.rotation.z = smoothedRotation.roll;
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';
