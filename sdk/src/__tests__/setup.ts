@@ -148,6 +148,14 @@ if (typeof performance === 'undefined') {
   };
 }
 
+// Mock URL.createObjectURL and revokeObjectURL
+if (typeof URL.createObjectURL === 'undefined') {
+  URL.createObjectURL = jest.fn().mockReturnValue('blob:mock-url');
+}
+if (typeof URL.revokeObjectURL === 'undefined') {
+  URL.revokeObjectURL = jest.fn();
+}
+
 // Helper to create mock getUserMedia
 export function createMockGetUserMedia(shouldSucceed = true, error?: DOMException) {
   return jest.fn().mockImplementation(() => {
