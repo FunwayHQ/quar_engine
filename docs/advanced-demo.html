@@ -223,6 +223,30 @@
     let gyroActive = false;
     let accelActive = false;
 
+    // Smoothing for tracking
+    const smoothingFactor = 0.15;
+    let smoothedRotation = { roll: 0, pitch: 0, yaw: 0 };
+
+    // Convert quaternion to euler angles
+    function quaternionToEuler(qx, qy, qz, qw) {
+      const sinr_cosp = 2 * (qw * qx + qy * qz);
+      const cosr_cosp = 1 - 2 * (qx * qx + qy * qy);
+      const roll = Math.atan2(sinr_cosp, cosr_cosp);
+
+      const sinp = 2 * (qw * qy - qz * qx);
+      const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
+
+      const siny_cosp = 2 * (qw * qz + qx * qy);
+      const cosy_cosp = 1 - 2 * (qy * qy + qz * qz);
+      const yaw = Math.atan2(siny_cosp, cosy_cosp);
+
+      return { roll, pitch, yaw };
+    }
+
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+
     async function loadWasm() {
       await init();
       trackerHandle = new TrackerHandle();
@@ -398,10 +422,21 @@
             stateEl.textContent = 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Apply inverse rotation to arGroup so cube appears fixed in world space
-            // When camera rotates right, we rotate arGroup left (inverse)
+            // Convert quaternion to euler angles
             const q = pose.rotation;
-            arGroup.quaternion.set(-q[0], q[1], q[2], q[3]);
+            const euler = quaternionToEuler(q[0], q[1], q[2], q[3]);
+
+            // Apply smoothing
+            smoothedRotation.roll = lerp(smoothedRotation.roll, euler.roll, smoothingFactor);
+            smoothedRotation.pitch = lerp(smoothedRotation.pitch, euler.pitch, smoothingFactor);
+            smoothedRotation.yaw = lerp(smoothedRotation.yaw, euler.yaw, smoothingFactor);
+
+            // Apply INVERTED rotation to arGroup so cube stays fixed in world space
+            // When camera rotates, arGroup rotates opposite direction
+            // Use 1:1 mapping (no scale factor)
+            arGroup.rotation.x = -smoothedRotation.pitch;
+            arGroup.rotation.y = -smoothedRotation.yaw;
+            arGroup.rotation.z = -smoothedRotation.roll;
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';

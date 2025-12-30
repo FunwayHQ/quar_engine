@@ -384,12 +384,12 @@
             pitchEl.textContent = (smoothedRotation.pitch * 180 / Math.PI).toFixed(1) + '°';
             yawEl.textContent = (smoothedRotation.yaw * 180 / Math.PI).toFixed(1) + '°';
 
-            // Apply rotation to cube (inverted to make cube appear stable in world)
-            // Scale down the rotation for more subtle effect
-            const rotationScale = 2.0;
-            arGroup.rotation.x = -smoothedRotation.pitch * rotationScale;
-            arGroup.rotation.y = -smoothedRotation.yaw * rotationScale;
-            arGroup.rotation.z = -smoothedRotation.roll * rotationScale;
+            // Apply INVERTED rotation to arGroup so cube stays fixed in world space
+            // When camera rotates, arGroup rotates opposite direction
+            // Use 1:1 mapping (no scale factor)
+            arGroup.rotation.x = -smoothedRotation.pitch;
+            arGroup.rotation.y = -smoothedRotation.yaw;
+            arGroup.rotation.z = -smoothedRotation.roll;
 
           } else {
             stateEl.textContent = trackedPoints > 0 ? 'initializing' : 'lost';
