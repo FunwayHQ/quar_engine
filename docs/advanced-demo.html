@@ -18,27 +18,12 @@
       touch-action: none;
     }
 
-    #canvas-container {
-      position: relative;
-      width: 100vw;
-      height: 100vh;
-    }
-
-    #video-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }
-
     #ar-canvas {
-      position: absolute;
+      position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      pointer-events: none;
     }
 
     #overlay {
@@ -329,11 +314,8 @@
     <button id="start-btn" class="btn">Start AR Experience</button>
   </div>
 
-  <!-- Canvas Container - like basic demo -->
-  <div id="canvas-container">
-    <canvas id="video-canvas"></canvas>
-    <canvas id="ar-canvas"></canvas>
-  </div>
+  <!-- Single AR Canvas - video will be rendered as background texture -->
+  <canvas id="ar-canvas"></canvas>
 
   <!-- Feature Points Overlay -->
   <canvas id="feature-canvas"></canvas>
@@ -431,8 +413,6 @@
     let gyroHistory = [];
 
     // Canvas contexts
-    const videoCanvas = document.getElementById('video-canvas');
-    const videoCtx = videoCanvas.getContext('2d');
     const arCanvas = document.getElementById('ar-canvas');
     const featureCanvas = document.getElementById('feature-canvas');
     const featureCtx = featureCanvas.getContext('2d');
@@ -441,6 +421,7 @@
 
     // Video element for camera
     let video = null;
+    let videoTexture = null;
 
     // Quality levels
     const qualitySettings = {
@@ -478,13 +459,9 @@
         document.getElementById('start-screen').classList.add('hidden');
         document.getElementById('overlay').classList.remove('hidden');
 
-        // Ensure canvases are sized
-        videoCanvas.width = window.innerWidth;
-        videoCanvas.height = window.innerHeight;
+        // Ensure feature canvas is sized
         featureCanvas.width = window.innerWidth;
         featureCanvas.height = window.innerHeight;
-
-        console.log('Starting render loop, canvas size:', videoCanvas.width, 'x', videoCanvas.height);
 
         // Start render loop
         isRunning = true;
@@ -500,21 +477,19 @@
       // Scene
       scene = new THREE.Scene();
 
-      // Camera - EXACTLY like basic demo
+      // Camera
       camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(0, 0, 3);
 
-      // Renderer with transparency for AR
+      // Renderer - NO alpha, we'll use video texture as background
       renderer = new THREE.WebGLRenderer({
         canvas: arCanvas,
-        alpha: true,
         antialias: true
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.setClearColor(0x000000, 0);  // Transparent background
 
-      // Lighting - EXACTLY like basic demo
+      // Lighting
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
       scene.add(ambientLight);
 
@@ -531,7 +506,6 @@
 
       // Resize handler
       window.addEventListener('resize', onResize);
-
     }
 
     function createARScene() {
@@ -577,7 +551,11 @@
 
       await video.play();
 
-      console.log('Camera started:', video.videoWidth, 'x', video.videoHeight);
+      // Create video texture for Three.js background
+      videoTexture = new THREE.VideoTexture(video);
+      videoTexture.minFilter = THREE.LinearFilter;
+      videoTexture.magFilter = THREE.LinearFilter;
+      scene.background = videoTexture;
 
       // Setup feature canvas
       featureCanvas.width = video.videoWidth;
@@ -705,48 +683,14 @@
 
       renderer.setSize(width, height);
 
-      videoCanvas.width = width;
-      videoCanvas.height = height;
       featureCanvas.width = width;
       featureCanvas.height = height;
-    }
-
-    function drawVideo() {
-      if (!video || video.readyState < 2) return;
-
-      // Ensure canvas has dimensions
-      if (videoCanvas.width === 0 || videoCanvas.height === 0) {
-        videoCanvas.width = window.innerWidth;
-        videoCanvas.height = window.innerHeight;
-      }
-
-      const videoAspect = video.videoWidth / video.videoHeight;
-      const canvasAspect = videoCanvas.width / videoCanvas.height;
-
-      let drawWidth, drawHeight, offsetX, offsetY;
-
-      if (videoAspect > canvasAspect) {
-        drawHeight = videoCanvas.height;
-        drawWidth = videoCanvas.height * videoAspect;
-        offsetX = (videoCanvas.width - drawWidth) / 2;
-        offsetY = 0;
-      } else {
-        drawWidth = videoCanvas.width;
-        drawHeight = videoCanvas.width / videoAspect;
-        offsetX = 0;
-        offsetY = (videoCanvas.height - drawHeight) / 2;
-      }
-
-      videoCtx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
     }
 
     function renderLoop(timestamp) {
       if (!isRunning) return;
 
       const frameStart = performance.now();
-
-      // Draw camera feed
-      drawVideo();
 
       // Update FPS counter
       frameCount++;
