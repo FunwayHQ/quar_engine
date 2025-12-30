@@ -34,6 +34,7 @@
       width: 100%;
       height: 100%;
       z-index: 2;
+      pointer-events: none;
     }
 
     #overlay {
@@ -500,11 +501,17 @@
       renderer = new THREE.WebGLRenderer({
         canvas: arCanvas,
         alpha: true,
-        antialias: true
+        antialias: true,
+        powerPreference: 'high-performance'
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setClearColor(0x000000, 0); // Transparent background
+
+      // Check WebGL context
+      const gl = renderer.getContext();
+      console.log('WebGL context:', gl ? 'OK' : 'FAILED');
+      console.log('WebGL version:', gl.getParameter(gl.VERSION));
 
       // Lighting
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -520,6 +527,10 @@
       // Resize handler
       window.addEventListener('resize', onResize);
       onResize();
+
+      console.log('Three.js setup complete');
+      console.log('Scene children:', scene.children.length);
+      console.log('Camera position:', camera.position);
     }
 
     function createARScene() {
@@ -782,6 +793,8 @@
         frameCount = 0;
         lastFpsTime = timestamp;
         updateFpsDisplay();
+        // Debug log once per second
+        console.log('Rendering, objects in scene:', scene.children.length);
       }
 
       // Process camera frame through tracker
@@ -795,6 +808,12 @@
 
       // Render Three.js scene
       renderer.render(scene, camera);
+
+      // Debug: Check if renderer is working
+      if (frameCount === 1) {
+        console.log('Renderer info:', renderer.info);
+        console.log('AR canvas size:', arCanvas.width, 'x', arCanvas.height);
+      }
 
       // Track frame time
       const frameTime = performance.now() - frameStart;
