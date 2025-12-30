@@ -432,11 +432,10 @@
             smoothedRotation.yaw = lerp(smoothedRotation.yaw, euler.yaw, smoothingFactor);
 
             // Apply rotation to Three.js camera to match phone orientation
-            // Pitch: tilt up → cube goes down (positive rotation.x = look down)
-            // Yaw: rotate left → cube goes right (negative = invert)
+            // Axes were swapped - fixing mapping
             const sensitivity = 0.7; // 30% less sensitive
-            camera.rotation.x = smoothedRotation.pitch * sensitivity;
-            camera.rotation.y = -smoothedRotation.yaw * sensitivity;
+            camera.rotation.x = -smoothedRotation.yaw * sensitivity;  // up/down
+            camera.rotation.y = smoothedRotation.pitch * sensitivity; // left/right
             camera.rotation.z = smoothedRotation.roll * sensitivity;
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
