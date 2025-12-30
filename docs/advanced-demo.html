@@ -465,6 +465,14 @@
         document.getElementById('start-screen').classList.add('hidden');
         document.getElementById('overlay').classList.remove('hidden');
 
+        // Ensure canvases are sized
+        videoCanvas.width = window.innerWidth;
+        videoCanvas.height = window.innerHeight;
+        featureCanvas.width = window.innerWidth;
+        featureCanvas.height = window.innerHeight;
+
+        console.log('Starting render loop, canvas size:', videoCanvas.width, 'x', videoCanvas.height);
+
         // Start render loop
         isRunning = true;
         requestAnimationFrame(renderLoop);
@@ -580,7 +588,16 @@
       video.srcObject = stream;
       video.setAttribute('playsinline', '');
       video.muted = true;
+      video.autoplay = true;
+
+      // Wait for video metadata to load
+      await new Promise(resolve => {
+        video.onloadedmetadata = resolve;
+      });
+
       await video.play();
+
+      console.log('Camera started:', video.videoWidth, 'x', video.videoHeight);
 
       // Setup feature canvas
       featureCanvas.width = video.videoWidth;
@@ -716,6 +733,12 @@
 
     function drawVideo() {
       if (!video || video.readyState < 2) return;
+
+      // Ensure canvas has dimensions
+      if (videoCanvas.width === 0 || videoCanvas.height === 0) {
+        videoCanvas.width = window.innerWidth;
+        videoCanvas.height = window.innerHeight;
+      }
 
       const videoAspect = video.videoWidth / video.videoHeight;
       const canvasAspect = videoCanvas.width / videoCanvas.height;
