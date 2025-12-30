@@ -538,24 +538,19 @@
     }
 
     function createARScene() {
-      // Simple red cube - EXACTLY like basic demo
+      // Simple red cube - use BasicMaterial (doesn't need lighting)
       const geometry = new THREE.BoxGeometry(1, 1, 1);
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xff3333,
-        roughness: 0.4,
-        metalness: 0.3
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xff0000  // Bright red, self-lit
       });
       const cube = new THREE.Mesh(geometry, material);
+      cube.position.set(0, 0, 0);  // Explicitly at origin
       scene.add(cube);
       arObjects.push({ mesh: cube, type: 'cube', rotationSpeed: 0.02 });
 
-      // Add edges for better visibility
-      const edges = new THREE.EdgesGeometry(geometry);
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
-      const wireframe = new THREE.LineSegments(edges, lineMaterial);
-      cube.add(wireframe);
-
-      console.log('Cube created at', cube.position);
+      console.log('Cube created at position:', cube.position.x, cube.position.y, cube.position.z);
+      console.log('Camera at position:', camera.position.x, camera.position.y, camera.position.z);
+      console.log('Camera looking at:', camera.getWorldDirection(new THREE.Vector3()));
     }
 
     async function setupCamera() {
@@ -827,6 +822,10 @@
     }
 
     function applyPose(pose) {
+      // DEBUG: Don't apply pose, keep camera fixed
+      // This helps test if pose application is breaking the view
+      return;
+
       // Apply rotation from tracker
       camera.quaternion.set(pose.qx, -pose.qy, -pose.qz, pose.qw);
 
