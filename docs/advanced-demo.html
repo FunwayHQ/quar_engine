@@ -204,7 +204,7 @@
     const videoCtx = videoCanvas.getContext('2d');
 
     // Three.js
-    let scene, camera, renderer, cube;
+    let scene, camera, renderer, cube, arGroup;
 
     // State
     let wasmModule = null;
@@ -244,7 +244,11 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.setClearColor(0x000000, 0);
 
-      // Cube
+      // AR Group - this will be transformed by tracking to keep objects fixed in space
+      arGroup = new THREE.Group();
+      scene.add(arGroup);
+
+      // Cube - added to arGroup so it stays fixed in world space
       const geometry = new THREE.BoxGeometry(1, 1, 1);
       const material = new THREE.MeshStandardMaterial({
         color: 0xff3333,
@@ -252,7 +256,7 @@
         metalness: 0.3
       });
       cube = new THREE.Mesh(geometry, material);
-      scene.add(cube);
+      arGroup.add(cube);
 
       // Edges
       const edges = new THREE.EdgesGeometry(geometry);
@@ -389,14 +393,24 @@
           const tracked = trackerHandle.tracked_points();
 
           featuresEl.textContent = tracked;
-          stateEl.textContent = tracked > 30 ? 'tracking' : tracked > 10 ? 'initializing' : 'searching';
-          stateEl.style.color = tracked > 30 ? '#4ade80' : tracked > 10 ? '#facc15' : '#f87171';
+
+          if (pose && tracked > 10) {
+            stateEl.textContent = 'tracking';
+            stateEl.style.color = '#4ade80';
+
+            // Apply inverse rotation to arGroup so cube appears fixed in world space
+            // When camera rotates right, we rotate arGroup left (inverse)
+            const q = pose.rotation;
+            arGroup.quaternion.set(-q[0], q[1], q[2], q[3]);
+          } else {
+            stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
+            stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';
+          }
         }
       }
 
-      // Animate cube
-      cube.rotation.x += 0.01;
-      cube.rotation.y += 0.015;
+      // Cube rotates slowly on its own axis (decorative)
+      cube.rotation.y += 0.005;
 
       // Render
       renderer.render(scene, camera);
@@ -406,6 +420,7 @@
 
     function reset() {
       if (trackerHandle) trackerHandle.reset();
+      arGroup.quaternion.set(0, 0, 0, 1);
       cube.rotation.set(0, 0, 0);
     }
 
