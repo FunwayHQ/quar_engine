@@ -177,9 +177,9 @@
     let lastFpsTime = 0;
     let currentFps = 0;
 
-    // Smoothing
+    // Smoothing for quaternion tracking
     const smoothingFactor = 0.15;
-    let smoothedRotation = { roll: 0, pitch: 0, yaw: 0 };
+    let smoothedQuat = null; // Will be initialized after Three.js
 
     async function loadWasm() {
       try {
@@ -286,28 +286,8 @@
       return { width: video.videoWidth, height: video.videoHeight };
     }
 
-    function quaternionToEuler(qx, qy, qz, qw) {
-      // Roll (x-axis rotation)
-      const sinr_cosp = 2 * (qw * qx + qy * qz);
-      const cosr_cosp = 1 - 2 * (qx * qx + qy * qy);
-      const roll = Math.atan2(sinr_cosp, cosr_cosp);
-
-      // Pitch (y-axis rotation)
-      const sinp = 2 * (qw * qy - qz * qx);
-      const pitch = Math.abs(sinp) >= 1
-        ? Math.sign(sinp) * Math.PI / 2
-        : Math.asin(sinp);
-
-      // Yaw (z-axis rotation)
-      const siny_cosp = 2 * (qw * qz + qx * qy);
-      const cosy_cosp = 1 - 2 * (qy * qy + qz * qz);
-      const yaw = Math.atan2(siny_cosp, cosy_cosp);
-
-      return { roll, pitch, yaw };
-    }
-
-    function lerp(a, b, t) {
-      return a + (b - a) * t;
+    function initQuaternion() {
+      smoothedQuat = new THREE.Quaternion();
     }
 
     function render() {
@@ -366,30 +346,21 @@
             stateEl.textContent = 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Convert quaternion to euler angles
-            const euler = quaternionToEuler(
-              pose.rotation[0],
-              pose.rotation[1],
-              pose.rotation[2],
-              pose.rotation[3]
-            );
+            // Get quaternion directly from tracker
+            const q = pose.rotation;
+            const targetQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
 
-            // Apply smoothing
-            smoothedRotation.roll = lerp(smoothedRotation.roll, euler.roll, smoothingFactor);
-            smoothedRotation.pitch = lerp(smoothedRotation.pitch, euler.pitch, smoothingFactor);
-            smoothedRotation.yaw = lerp(smoothedRotation.yaw, euler.yaw, smoothingFactor);
+            // Smooth the quaternion using SLERP
+            smoothedQuat.slerp(targetQuat, smoothingFactor);
 
-            // Update HUD
-            rollEl.textContent = (smoothedRotation.roll * 180 / Math.PI).toFixed(1) + '°';
-            pitchEl.textContent = (smoothedRotation.pitch * 180 / Math.PI).toFixed(1) + '°';
-            yawEl.textContent = (smoothedRotation.yaw * 180 / Math.PI).toFixed(1) + '°';
+            // Update HUD with euler angles for display
+            const euler = new THREE.Euler().setFromQuaternion(smoothedQuat);
+            rollEl.textContent = (euler.z * 180 / Math.PI).toFixed(1) + '°';
+            pitchEl.textContent = (euler.x * 180 / Math.PI).toFixed(1) + '°';
+            yawEl.textContent = (euler.y * 180 / Math.PI).toFixed(1) + '°';
 
-            // Apply rotation to Three.js camera to match phone orientation
-            // Using only pitch (vertical) and yaw (horizontal), disable roll
-            const sensitivity = 0.7; // 30% less sensitive
-            camera.rotation.x = smoothedRotation.pitch * sensitivity;  // tilt up/down
-            camera.rotation.y = smoothedRotation.yaw * sensitivity;    // rotate left/right
-            camera.rotation.z = 0; // disable roll - causes interference
+            // Apply quaternion directly to camera
+            camera.quaternion.copy(smoothedQuat);
 
           } else {
             stateEl.textContent = trackedPoints > 0 ? 'initializing' : 'lost';
@@ -408,8 +379,8 @@
       if (trackerHandle) {
         trackerHandle.reset();
       }
-      smoothedRotation = { roll: 0, pitch: 0, yaw: 0 };
-      arGroup.rotation.set(0, 0, 0);
+      if (smoothedQuat) smoothedQuat.set(0, 0, 0, 1);
+      camera.quaternion.set(0, 0, 0, 1);
       stateEl.textContent = 'initializing';
       stateEl.style.color = '#fbbf24';
     }
@@ -455,6 +426,7 @@
         console.log('Camera started:', res);
 
         initThreeJS();
+        initQuaternion();
         onWindowResize();
 
         statusDiv.classList.add('hidden');
