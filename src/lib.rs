@@ -26,6 +26,9 @@ pub mod plane;
 // Sprint 16: Bundle Adjustment optimization
 pub mod optimization;
 
+// Sprint 18: Loop Closure
+pub mod loop_closure;
+
 /// Initialize the WASM module with panic hook for better error messages.
 /// This function is automatically called when the WASM module is loaded.
 #[wasm_bindgen(start)]

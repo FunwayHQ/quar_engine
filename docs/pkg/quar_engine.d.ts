@@ -831,6 +831,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly log: (a: number, b: number) => void;
   readonly __wbg_adaptiveconfig_free: (a: number, b: number) => void;
   readonly __wbg_adaptivehandle_free: (a: number, b: number) => void;
   readonly __wbg_breakdownreport_free: (a: number, b: number) => void;
@@ -943,7 +944,6 @@ export interface InitOutput {
   readonly jsplaneinfo_is_floor: (a: number) => number;
   readonly jsplaneinfo_is_horizontal: (a: number) => number;
   readonly jsplaneinfo_is_vertical: (a: number) => number;
-  readonly log: (a: number, b: number) => void;
   readonly match_features: (a: any, b: any, c: number) => any;
   readonly planedetectorhandle_clear: (a: number) => void;
   readonly planedetectorhandle_detect_planes: (a: number, b: number, c: number) => number;
