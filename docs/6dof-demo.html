@@ -395,6 +395,11 @@
             <input type="checkbox" id="invert-z-checkbox">
             <span class="value" id="invert-z-val">off</span>
           </div>
+          <div class="slider-row">
+            <label>Kalman:</label>
+            <input type="checkbox" id="kalman-checkbox" checked>
+            <span class="value" id="kalman-val">on</span>
+          </div>
         </div>
       </div>
     </div>
@@ -542,6 +547,145 @@
     let lastRawTranslation = { x: 0, y: 0, z: 0 };  // For computing deltas
     let accumulatedPosition = new THREE.Vector3(0, 0, 0);  // Our own accumulation with decay
 
+    // ==================== Kalman Filter for Pose Smoothing ====================
+    // 6-state Kalman filter: [x, y, z, vx, vy, vz]
+    // Provides smooth position estimates and velocity prediction
+    class KalmanFilter3D {
+      constructor() {
+        // State vector: [x, y, z, vx, vy, vz]
+        this.state = [0, 0, 0, 0, 0, 0];
+
+        // State covariance matrix (6x6, stored as flat array)
+        // Start with high uncertainty
+        this.P = [
+          1, 0, 0, 0, 0, 0,
+          0, 1, 0, 0, 0, 0,
+          0, 0, 1, 0, 0, 0,
+          0, 0, 0, 1, 0, 0,
+          0, 0, 0, 0, 1, 0,
+          0, 0, 0, 0, 0, 1
+        ];
+
+        // Process noise (how much we expect state to change unexpectedly)
+        this.processNoise = 0.1;
+
+        // Measurement noise (how noisy our measurements are)
+        this.measurementNoise = 0.5;
+
+        // Last update time
+        this.lastTime = 0;
+
+        // Whether filter has been initialized with a measurement
+        this.initialized = false;
+      }
+
+      // Predict step: propagate state forward in time
+      predict(dt) {
+        if (dt <= 0 || dt > 1) return; // Sanity check
+
+        // State transition: x_new = x + vx*dt, etc.
+        this.state[0] += this.state[3] * dt;
+        this.state[1] += this.state[4] * dt;
+        this.state[2] += this.state[5] * dt;
+
+        // Update covariance: P = F*P*F' + Q
+        // Simplified: just add process noise to position and velocity variances
+        const q = this.processNoise * dt;
+        this.P[0] += q + this.P[21] * dt * dt; // xx
+        this.P[7] += q + this.P[28] * dt * dt;  // yy
+        this.P[14] += q + this.P[35] * dt * dt; // zz
+        this.P[21] += q * 0.5; // vxvx
+        this.P[28] += q * 0.5; // vyvy
+        this.P[35] += q * 0.5; // vzvz
+      }
+
+      // Update step: incorporate a new measurement
+      update(measX, measY, measZ, confidence) {
+        if (!this.initialized) {
+          // First measurement: initialize state directly
+          this.state[0] = measX;
+          this.state[1] = measY;
+          this.state[2] = measZ;
+          this.initialized = true;
+          return;
+        }
+
+        // Adaptive measurement noise based on confidence
+        // Higher confidence = lower noise = trust measurement more
+        const R = this.measurementNoise / Math.max(confidence, 0.1);
+
+        // Kalman gain for each axis (simplified diagonal)
+        const Kx = this.P[0] / (this.P[0] + R);
+        const Ky = this.P[7] / (this.P[7] + R);
+        const Kz = this.P[14] / (this.P[14] + R);
+
+        // Innovation (measurement residual)
+        const innovX = measX - this.state[0];
+        const innovY = measY - this.state[1];
+        const innovZ = measZ - this.state[2];
+
+        // Update state
+        this.state[0] += Kx * innovX;
+        this.state[1] += Ky * innovY;
+        this.state[2] += Kz * innovZ;
+
+        // Update velocity estimate from innovation
+        // This helps track moving objects
+        const dt = 1/60; // Assume 60fps for velocity update
+        this.state[3] = this.state[3] * 0.9 + (Kx * innovX / dt) * 0.1;
+        this.state[4] = this.state[4] * 0.9 + (Ky * innovY / dt) * 0.1;
+        this.state[5] = this.state[5] * 0.9 + (Kz * innovZ / dt) * 0.1;
+
+        // Update covariance: P = (I - K*H) * P
+        this.P[0] *= (1 - Kx);
+        this.P[7] *= (1 - Ky);
+        this.P[14] *= (1 - Kz);
+      }
+
+      // Get current position estimate
+      getPosition() {
+        return { x: this.state[0], y: this.state[1], z: this.state[2] };
+      }
+
+      // Get current velocity estimate
+      getVelocity() {
+        return { x: this.state[3], y: this.state[4], z: this.state[5] };
+      }
+
+      // Reset the filter
+      reset() {
+        this.state = [0, 0, 0, 0, 0, 0];
+        this.P = [
+          1, 0, 0, 0, 0, 0,
+          0, 1, 0, 0, 0, 0,
+          0, 0, 1, 0, 0, 0,
+          0, 0, 0, 1, 0, 0,
+          0, 0, 0, 0, 1, 0,
+          0, 0, 0, 0, 0, 1
+        ];
+        this.initialized = false;
+        this.lastTime = 0;
+      }
+
+      // Full predict-update cycle with timing
+      process(measX, measY, measZ, confidence, timestamp) {
+        // Predict step
+        if (this.lastTime > 0) {
+          const dt = (timestamp - this.lastTime) / 1000; // Convert to seconds
+          this.predict(dt);
+        }
+        this.lastTime = timestamp;
+
+        // Update step
+        this.update(measX, measY, measZ, confidence);
+
+        return this.getPosition();
+      }
+    }
+
+    // Create Kalman filter instance
+    const kalmanFilter = new KalmanFilter3D();
+    let useKalmanFilter = true; // Can be toggled
 
     // Tuning sliders
     scaleSlider.addEventListener('input', (e) => {
@@ -580,6 +724,16 @@
     invertZCheckbox.addEventListener('change', (e) => {
       invertZ = e.target.checked;
       invertZVal.textContent = invertZ ? 'on' : 'off';
+    });
+    const kalmanCheckbox = document.getElementById('kalman-checkbox');
+    const kalmanVal = document.getElementById('kalman-val');
+    kalmanCheckbox.addEventListener('change', (e) => {
+      useKalmanFilter = e.target.checked;
+      kalmanVal.textContent = useKalmanFilter ? 'on' : 'off';
+      if (!useKalmanFilter) {
+        // Reset Kalman filter when disabled
+        kalmanFilter.reset();
+      }
     });
 
     // Gyro compensation toggle
@@ -1012,18 +1166,34 @@
             const scaledY = dzY * currentScale * yScale * rotationSuppress;
             const scaledZ = dzZ * currentScale * zScale * rotationSuppress;
 
-            // Accumulate position ourselves (with optional decay for stability)
-            // Note: decay of 0.995 loses 0.5% per frame = ~25% per second at 60fps
-            // Set to 1.0 (no decay) to preserve position, or 0.999 for very slow drift
-            const decay = 1.0;  // No decay - position should persist
-            accumulatedPosition.x = accumulatedPosition.x * decay + scaledX;
-            accumulatedPosition.y = accumulatedPosition.y * decay + scaledY;
-            accumulatedPosition.z = accumulatedPosition.z * decay + scaledZ;
+            // Accumulate position ourselves
+            accumulatedPosition.x += scaledX;
+            accumulatedPosition.y += scaledY;
+            accumulatedPosition.z += scaledZ;
 
-            // Smooth the accumulated position
-            smoothedPosition.x += (accumulatedPosition.x - smoothedPosition.x) * smoothing;
-            smoothedPosition.y += (accumulatedPosition.y - smoothedPosition.y) * smoothing;
-            smoothedPosition.z += (accumulatedPosition.z - smoothedPosition.z) * smoothing;
+            // Apply Kalman filter or simple smoothing
+            if (useKalmanFilter) {
+              // Map confidence level to a 0-1 scale for Kalman
+              const confidenceScale = [0.1, 0.3, 0.7, 1.0][confidenceLevel] || 0.5;
+
+              // Process through Kalman filter
+              const kalmanPos = kalmanFilter.process(
+                accumulatedPosition.x,
+                accumulatedPosition.y,
+                accumulatedPosition.z,
+                confidenceScale,
+                performance.now()
+              );
+
+              smoothedPosition.x = kalmanPos.x;
+              smoothedPosition.y = kalmanPos.y;
+              smoothedPosition.z = kalmanPos.z;
+            } else {
+              // Simple exponential smoothing (original behavior)
+              smoothedPosition.x += (accumulatedPosition.x - smoothedPosition.x) * smoothing;
+              smoothedPosition.y += (accumulatedPosition.y - smoothedPosition.y) * smoothing;
+              smoothedPosition.z += (accumulatedPosition.z - smoothedPosition.z) * smoothing;
+            }
 
             // Move the SCENE (arGroup) instead of camera for translation
             // This works better with gyro-controlled camera rotation
@@ -1153,6 +1323,9 @@
       visualOrientation = { x: 0, y: 0, z: 0 };
       fusedOrientation = { x: 0, y: 0, z: 0 };
       gyroInitialized = false;
+
+      // Reset Kalman filter
+      kalmanFilter.reset();
 
       // Reset camera rotation (position stays at 0,1,3)
       camera.position.set(0, 1, 3);

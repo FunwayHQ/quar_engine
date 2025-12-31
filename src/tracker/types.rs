@@ -241,6 +241,9 @@ pub struct TrackerConfig {
     /// Forward-backward error threshold in pixels (default: 1.0)
     /// Points with higher FB error are rejected as unreliable
     pub fb_threshold: f32,
+    /// Use 5-point algorithm for Essential matrix (default: true)
+    /// More robust than 8-point, especially with fewer correspondences
+    pub use_5point: bool,
 }
 
 impl Default for TrackerConfig {
@@ -256,6 +259,7 @@ impl Default for TrackerConfig {
             redetect_interval: 30,
             use_fb_check: true,
             fb_threshold: 1.0,
+            use_5point: true,
         }
     }
 }

@@ -15,6 +15,7 @@ mod tracker_6dof;
 pub mod linalg;
 pub mod robust;
 pub mod flow_compensation;
+pub mod five_point;
 
 pub use optical_flow::{LucasKanadeTracker, FBTrackResult};
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -28,6 +29,9 @@ pub use robust::{
 pub use flow_compensation::{
     FlowCameraParams, FlowCompensator, GyroBuffer, GyroReading,
     compensate_flow_batch, compensate_point, predict_rotation_flow,
+};
+pub use five_point::{
+    compute_essential_5pt, compute_essential_5pt_ransac, FivePointResult,
 };
 
 use wasm_bindgen::prelude::*;

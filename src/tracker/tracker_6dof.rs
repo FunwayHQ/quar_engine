@@ -11,6 +11,7 @@ use crate::features::{non_maximum_suppression, rgba_to_grayscale, FastDetector};
 use super::essential_pure::{
     choose_valid_pose, compute_essential_ransac, decompose_essential,
 };
+use super::five_point::compute_essential_5pt_ransac;
 use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
@@ -28,6 +29,8 @@ pub struct Tracker6DoFConfig {
     pub min_parallax: f64,
     /// Scale estimation method
     pub scale_method: ScaleMethod,
+    /// Use 5-point algorithm (more robust than 8-point)
+    pub use_5point: bool,
 }
 
 /// Method for estimating translation scale.
@@ -49,6 +52,7 @@ impl Default for Tracker6DoFConfig {
             ransac_iterations: 100,
             min_parallax: 1.0, // 1 degree minimum parallax
             scale_method: ScaleMethod::Fixed(0.01), // 1cm per unit by default
+            use_5point: true, // 5-point is more robust than 8-point
         }
     }
 }
@@ -183,28 +187,44 @@ impl Tracker6DoF {
             .collect();
 
         // Try RANSAC for robust Essential matrix estimation
-        let result = compute_essential_ransac(
-            &prev_norm,
-            &curr_norm,
-            self.config.ransac_threshold,
-            self.config.ransac_iterations,
-            0.99,
-        );
+        // Use 5-point algorithm if configured (more robust, works with fewer points)
+        let result: Option<(Mat3, Vec<usize>)> = if self.config.use_5point {
+            compute_essential_5pt_ransac(
+                &prev_norm,
+                &curr_norm,
+                self.config.ransac_iterations,
+                self.config.ransac_threshold,
+            )
+        } else {
+            // 8-point algorithm
+            compute_essential_ransac(
+                &prev_norm,
+                &curr_norm,
+                self.config.ransac_threshold,
+                self.config.ransac_iterations,
+                0.99,
+            ).map(|(e, inliers)| {
+                // Convert bool vec to index vec for consistency
+                let indices: Vec<usize> = inliers.iter()
+                    .enumerate()
+                    .filter_map(|(i, &is_inlier)| if is_inlier { Some(i) } else { None })
+                    .collect();
+                (e, indices)
+            })
+        };
 
-        if let Some((e, inliers)) = result {
+        if let Some((e, inlier_indices)) = result {
             // Filter to only use inliers for decomposition
-            let inlier_prev: Vec<Vec2> = prev_norm
-                .iter()
-                .zip(inliers.iter())
-                .filter_map(|(p, &is_inlier)| if is_inlier { Some(*p) } else { None })
+            let inlier_prev: Vec<Vec2> = inlier_indices.iter()
+                .filter_map(|&i| prev_norm.get(i).copied())
                 .collect();
-            let inlier_curr: Vec<Vec2> = curr_norm
-                .iter()
-                .zip(inliers.iter())
-                .filter_map(|(p, &is_inlier)| if is_inlier { Some(*p) } else { None })
+            let inlier_curr: Vec<Vec2> = inlier_indices.iter()
+                .filter_map(|&i| curr_norm.get(i).copied())
                 .collect();
 
-            if inlier_prev.len() < 8 {
+            // 5-point needs at least 5 inliers, 8-point needs 8
+            let min_inliers = if self.config.use_5point { 5 } else { 8 };
+            if inlier_prev.len() < min_inliers {
                 return; // Not enough inliers
             }
 
