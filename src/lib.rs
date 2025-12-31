@@ -17,6 +17,9 @@ pub mod memory;
 pub mod profiling;
 pub mod adaptive;
 
+// Sprint 15: Mapping module
+pub mod mapping;
+
 /// Initialize the WASM module with panic hook for better error messages.
 /// This function is automatically called when the WASM module is loaded.
 #[wasm_bindgen(start)]
