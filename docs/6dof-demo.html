@@ -953,13 +953,10 @@
           const confidenceNames = ['LOST', 'LOW', 'MEDIUM', 'HIGH'];
           const confidenceColors = ['#f87171', '#facc15', '#60a5fa', '#4ade80'];
 
-          // Debug: log pose every 60 frames
-          if (frameCount % 60 === 0) {
-            console.log('Pose:', pose, 'Tracked:', tracked);
-            if (pose) {
-              console.log('  rotation:', pose.rotation);
-              console.log('  translation:', pose.translation);
-            }
+          // Debug: log pose every 30 frames
+          if (frameCount % 30 === 0 && pose) {
+            const t = pose.translation;
+            console.log(`Frame ${frameCount}: trans=[${t[0].toFixed(3)}, ${t[1].toFixed(3)}, ${t[2].toFixed(3)}] pts=${tracked} inliers=${inliers} conf=${confidenceNames[confidenceLevel]}`);
           }
 
           featuresEl.textContent = tracked;
