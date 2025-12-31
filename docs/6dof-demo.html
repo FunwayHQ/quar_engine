@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF Tracking Demo (v12 Kalman)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v13)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -294,6 +294,23 @@
         <span class="stat-label">Flow: </span>
         <span class="stat-value" id="flow-debug" style="font-size:10px">--</span>
       </div>
+      <div class="stat" style="border-top: 1px solid #333; padding-top: 8px; margin-top: 8px;">
+        <span class="stat-label">VIO: </span>
+        <span class="stat-value" id="vio-status">OFF</span>
+        <input type="checkbox" id="vio-toggle" style="margin-left: 8px;">
+      </div>
+      <div class="stat">
+        <span class="stat-label">Gravity: </span>
+        <span class="stat-value" id="gravity-status" style="font-size:10px">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">VIO Scale: </span>
+        <span class="stat-value" id="vio-scale">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">IMU Buf: </span>
+        <span class="stat-value" id="imu-buffer">0</span>
+      </div>
     </div>
 
     <div id="pose-panel">
@@ -414,15 +431,15 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF Visual Tracking Demo v12 (Kalman)</p>
+      <p>6DoF VIO Demo v13</p>
       <div class="features">
         <span>Essential Matrix</span>
         <span>RANSAC</span>
-        <span>Pure-Rust SVD</span>
-        <span>Real 6DoF</span>
+        <span>IMU Preintegration</span>
+        <span>VIO Fusion</span>
       </div>
       <p style="font-size: 11px; color: #4ade80; margin-top: 15px; max-width: 300px;">
-        Full 6DoF tracking with Essential matrix decomposition running in WebAssembly!
+        Visual-Inertial Odometry with accelerometer fusion for metric scale!
       </p>
       <button id="start-btn">Start Tracking</button>
     </div>
@@ -442,14 +459,15 @@
     import * as THREE from 'three';
     console.log('6DoF Demo: Three.js loaded');
 
-    // Use simpler TrackerHandle with optical flow-based rotation (much more stable)
-    let init, TrackerHandle, version;
+    // Use Tracker6DoFHandle with VIO support
+    let init, Tracker6DoFHandle, TrackerHandle, version;
     try {
-      const wasm = await import('./pkg/quar_engine.js?v=12');
+      const wasm = await import('./pkg/quar_engine.js?v=13');
       init = wasm.default;
+      Tracker6DoFHandle = wasm.Tracker6DoFHandle;
       TrackerHandle = wasm.TrackerHandle;
       version = wasm.version;
-      console.log('6DoF Demo: WASM module loaded (optical flow tracker)');
+      console.log('6DoF Demo: WASM module loaded (6DoF VIO tracker)');
     } catch (e) {
       console.error('Failed to load WASM module:', e);
       document.getElementById('start-btn').textContent = 'WASM Load Failed';
@@ -487,6 +505,11 @@
     const gyroCompEl = document.getElementById('gyro-comp');
     const gyroCompToggle = document.getElementById('gyro-comp-toggle');
     const flowDebugEl = document.getElementById('flow-debug');
+    const vioStatusEl = document.getElementById('vio-status');
+    const vioToggle = document.getElementById('vio-toggle');
+    const gravityStatusEl = document.getElementById('gravity-status');
+    const vioScaleEl = document.getElementById('vio-scale');
+    const imuBufferEl = document.getElementById('imu-buffer');
 
     // Pose display elements
     const txEl = document.getElementById('tx');
@@ -689,6 +712,8 @@
     // Create Kalman filter instance
     const kalmanFilter = new KalmanFilter3D();
     let useKalmanFilter = true; // Can be toggled
+    let useVIO = false; // VIO mode toggle
+    let tracker6dof = null; // 6DoF tracker with VIO support
 
     // Tuning sliders
     scaleSlider.addEventListener('input', (e) => {
@@ -748,6 +773,16 @@
       }
     });
 
+    // VIO toggle
+    vioToggle.addEventListener('change', (e) => {
+      useVIO = e.target.checked;
+      if (tracker6dof) {
+        tracker6dof.set_vio_enabled(useVIO);
+      }
+      vioStatusEl.textContent = useVIO ? 'ON' : 'OFF';
+      vioStatusEl.style.color = useVIO ? '#4ade80' : '#888';
+    });
+
     // Tuning panel collapse/expand
     const tuningHeader = document.getElementById('tuning-header');
     const tuningContent = document.getElementById('tuning-content');
@@ -769,6 +804,7 @@
       if (!event.rotationRate) return;
 
       const now = performance.now();
+      const timestamp = now / 1000; // Convert to seconds for VIO
       if (!gyroInitialized) {
         lastGyroTime = now;
         gyroInitialized = true;
@@ -783,14 +819,29 @@
       const gammaRate = (event.rotationRate.gamma || 0) * degToRad;
       const alphaRate = (event.rotationRate.alpha || 0) * degToRad;
 
+      // Get accelerometer data if available
+      const ax = event.acceleration?.x || event.accelerationIncludingGravity?.x || 0;
+      const ay = event.acceleration?.y || event.accelerationIncludingGravity?.y || 0;
+      const az = event.acceleration?.z || event.accelerationIncludingGravity?.z || 0;
+
       // Track rotation rate magnitude for translation filtering
       currentGyroRate = Math.sqrt(betaRate * betaRate + gammaRate * gammaRate + alphaRate * alphaRate);
 
-      // Push gyro data to WASM for flow compensation
+      // Push gyro data to WASM for flow compensation (basic tracker)
       // Note: Device gyro axes may differ from camera axes - this mapping works for most phones
       // X = beta (tilt forward/back), Y = gamma (tilt left/right), Z = alpha (rotate)
       if (trackerHandle) {
         trackerHandle.push_gyro(betaRate, gammaRate, alphaRate, now);
+      }
+
+      // Push full IMU data to 6DoF tracker for VIO
+      if (tracker6dof && useVIO) {
+        // Push accelerometer + gyroscope to VIO
+        // Note: accelerationIncludingGravity includes gravity, which VIO expects
+        const accelX = event.accelerationIncludingGravity?.x || 0;
+        const accelY = event.accelerationIncludingGravity?.y || 0;
+        const accelZ = event.accelerationIncludingGravity?.z || 0;
+        tracker6dof.push_imu(accelX, accelY, accelZ, betaRate, gammaRate, alphaRate, timestamp);
       }
 
       // Integrate gyro
@@ -1218,6 +1269,27 @@
             // Show delta and accumulated values for debugging
             flowDebugEl.textContent = `d:[${dzX.toFixed(3)},${dzY.toFixed(3)},${dzZ.toFixed(3)}] a:[${accumulatedPosition.x.toFixed(2)},${accumulatedPosition.y.toFixed(2)},${accumulatedPosition.z.toFixed(2)}]`;
 
+            // Update VIO status display
+            if (tracker6dof) {
+              const vioInit = tracker6dof.is_vio_initialized();
+              const vioEnabled = tracker6dof.is_vio_enabled();
+              vioStatusEl.textContent = vioEnabled ? (vioInit ? 'READY' : 'INIT') : 'OFF';
+              vioStatusEl.style.color = vioEnabled ? (vioInit ? '#4ade80' : '#facc15') : '#888';
+
+              // Show gravity vector
+              const gravity = tracker6dof.get_gravity();
+              gravityStatusEl.textContent = `[${gravity[0].toFixed(1)},${gravity[1].toFixed(1)},${gravity[2].toFixed(1)}]`;
+
+              // Show VIO scale
+              const vioScale = tracker6dof.get_vio_scale();
+              const scaleConf = tracker6dof.get_scale_confidence();
+              vioScaleEl.textContent = `${vioScale.toFixed(3)} (${(scaleConf*100).toFixed(0)}%)`;
+              vioScaleEl.style.color = scaleConf > 0.5 ? '#4ade80' : '#facc15';
+
+              // Show IMU buffer size
+              imuBufferEl.textContent = tracker6dof.imu_buffer_len();
+            }
+
             // Debug every 120 frames (~2 seconds): full chain trace
             if (totalFrames % 120 === 0) {
               console.log('=== Translation Debug ===');
@@ -1312,6 +1384,9 @@
       if (trackerHandle) {
         trackerHandle.reset();
       }
+      if (tracker6dof) {
+        tracker6dof.reset();
+      }
 
       // Reset tracking state
       totalDistance = 0;
@@ -1367,9 +1442,13 @@
         await loadWasm();
         await startCamera();
 
-        // Create optical flow tracker
+        // Create optical flow tracker (basic)
         trackerHandle = new TrackerHandle();
         console.log('Optical flow tracker created');
+
+        // Create 6DoF tracker with VIO support
+        tracker6dof = new Tracker6DoFHandle(640, 480);
+        console.log('6DoF VIO tracker created');
 
         initThreeJS();
         onResize();
