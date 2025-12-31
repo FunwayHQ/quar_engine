@@ -233,14 +233,55 @@
     let gyroActive = false;
     let accelActive = false;
 
-    // Smoothing for quaternion tracking
-    const smoothingFactor = 0.15;
-    let smoothedQuat = new THREE.Quaternion();
+    // IMU Fusion state
+    let gyroOrientation = { x: 0, y: 0, z: 0 };  // Integrated gyro orientation
+    let visualOrientation = { x: 0, y: 0, z: 0 }; // Last visual tracking orientation
+    let fusedOrientation = { x: 0, y: 0, z: 0 };  // Fused result
+    let lastGyroTime = 0;
+    let gyroInitialized = false;
 
-    // Spherical linear interpolation for smooth quaternion transitions
-    function slerpQuaternion(current, target, t) {
-      current.slerp(target, t);
-      return current;
+    // Complementary filter alpha (0.98 = 98% gyro, 2% visual correction)
+    const GYRO_ALPHA = 0.98;
+    const VISUAL_SMOOTHING = 0.15;
+
+    // Gyroscope integration
+    function handleGyro(event) {
+      if (!event.rotationRate) return;
+
+      const now = performance.now();
+      if (!gyroInitialized) {
+        lastGyroTime = now;
+        gyroInitialized = true;
+        return;
+      }
+
+      const dt = (now - lastGyroTime) / 1000; // Convert to seconds
+      lastGyroTime = now;
+
+      // Get rotation rates (convert from deg/s to rad/s if needed)
+      // DeviceMotion uses deg/s, we need rad/s
+      const degToRad = Math.PI / 180;
+      const alpha = (event.rotationRate.alpha || 0) * degToRad; // Z rotation
+      const beta = (event.rotationRate.beta || 0) * degToRad;   // X rotation
+      const gamma = (event.rotationRate.gamma || 0) * degToRad; // Y rotation
+
+      // Integrate gyroscope (accumulate rotation)
+      gyroOrientation.x += beta * dt;
+      gyroOrientation.y += gamma * dt;
+      gyroOrientation.z += alpha * dt;
+
+      // Apply complementary filter: blend gyro with visual tracking
+      // High-pass filter on gyro (short-term), low-pass on visual (long-term)
+      fusedOrientation.x = GYRO_ALPHA * gyroOrientation.x + (1 - GYRO_ALPHA) * visualOrientation.x;
+      fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
+      fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
+
+      // Apply to camera immediately for responsive updates
+      if (isRunning) {
+        camera.rotation.x = fusedOrientation.x;
+        camera.rotation.y = fusedOrientation.y;
+        camera.rotation.z = fusedOrientation.z;
+      }
     }
 
     async function loadWasm() {
@@ -339,6 +380,9 @@
       calibText.textContent = 'Waiting...';
 
       window.addEventListener('devicemotion', (e) => {
+        // Handle gyroscope for IMU fusion
+        handleGyro(e);
+
         if (e.rotationRate && (e.rotationRate.alpha !== null || e.rotationRate.beta !== null)) {
           if (!gyroActive) {
             gyroActive = true;
@@ -357,7 +401,7 @@
           calibText.textContent = 'Calibrating...';
           setTimeout(() => {
             calibDot.className = 'imu-dot active';
-            calibText.textContent = 'Calibrated';
+            calibText.textContent = 'Fused';
           }, 2000);
         }
       });
@@ -423,19 +467,30 @@
             const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
             const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
-            const sensitivity = 1.0;
+            // Update visual orientation for fusion (drift correction)
+            // Smooth the visual orientation update
+            visualOrientation.x += (euler.y - visualOrientation.x) * VISUAL_SMOOTHING;
+            visualOrientation.y += (-euler.z - visualOrientation.y) * VISUAL_SMOOTHING;
+            visualOrientation.z += (euler.x - visualOrientation.z) * VISUAL_SMOOTHING;
 
-            // Debug output - raw values
-            quatDebug.textContent = `x:${euler.x.toFixed(2)} y:${euler.y.toFixed(2)} z:${euler.z.toFixed(2)}`;
+            // Also update gyro orientation to match visual (prevents large drift)
+            // This "pulls" the gyro towards the visual estimate over time
+            gyroOrientation.x += (visualOrientation.x - gyroOrientation.x) * 0.02;
+            gyroOrientation.y += (visualOrientation.y - gyroOrientation.y) * 0.02;
+            gyroOrientation.z += (visualOrientation.z - gyroOrientation.z) * 0.02;
 
-            // Apply euler angles directly to camera with smoothing
-            // Flip pitch sign - try positive
-            camera.rotation.x += (euler.y * sensitivity - camera.rotation.x) * smoothingFactor;
-            camera.rotation.y += (-euler.z * sensitivity - camera.rotation.y) * smoothingFactor;
-            camera.rotation.z += (euler.x * sensitivity - camera.rotation.z) * smoothingFactor;
+            // Debug output - raw visual values
+            quatDebug.textContent = `vis:${visualOrientation.x.toFixed(2)},${visualOrientation.y.toFixed(2)}`;
 
-            // Debug output - camera rotation
-            camDebug.textContent = `x:${camera.rotation.x.toFixed(2)} y:${camera.rotation.y.toFixed(2)} z:${camera.rotation.z.toFixed(2)}`;
+            // Debug output - fused camera rotation
+            camDebug.textContent = `fus:${fusedOrientation.x.toFixed(2)},${fusedOrientation.y.toFixed(2)}`;
+
+            // If no gyro available, fall back to visual-only
+            if (!gyroActive) {
+              camera.rotation.x = visualOrientation.x;
+              camera.rotation.y = visualOrientation.y;
+              camera.rotation.z = visualOrientation.z;
+            }
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';
@@ -454,8 +509,12 @@
 
     function reset() {
       if (trackerHandle) trackerHandle.reset();
-      smoothedQuat.set(0, 0, 0, 1);
-      camera.quaternion.set(0, 0, 0, 1);
+      // Reset fusion state
+      gyroOrientation = { x: 0, y: 0, z: 0 };
+      visualOrientation = { x: 0, y: 0, z: 0 };
+      fusedOrientation = { x: 0, y: 0, z: 0 };
+      gyroInitialized = false;
+      camera.rotation.set(0, 0, 0);
       cube.rotation.set(0, 0, 0);
     }
 
