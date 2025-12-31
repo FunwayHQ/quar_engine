@@ -356,20 +356,26 @@ impl Tracker {
             0.0
         };
 
-        // Apply lateral suppression: when lateral motion dominates, suppress Z completely
-        // Depth parallax during panning creates false radial signals that can't be
-        // distinguished from real Z motion without depth information
+        // Apply ratio-based lateral suppression
+        // Only suppress Z when lateral motion CLEARLY dominates over radial
+        // This allows forward/backward motion while filtering pure panning
         let lateral_magnitude = (lateral_x * lateral_x + lateral_y * lateral_y).sqrt();
+        let radial_magnitude = raw_radial_z.abs();
 
-        // If there's ANY significant lateral motion, zero out radial
-        // This is aggressive but necessary - parallax creates systematic Z bias
-        let radial_z = if lateral_magnitude > 0.5 {
-            // Complete suppression when panning
-            0.0
-        } else if lateral_magnitude > 0.1 {
-            // Gradual suppression in transition zone
-            let suppress = 1.0 - ((lateral_magnitude - 0.1) / 0.4);
-            raw_radial_z * suppress
+        // Suppress when lateral is > 3x the radial magnitude
+        let radial_z = if lateral_magnitude > 0.1 && radial_magnitude > 0.001 {
+            let ratio = lateral_magnitude / radial_magnitude;
+            if ratio > 5.0 {
+                // Pure panning - complete suppression
+                0.0
+            } else if ratio > 2.0 {
+                // Transition zone - gradual suppression
+                let suppress = 1.0 - ((ratio - 2.0) / 3.0);
+                raw_radial_z * suppress
+            } else {
+                // Forward/backward dominant - full Z
+                raw_radial_z
+            }
         } else {
             raw_radial_z
         };
