@@ -339,6 +339,10 @@ export class Tracker6DoFHandle {
    */
   get_vio_scale(): number;
   /**
+   * Check if device is stationary (from ZUPT detection).
+   */
+  is_stationary(): boolean;
+  /**
    * Process a frame and return the 6DoF pose as JSON.
    */
   process_frame(rgba: Uint8Array, width: number, height: number): any;
@@ -359,6 +363,10 @@ export class Tracker6DoFHandle {
    */
   tracked_points(): number;
   /**
+   * Get accelerometer-derived speed (magnitude) in m/s.
+   */
+  get_accel_speed(): number;
+  /**
    * Enable or disable VIO (Visual-Inertial Odometry) mode.
    */
   set_vio_enabled(enabled: boolean): void;
@@ -372,6 +380,14 @@ export class Tracker6DoFHandle {
    */
   process_frame_vio(rgba: Uint8Array, width: number, height: number, timestamp: number): any;
   /**
+   * Get accelerometer-derived position as [x, y, z] in meters.
+   */
+  get_accel_position(): Float64Array;
+  /**
+   * Get accelerometer-derived velocity as [vx, vy, vz] in m/s.
+   */
+  get_accel_velocity(): Float64Array;
+  /**
    * Check if VIO is initialized (gravity estimated).
    */
   is_vio_initialized(): boolean;
@@ -379,6 +395,10 @@ export class Tracker6DoFHandle {
    * Get scale estimation confidence (0.0-1.0).
    */
   get_scale_confidence(): number;
+  /**
+   * Reset accelerometer position to zero.
+   */
+  reset_accel_position(): void;
   /**
    * Create a new 6DoF tracker.
    */
@@ -670,12 +690,16 @@ export interface InitOutput {
   readonly timingreport_meets_60fps: (a: number) => number;
   readonly timingreport_to_json: (a: number) => [number, number];
   readonly tracker6dofhandle_clear_imu_buffer: (a: number) => void;
+  readonly tracker6dofhandle_get_accel_position: (a: number) => [number, number];
+  readonly tracker6dofhandle_get_accel_speed: (a: number) => number;
+  readonly tracker6dofhandle_get_accel_velocity: (a: number) => [number, number];
   readonly tracker6dofhandle_get_gravity: (a: number) => [number, number];
   readonly tracker6dofhandle_get_pose: (a: number) => any;
   readonly tracker6dofhandle_get_scale: (a: number) => number;
   readonly tracker6dofhandle_get_scale_confidence: (a: number) => number;
   readonly tracker6dofhandle_get_vio_scale: (a: number) => number;
   readonly tracker6dofhandle_imu_buffer_len: (a: number) => number;
+  readonly tracker6dofhandle_is_stationary: (a: number) => number;
   readonly tracker6dofhandle_is_vio_enabled: (a: number) => number;
   readonly tracker6dofhandle_is_vio_initialized: (a: number) => number;
   readonly tracker6dofhandle_new: (a: number, b: number) => number;
@@ -683,6 +707,7 @@ export interface InitOutput {
   readonly tracker6dofhandle_process_frame_vio: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
   readonly tracker6dofhandle_push_imu: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
   readonly tracker6dofhandle_reset: (a: number) => void;
+  readonly tracker6dofhandle_reset_accel_position: (a: number) => void;
   readonly tracker6dofhandle_set_scale: (a: number, b: number) => void;
   readonly tracker6dofhandle_set_vio_enabled: (a: number, b: number) => void;
   readonly tracker6dofhandle_test_essential: () => number;

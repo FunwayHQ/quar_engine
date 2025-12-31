@@ -16,6 +16,7 @@ use super::imu_preintegration::{ImuBuffer, ImuMeasurement, PreintegratedImu, Imu
 use super::kalman::MotionState;
 use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
 use super::scale_estimator::{ScaleEstimator, GravityEstimator};
+use super::accelerometer::{AccelIntegrator, ZuptDetector};
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
 
@@ -102,6 +103,8 @@ pub struct Tracker6DoF {
     last_preintegration: Option<PreintegratedImu>,
     /// VIO initialization state
     vio_initialized: bool,
+    /// Accelerometer integrator for ZUPT and velocity
+    accel_integrator: AccelIntegrator,
 }
 
 impl Tracker6DoF {
@@ -142,6 +145,7 @@ impl Tracker6DoF {
             vio_enabled: false,
             last_preintegration: None,
             vio_initialized: false,
+            accel_integrator: AccelIntegrator::new(),
         }
     }
 
@@ -403,6 +407,7 @@ impl Tracker6DoF {
         self.gravity_estimator.reset();
         self.last_preintegration = None;
         self.vio_initialized = false;
+        self.accel_integrator.reset();
     }
 
     /// Get the current pose.
@@ -476,6 +481,9 @@ impl Tracker6DoF {
             // Low rotation - good for gravity estimation
             self.gravity_estimator.add_stationary_sample(accel);
         }
+
+        // Integrate accelerometer for velocity/position estimation
+        self.accel_integrator.integrate(accel, gyro_mag, timestamp);
 
         // Check for VIO initialization
         if self.vio_enabled && !self.vio_initialized {
@@ -625,6 +633,33 @@ impl Tracker6DoF {
     /// Clear IMU buffer.
     pub fn clear_imu_buffer(&mut self) {
         self.imu_buffer.clear();
+    }
+
+    // ==================== Accelerometer Methods ====================
+
+    /// Check if device is stationary (from ZUPT detection).
+    pub fn is_stationary(&self) -> bool {
+        self.accel_integrator.is_stationary()
+    }
+
+    /// Get accelerometer-derived velocity in m/s.
+    pub fn get_accel_velocity(&self) -> [f64; 3] {
+        self.accel_integrator.velocity()
+    }
+
+    /// Get accelerometer-derived speed (magnitude) in m/s.
+    pub fn get_accel_speed(&self) -> f64 {
+        self.accel_integrator.speed()
+    }
+
+    /// Get accelerometer-derived position in meters.
+    pub fn get_accel_position(&self) -> [f64; 3] {
+        self.accel_integrator.position()
+    }
+
+    /// Reset accelerometer position (keep velocity).
+    pub fn reset_accel_position(&mut self) {
+        self.accel_integrator.reset_position();
     }
 }
 

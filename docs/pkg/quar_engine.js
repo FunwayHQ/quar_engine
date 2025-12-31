@@ -1259,6 +1259,14 @@ export class Tracker6DoFHandle {
         return ret;
     }
     /**
+     * Check if device is stationary (from ZUPT detection).
+     * @returns {boolean}
+     */
+    is_stationary() {
+        const ret = wasm.tracker6dofhandle_is_stationary(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * Process a frame and return the 6DoF pose as JSON.
      * @param {Uint8Array} rgba
      * @param {number} width
@@ -1304,6 +1312,14 @@ export class Tracker6DoFHandle {
         return ret >>> 0;
     }
     /**
+     * Get accelerometer-derived speed (magnitude) in m/s.
+     * @returns {number}
+     */
+    get_accel_speed() {
+        const ret = wasm.tracker6dofhandle_get_accel_speed(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Enable or disable VIO (Visual-Inertial Odometry) mode.
      * @param {boolean} enabled
      */
@@ -1332,6 +1348,26 @@ export class Tracker6DoFHandle {
         return ret;
     }
     /**
+     * Get accelerometer-derived position as [x, y, z] in meters.
+     * @returns {Float64Array}
+     */
+    get_accel_position() {
+        const ret = wasm.tracker6dofhandle_get_accel_position(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * Get accelerometer-derived velocity as [vx, vy, vz] in m/s.
+     * @returns {Float64Array}
+     */
+    get_accel_velocity() {
+        const ret = wasm.tracker6dofhandle_get_accel_velocity(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
      * Check if VIO is initialized (gravity estimated).
      * @returns {boolean}
      */
@@ -1346,6 +1382,12 @@ export class Tracker6DoFHandle {
     get_scale_confidence() {
         const ret = wasm.tracker6dofhandle_get_scale_confidence(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Reset accelerometer position to zero.
+     */
+    reset_accel_position() {
+        wasm.tracker6dofhandle_reset_accel_position(this.__wbg_ptr);
     }
     /**
      * Create a new 6DoF tracker.

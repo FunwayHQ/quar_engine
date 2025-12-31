@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v13)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v14 ZUPT)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -311,6 +311,14 @@
         <span class="stat-label">IMU Buf: </span>
         <span class="stat-value" id="imu-buffer">0</span>
       </div>
+      <div class="stat">
+        <span class="stat-label">ZUPT: </span>
+        <span class="stat-value" id="zupt-status">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Accel V: </span>
+        <span class="stat-value" id="accel-velocity" style="font-size:10px">--</span>
+      </div>
     </div>
 
     <div id="pose-panel">
@@ -431,15 +439,15 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF VIO Demo v13</p>
+      <p>6DoF VIO Demo v14 (ZUPT)</p>
       <div class="features">
-        <span>Essential Matrix</span>
-        <span>RANSAC</span>
-        <span>IMU Preintegration</span>
         <span>VIO Fusion</span>
+        <span>ZUPT Detection</span>
+        <span>Accel Integration</span>
+        <span>Metric Scale</span>
       </div>
       <p style="font-size: 11px; color: #4ade80; margin-top: 15px; max-width: 300px;">
-        Visual-Inertial Odometry with accelerometer fusion for metric scale!
+        Zero Velocity Update resets drift when stationary!
       </p>
       <button id="start-btn">Start Tracking</button>
     </div>
@@ -510,6 +518,8 @@
     const gravityStatusEl = document.getElementById('gravity-status');
     const vioScaleEl = document.getElementById('vio-scale');
     const imuBufferEl = document.getElementById('imu-buffer');
+    const zuptStatusEl = document.getElementById('zupt-status');
+    const accelVelocityEl = document.getElementById('accel-velocity');
 
     // Pose display elements
     const txEl = document.getElementById('tx');
@@ -1288,6 +1298,16 @@
 
               // Show IMU buffer size
               imuBufferEl.textContent = tracker6dof.imu_buffer_len();
+
+              // Show ZUPT status
+              const isStationary = tracker6dof.is_stationary();
+              zuptStatusEl.textContent = isStationary ? 'STILL' : 'MOVING';
+              zuptStatusEl.style.color = isStationary ? '#4ade80' : '#888';
+
+              // Show accelerometer velocity
+              const accelVel = tracker6dof.get_accel_velocity();
+              const accelSpeed = tracker6dof.get_accel_speed();
+              accelVelocityEl.textContent = `${accelSpeed.toFixed(2)} m/s`;
             }
 
             // Debug every 120 frames (~2 seconds): full chain trace

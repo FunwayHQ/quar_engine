@@ -19,6 +19,7 @@ pub mod five_point;
 pub mod kalman;
 pub mod imu_preintegration;
 pub mod scale_estimator;
+pub mod accelerometer;
 
 pub use optical_flow::{LucasKanadeTracker, FBTrackResult};
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -42,6 +43,10 @@ pub use imu_preintegration::{
     GRAVITY_MAGNITUDE, GRAVITY_WORLD,
 };
 pub use scale_estimator::{ScaleEstimate, ScaleEstimator, GravityEstimator};
+pub use accelerometer::{
+    AccelerometerProcessor, ZuptDetector, AccelIntegrator,
+    TranslationFusion, FusedTranslation,
+};
 
 use wasm_bindgen::prelude::*;
 
@@ -925,6 +930,40 @@ impl Tracker6DoFHandle {
     #[wasm_bindgen]
     pub fn clear_imu_buffer(&mut self) {
         self.tracker.clear_imu_buffer();
+    }
+
+    // ==================== Accelerometer Methods ====================
+
+    /// Check if device is stationary (from ZUPT detection).
+    #[wasm_bindgen]
+    pub fn is_stationary(&self) -> bool {
+        self.tracker.is_stationary()
+    }
+
+    /// Get accelerometer-derived velocity as [vx, vy, vz] in m/s.
+    #[wasm_bindgen]
+    pub fn get_accel_velocity(&self) -> Vec<f64> {
+        let v = self.tracker.get_accel_velocity();
+        vec![v[0], v[1], v[2]]
+    }
+
+    /// Get accelerometer-derived speed (magnitude) in m/s.
+    #[wasm_bindgen]
+    pub fn get_accel_speed(&self) -> f64 {
+        self.tracker.get_accel_speed()
+    }
+
+    /// Get accelerometer-derived position as [x, y, z] in meters.
+    #[wasm_bindgen]
+    pub fn get_accel_position(&self) -> Vec<f64> {
+        let p = self.tracker.get_accel_position();
+        vec![p[0], p[1], p[2]]
+    }
+
+    /// Reset accelerometer position to zero.
+    #[wasm_bindgen]
+    pub fn reset_accel_position(&mut self) {
+        self.tracker.reset_accel_position();
     }
 }
 
