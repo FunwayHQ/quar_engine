@@ -124,17 +124,38 @@
       bottom: 100px; left: 10px;
       right: 10px;
       background: rgba(0,0,0,0.9);
-      padding: 15px;
+      padding: 12px 15px;
       border-radius: 8px;
       z-index: 100;
       max-width: 400px;
       margin: 0 auto;
     }
-    #tuning-panel h3 {
+    #tuning-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+    #tuning-header h3 {
       color: #f472b6;
       font-size: 14px;
-      margin-bottom: 12px;
-      text-align: center;
+      margin: 0;
+    }
+    #tuning-toggle {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 18px;
+      padding: 0 5px;
+      cursor: pointer;
+    }
+    #tuning-content {
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+      max-height: 300px;
+    }
+    #tuning-content.collapsed {
+      max-height: 0;
     }
     .slider-row {
       display: flex;
@@ -309,44 +330,48 @@
     </div>
 
     <div id="tuning-panel">
-      <h3>Translation Tuning</h3>
-
-      <div class="slider-group">
-        <div class="slider-row">
-          <label>Master:</label>
-          <input type="range" id="scale-slider" min="0.1" max="5" step="0.1" value="0.5">
-          <span class="value" id="scale-val">0.50</span>
-        </div>
+      <div id="tuning-header">
+        <h3>Translation Tuning</h3>
+        <button id="tuning-toggle">▼</button>
       </div>
+      <div id="tuning-content">
+        <div class="slider-group">
+          <div class="slider-row">
+            <label>Master:</label>
+            <input type="range" id="scale-slider" min="0.1" max="5" step="0.1" value="0.5">
+            <span class="value" id="scale-val">0.50</span>
+          </div>
+        </div>
 
-      <div class="slider-group">
-        <div class="slider-row">
-          <label style="color:#f87171">X (L/R):</label>
-          <input type="range" id="x-scale-slider" min="0" max="3" step="0.1" value="1.0">
-          <span class="value" id="x-scale-val">1.0</span>
+        <div class="slider-group">
+          <div class="slider-row">
+            <label style="color:#f87171">X (L/R):</label>
+            <input type="range" id="x-scale-slider" min="0" max="3" step="0.1" value="1.0">
+            <span class="value" id="x-scale-val">1.0</span>
+          </div>
+          <div class="slider-row">
+            <label style="color:#4ade80">Y (U/D):</label>
+            <input type="range" id="y-scale-slider" min="0" max="3" step="0.1" value="1.0">
+            <span class="value" id="y-scale-val">1.0</span>
+          </div>
+          <div class="slider-row">
+            <label style="color:#60a5fa">Z (F/B):</label>
+            <input type="range" id="z-scale-slider" min="0" max="3" step="0.1" value="1.0">
+            <span class="value" id="z-scale-val">1.0</span>
+          </div>
         </div>
-        <div class="slider-row">
-          <label style="color:#4ade80">Y (U/D):</label>
-          <input type="range" id="y-scale-slider" min="0" max="3" step="0.1" value="1.0">
-          <span class="value" id="y-scale-val">1.0</span>
-        </div>
-        <div class="slider-row">
-          <label style="color:#60a5fa">Z (F/B):</label>
-          <input type="range" id="z-scale-slider" min="0" max="3" step="0.1" value="1.0">
-          <span class="value" id="z-scale-val">1.0</span>
-        </div>
-      </div>
 
-      <div class="slider-group">
-        <div class="slider-row">
-          <label>Smoothing:</label>
-          <input type="range" id="smooth-slider" min="0.05" max="1" step="0.05" value="0.3">
-          <span class="value" id="smooth-val">0.30</span>
-        </div>
-        <div class="slider-row">
-          <label>Dead Zone:</label>
-          <input type="range" id="deadzone-slider" min="0" max="0.5" step="0.01" value="0.05">
-          <span class="value" id="deadzone-val">0.05</span>
+        <div class="slider-group">
+          <div class="slider-row">
+            <label>Smoothing:</label>
+            <input type="range" id="smooth-slider" min="0.05" max="1" step="0.05" value="0.3">
+            <span class="value" id="smooth-val">0.30</span>
+          </div>
+          <div class="slider-row">
+            <label>Dead Zone:</label>
+            <input type="range" id="deadzone-slider" min="0" max="0.5" step="0.01" value="0.05">
+            <span class="value" id="deadzone-val">0.05</span>
+          </div>
         </div>
       </div>
     </div>
@@ -511,6 +536,15 @@
     deadzoneSlider.addEventListener('input', (e) => {
       deadzone = parseFloat(e.target.value);
       deadzoneVal.textContent = deadzone.toFixed(2);
+    });
+
+    // Tuning panel collapse/expand
+    const tuningHeader = document.getElementById('tuning-header');
+    const tuningContent = document.getElementById('tuning-content');
+    const tuningToggle = document.getElementById('tuning-toggle');
+    tuningHeader.addEventListener('click', () => {
+      tuningContent.classList.toggle('collapsed');
+      tuningToggle.textContent = tuningContent.classList.contains('collapsed') ? '▶' : '▼';
     });
 
     // Trajectory toggle
