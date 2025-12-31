@@ -269,22 +269,24 @@ pub enum TrackingConfidence {
 impl TrackingConfidence {
     /// Determine confidence level from tracking metrics.
     pub fn from_metrics(inlier_count: usize, inlier_ratio: f32, _total_points: usize) -> Self {
-        // Check minimum inlier ratio
-        if inlier_ratio < 0.4 {
+        // Check minimum inlier ratio (lowered from 0.4 to 0.3)
+        if inlier_ratio < 0.3 {
             return TrackingConfidence::Lost;
         }
 
+        // Lowered thresholds for mobile where feature count is often low
         match inlier_count {
-            n if n >= 50 => TrackingConfidence::High,
-            n if n >= 25 => TrackingConfidence::Medium,
-            n if n >= 15 => TrackingConfidence::Low,
+            n if n >= 30 => TrackingConfidence::High,   // Was 50
+            n if n >= 15 => TrackingConfidence::Medium, // Was 25
+            n if n >= 8 => TrackingConfidence::Low,     // Was 15
             _ => TrackingConfidence::Lost,
         }
     }
 
     /// Check if translation updates should be applied.
     pub fn allow_translation(&self) -> bool {
-        matches!(self, TrackingConfidence::High | TrackingConfidence::Medium)
+        // Allow translation at LOW and above (not just MEDIUM+)
+        !matches!(self, TrackingConfidence::Lost)
     }
 
     /// Check if rotation updates should be applied.
@@ -296,8 +298,8 @@ impl TrackingConfidence {
     pub fn translation_scale(&self) -> f32 {
         match self {
             TrackingConfidence::High => 1.0,
-            TrackingConfidence::Medium => 0.5,
-            TrackingConfidence::Low => 0.0,
+            TrackingConfidence::Medium => 0.7,
+            TrackingConfidence::Low => 0.3,  // Was 0.0, now allows some translation
             TrackingConfidence::Lost => 0.0,
         }
     }
@@ -672,24 +674,24 @@ mod tests {
     #[test]
     fn test_tracking_confidence() {
         assert_eq!(
-            TrackingConfidence::from_metrics(60, 0.8, 75),
+            TrackingConfidence::from_metrics(40, 0.8, 50),
             TrackingConfidence::High
         );
         assert_eq!(
-            TrackingConfidence::from_metrics(35, 0.7, 50),
+            TrackingConfidence::from_metrics(20, 0.7, 30),
             TrackingConfidence::Medium
         );
         assert_eq!(
-            TrackingConfidence::from_metrics(20, 0.6, 30),
+            TrackingConfidence::from_metrics(10, 0.6, 15),
             TrackingConfidence::Low
         );
         assert_eq!(
-            TrackingConfidence::from_metrics(10, 0.5, 20),
+            TrackingConfidence::from_metrics(5, 0.5, 10),
             TrackingConfidence::Lost
         );
         // Low inlier ratio should result in Lost
         assert_eq!(
-            TrackingConfidence::from_metrics(50, 0.3, 150),
+            TrackingConfidence::from_metrics(50, 0.2, 150),
             TrackingConfidence::Lost
         );
     }
