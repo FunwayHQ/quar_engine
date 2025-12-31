@@ -146,6 +146,14 @@
         <span class="stat-label">State: </span>
         <span class="stat-value" id="state">initializing</span>
       </div>
+      <div class="stat">
+        <span class="stat-label">Quat: </span>
+        <span class="stat-value" id="quat-debug" style="font-size:11px">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Cam: </span>
+        <span class="stat-value" id="cam-debug" style="font-size:11px">--</span>
+      </div>
     </div>
 
     <div id="imu-panel">
@@ -200,6 +208,8 @@
     const accelDot = document.getElementById('accel-dot');
     const calibDot = document.getElementById('calib-dot');
     const calibText = document.getElementById('calib-text');
+    const quatDebug = document.getElementById('quat-debug');
+    const camDebug = document.getElementById('cam-debug');
 
     const videoCtx = videoCanvas.getContext('2d');
 
@@ -419,8 +429,14 @@
               q[3]
             );
 
+            // Debug output - raw tracker quaternion
+            quatDebug.textContent = `x:${q[0].toFixed(2)} y:${q[1].toFixed(2)} z:${q[2].toFixed(2)} w:${q[3].toFixed(2)}`;
+
             // Smooth the quaternion using SLERP
             smoothedQuat.slerp(targetQuat, smoothingFactor);
+
+            // Debug output - camera rotation
+            camDebug.textContent = `x:${smoothedQuat.x.toFixed(2)} y:${smoothedQuat.y.toFixed(2)} z:${smoothedQuat.z.toFixed(2)}`;
 
             // Apply to camera (the quaternion represents camera rotation)
             camera.quaternion.copy(smoothedQuat);
