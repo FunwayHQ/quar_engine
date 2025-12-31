@@ -391,8 +391,14 @@
     const VISUAL_SMOOTHING = 0.15;
     let sensitivity = 1.0;
 
+    // Gyro rotation rate for translation filtering
+    // When rotation rate is high, optical flow is from rotation, not translation
+    let currentGyroRate = 0;  // Magnitude of rotation rate (rad/s)
+    const ROTATION_THRESHOLD = 0.15;  // Below this, consider it translation
+
     // Translation tracking
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
+    let lastTranslation = new THREE.Vector3(0, 0, 0);  // For delta calculation
 
 
     // Scale slider - updates the tracker's scale
@@ -427,6 +433,9 @@
       const betaRate = (event.rotationRate.beta || 0) * degToRad;
       const gammaRate = (event.rotationRate.gamma || 0) * degToRad;
       const alphaRate = (event.rotationRate.alpha || 0) * degToRad;
+
+      // Track rotation rate magnitude for translation filtering
+      currentGyroRate = Math.sqrt(betaRate * betaRate + gammaRate * gammaRate + alphaRate * alphaRate);
 
       // Integrate gyro
       gyroOrientation.x += betaRate * dt;
@@ -769,26 +778,33 @@
             }
 
             // 6DoF Translation tracking from optical flow
-            // X: lateral left/right, Y: lateral up/down, Z: radial forward/back
+            // Only apply translation when rotation rate is LOW (phone translating, not rotating)
             const t = pose.translation || [0, 0, 0];
 
-            // Get raw translation values scaled
-            const rawX = (t[0] ?? 0) * currentScale * 10;
-            const rawY = (t[1] ?? 0) * currentScale * 10;
-            const rawZ = (t[2] ?? 0) * currentScale * 10;
+            // Get delta translation since last frame
+            const deltaX = (t[0] ?? 0) - lastTranslation.x;
+            const deltaY = (t[1] ?? 0) - lastTranslation.y;
+            const deltaZ = (t[2] ?? 0) - lastTranslation.z;
+            lastTranslation.set(t[0] ?? 0, t[1] ?? 0, t[2] ?? 0);
 
-            // Smooth all translation axes
-            const smoothing = 0.15;
-            smoothedPosition.x += (rawX - smoothedPosition.x) * smoothing;
-            smoothedPosition.y += (rawY - smoothedPosition.y) * smoothing;
-            smoothedPosition.z += (rawZ - smoothedPosition.z) * smoothing;
+            // Calculate translation weight based on rotation rate
+            // High rotation = low weight (ignore translation from rotation)
+            // Low rotation = high weight (apply translation)
+            const rotationFactor = Math.max(0, 1 - currentGyroRate / ROTATION_THRESHOLD);
+            const translationWeight = rotationFactor * rotationFactor; // Square for smoother transition
+
+            // Only accumulate translation when not rotating much
+            if (translationWeight > 0.1) {
+              const scale = currentScale * 15 * translationWeight;
+              smoothedPosition.x += deltaX * scale;
+              smoothedPosition.y += deltaY * scale;
+              smoothedPosition.z += deltaZ * scale * 1.5; // Z more sensitive (radial flow)
+            }
 
             // Apply translation to camera position
             // Base position is (0, 1, 3), then offset by tracked movement
-            // X/Y: direct mapping (camera moves with phone)
-            // Z: forward movement brings camera closer to scene
             camera.position.x = smoothedPosition.x;
-            camera.position.y = 1 + smoothedPosition.y;  // Keep base height of 1
+            camera.position.y = 1 + smoothedPosition.y;
             camera.position.z = Math.max(0.5, Math.min(10, 3 - smoothedPosition.z));
 
             // Update state
@@ -872,6 +888,8 @@
       totalDistance = 0;
       lastPosition.set(0, 0, 0);
       smoothedPosition.set(0, 0, 0);
+      lastTranslation.set(0, 0, 0);
+      currentGyroRate = 0;
 
       // Reset IMU fusion state
       gyroOrientation = { x: 0, y: 0, z: 0 };

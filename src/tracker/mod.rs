@@ -111,17 +111,18 @@ impl Tracker {
                     self.current_pose.apply_rotation(&rotation);
                 }
 
-                // Calculate 6DoF translation from optical flow
-                let (lateral_x, lateral_y, radial_z) =
-                    self.calculate_flow_translation(&prev_matched, &curr_points, width, height);
+                // Calculate optical flow components for 6DoF translation
+                // Returns (lateral_x, lateral_y, radial_z)
+                // JavaScript will use gyro to decide when to apply these
+                let (flow_x, flow_y, radial_z) =
+                    self.calculate_flow_components(&prev_matched, &curr_points, width, height);
 
-                // Accumulate translation with scale factors
-                // Lateral movement: features move opposite to camera movement
-                // Radial movement: expansion = forward, contraction = backward
-                let translation_scale = 0.002; // Scale pixels to world units
-                self.accumulated_translation[0] += lateral_x * translation_scale;
-                self.accumulated_translation[1] += lateral_y * translation_scale;
-                self.accumulated_translation[2] += radial_z * translation_scale * 2.0; // Z is more sensitive
+                // Accumulate all translation components
+                // JavaScript will filter based on gyro rotation rate
+                let translation_scale = 0.003;
+                self.accumulated_translation[0] += flow_x * translation_scale;
+                self.accumulated_translation[1] += flow_y * translation_scale;
+                self.accumulated_translation[2] += radial_z * translation_scale;
 
                 // Update pose translation
                 self.current_pose.translation = self.accumulated_translation;
@@ -145,20 +146,22 @@ impl Tracker {
         Some(self.current_pose)
     }
 
-    /// Calculate 6DoF translation from optical flow.
+    /// Calculate optical flow components for 6DoF translation.
     ///
     /// Returns (lateral_x, lateral_y, radial_z):
-    /// - lateral_x: Average horizontal flow (camera moves opposite direction)
-    /// - lateral_y: Average vertical flow (camera moves opposite direction)
-    /// - radial_z: Radial expansion/contraction (forward/backward motion)
-    fn calculate_flow_translation(
+    /// - lateral_x/y: Average flow direction (for X/Y translation)
+    /// - radial_z: Expansion/contraction (for Z translation)
+    ///
+    /// Note: These values include rotation-induced flow. JavaScript should
+    /// use gyro rotation rate to filter when to apply translation.
+    fn calculate_flow_components(
         &self,
         prev_points: &[Point2],
         curr_points: &[Point2],
         width: u32,
         height: u32,
     ) -> (f32, f32, f32) {
-        if prev_points.len() < 4 {
+        if prev_points.len() < 8 {
             return (0.0, 0.0, 0.0);
         }
 
@@ -177,12 +180,12 @@ impl Tracker {
             let flow_y = curr.y - prev.y;
             let flow_mag = (flow_x * flow_x + flow_y * flow_y).sqrt();
 
-            // Skip very small or very large flows (noise or outliers)
-            if flow_mag < 0.5 || flow_mag > 50.0 {
+            // Skip very small or very large flows
+            if flow_mag < 0.3 || flow_mag > 40.0 {
                 continue;
             }
 
-            // Accumulate lateral flow (all points contribute)
+            // Accumulate lateral flow
             total_flow_x += flow_x;
             total_flow_y += flow_y;
             lateral_count += 1;
@@ -192,37 +195,32 @@ impl Tracker {
             let prev_ry = prev.y - cy;
             let prev_dist = (prev_rx * prev_rx + prev_ry * prev_ry).sqrt();
 
-            if prev_dist > 20.0 {
-                // Radial unit vector (pointing outward from center)
+            // Only use peripheral points for radial detection
+            if prev_dist > 40.0 {
                 let radial_x = prev_rx / prev_dist;
                 let radial_y = prev_ry / prev_dist;
-
-                // Radial component of flow (dot product)
-                // Positive = outward flow (forward motion)
-                // Negative = inward flow (backward motion)
-                let radial_flow = flow_x * radial_x + flow_y * radial_y;
-
-                // Weight by distance from center (features further out are more reliable)
-                let weight = (prev_dist / (width as f32 * 0.4)).min(1.0);
-                total_radial += radial_flow * weight;
+                let radial_component = flow_x * radial_x + flow_y * radial_y;
+                let weight = (prev_dist / (width as f32 * 0.3)).min(1.5);
+                total_radial += radial_component * weight;
                 radial_count += 1;
             }
         }
 
-        let lateral_x = if lateral_count > 0 {
-            -total_flow_x / lateral_count as f32 // Negate: features move left → camera moved right
+        // Compute averages (negate lateral for correct camera direction)
+        let lateral_x = if lateral_count >= 4 {
+            -total_flow_x / lateral_count as f32
         } else {
             0.0
         };
 
-        let lateral_y = if lateral_count > 0 {
-            -total_flow_y / lateral_count as f32 // Negate: features move up → camera moved down
+        let lateral_y = if lateral_count >= 4 {
+            -total_flow_y / lateral_count as f32
         } else {
             0.0
         };
 
-        let radial_z = if radial_count > 0 {
-            total_radial / radial_count as f32 // Positive = expansion = forward
+        let radial_z = if radial_count >= 4 {
+            total_radial / radial_count as f32
         } else {
             0.0
         };
