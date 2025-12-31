@@ -741,18 +741,19 @@
             lastPosition.copy(smoothedPosition);
             distanceEl.textContent = totalDistance.toFixed(3);
 
-            // AR mode: Move camera based on tracked pose, scene stays fixed
-            // The tracker gives camera rotation - apply it to the camera
-            // Objects at fixed world positions will appear anchored in real world
+            // AR anchoring: rotate scene OPPOSITE to camera rotation
+            // When phone rotates RIGHT, scene rotates LEFT relative to camera
+            // This makes objects appear anchored in real world
 
-            // Camera rotation = tracked rotation (inverted because we're moving camera, not world)
-            camera.quaternion.copy(smoothedQuaternion).invert();
+            // Get inverse of tracked rotation
+            const inverseRot = smoothedQuaternion.clone().invert();
+            arGroup.quaternion.copy(inverseRot);
 
-            // Camera position offset by translation (scaled)
-            camera.position.set(
-              smoothedPosition.x,
-              smoothedPosition.y + 1,  // Base height offset
-              smoothedPosition.z + 3   // Base distance offset
+            // Translation: move scene opposite to camera movement
+            arGroup.position.set(
+              -smoothedPosition.x * 50,  // Amplify translation
+              -smoothedPosition.y * 50,
+              -smoothedPosition.z * 50
             );
 
             // Add to trajectory (less frequently, using smoothed position)
