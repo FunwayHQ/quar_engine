@@ -788,35 +788,37 @@
             }
 
             // 6DoF Translation tracking from optical flow
-            // Use accumulated values directly from tracker (not deltas)
             const t = pose.translation || [0, 0, 0];
             const rawX = t[0] ?? 0;
             const rawY = t[1] ?? 0;
             const rawZ = t[2] ?? 0;
 
-            // Debug: show raw tracker values and gyro rate
+            // Debug every 30 frames: show raw values
+            if (frameCount % 30 === 0) {
+              console.log('Raw translation from Rust:', rawX.toFixed(3), rawY.toFixed(3), rawZ.toFixed(3));
+            }
+
+            // Scale - much larger for visibility
+            const scale = currentScale * 5.0;
+
+            // Direct mapping - no swap, just scale
+            const targetX = rawX * scale;
+            const targetY = rawY * scale;
+            const targetZ = rawZ * scale * 2.0;
+
+            // NO smoothing - apply directly to see raw values
+            smoothedPosition.x = targetX;
+            smoothedPosition.y = targetY;
+            smoothedPosition.z = targetZ;
+
+            // Debug: show raw translation values from Rust
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
-            flowDebugEl.textContent = `X:${rawX.toFixed(1)} Y:${rawY.toFixed(1)} Z:${rawZ.toFixed(1)}`;
+            flowDebugEl.textContent = `raw:${rawX.toFixed(1)},${rawY.toFixed(1)},${rawZ.toFixed(1)}`;
 
-            // Scale the accumulated translation (increased significantly)
-            const scale = currentScale * 2.0;
-
-            // Mobile camera might be rotated - try swapping X/Y
-            // Also use Y for Z (vertical motion often correlates with forward/back on mobile)
-            const mappedX = rawY * scale;  // Swap: use Y for horizontal
-            const mappedY = rawX * scale;  // Swap: use X for vertical
-            const mappedZ = rawZ * scale * 3.0;  // Z needs more sensitivity
-
-            // Smooth transition to new position
-            const smoothing = 0.15;
-            smoothedPosition.x += (mappedX - smoothedPosition.x) * smoothing;
-            smoothedPosition.y += (mappedY - smoothedPosition.y) * smoothing;
-            smoothedPosition.z += (mappedZ - smoothedPosition.z) * smoothing;
-
-            // Apply translation to camera position
+            // Apply ALL translations to camera - direct, no smoothing
             camera.position.x = smoothedPosition.x;
             camera.position.y = 1 + smoothedPosition.y;
-            camera.position.z = Math.max(0.5, Math.min(10, 3 - smoothedPosition.z));
+            camera.position.z = 3 - smoothedPosition.z;
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
