@@ -753,13 +753,18 @@
             lastPosition.copy(smoothedPosition);
             distanceEl.textContent = totalDistance.toFixed(3);
 
-            // Update camera position and rotation (using smoothed values)
-            camera.position.set(
-              -smoothedPosition.x,
-              -smoothedPosition.y + 1,
-              -smoothedPosition.z + 3
-            );
-            camera.quaternion.copy(smoothedQuaternion).conjugate();
+            // AR mode: Keep camera fixed, move the world inversely
+            // The tracker gives camera pose in world space
+            // To make objects appear fixed in the real world, we apply inverse transform to arGroup
+
+            // Create inverse quaternion (world rotates opposite to camera)
+            const inverseQuat = smoothedQuaternion.clone().invert();
+            arGroup.quaternion.copy(inverseQuat);
+
+            // Apply inverse translation (rotated by inverse quaternion)
+            const inversePos = smoothedPosition.clone().negate();
+            inversePos.applyQuaternion(inverseQuat);
+            arGroup.position.copy(inversePos);
 
             // Add to trajectory (less frequently, using smoothed position)
             if (showTrajectoryCheckbox.checked && poseConfidence > 0.3) {
@@ -823,11 +828,14 @@
       lastValidPose = null;
       poseConfidence = 0;
 
-      // Reset camera
+      // Reset camera and arGroup
       camera.position.set(0, 1, 3);
-      camera.rotation.set(0, 0, 0);
       camera.quaternion.set(0, 0, 0, 1);
       camera.lookAt(0, 0, 0);
+
+      // Reset arGroup to identity
+      arGroup.position.set(0, 0, 0);
+      arGroup.quaternion.set(0, 0, 0, 1);
 
       // Reset display
       txEl.textContent = '0.000';
