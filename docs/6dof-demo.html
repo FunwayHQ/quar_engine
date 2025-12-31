@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v17 Worker)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v18 Plane Fix)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -473,7 +473,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF VIO Demo v17 (Worker)</p>
+      <p>6DoF VIO Demo v18 (Plane Fix)</p>
       <div class="features">
         <span>Plane Detection</span>
         <span>Hit Testing</span>
@@ -1130,7 +1130,7 @@
       detectedFloorMesh = new THREE.Mesh(floorGeo, floorMat);
       detectedFloorMesh.rotation.x = -Math.PI / 2; // Face up
       detectedFloorMesh.visible = false;
-      arGroup.add(detectedFloorMesh);
+      scene.add(detectedFloorMesh); // Add to scene directly, not arGroup, so it stays fixed in world space
 
       // Lights
       scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -1395,26 +1395,17 @@
 
               // Plane detection - run every 30 frames (~0.5 sec at 60fps)
               if (planeDetector && totalFrames % 30 === 0) {
-                // Simulate 3D points from current camera position
-                // In production, these would come from triangulated map points
-                const camPos = [
-                  -arGroup.position.x,
-                  -arGroup.position.y,
-                  -arGroup.position.z
-                ];
-
-                // Add simulated floor points based on camera position
-                // This demos plane detection - real points would come from triangulation
-                for (let i = 0; i < 5; i++) {
-                  const px = camPos[0] + (Math.random() - 0.5) * 2;
-                  const py = -0.5 + (Math.random() - 0.5) * 0.05; // Near floor level
-                  const pz = camPos[2] + (Math.random() - 0.5) * 2;
-                  mapPoints3D.push(px, py, pz);
-                }
-
-                // Limit point cloud size
-                if (mapPoints3D.length > 3000) {
-                  mapPoints3D = mapPoints3D.slice(-1500);
+                // Generate floor points in WORLD SPACE (fixed grid)
+                // In production, these come from triangulated map points
+                // Only generate initial points once, then keep them fixed
+                if (mapPoints3D.length < 300) {
+                  // Create a fixed 3m x 3m grid of floor points at y = -0.5m (world space)
+                  for (let i = 0; i < 10; i++) {
+                    const px = (Math.random() - 0.5) * 3.0;  // -1.5m to +1.5m in world X
+                    const py = -0.5 + (Math.random() - 0.5) * 0.02; // Floor at y=-0.5m with small noise
+                    const pz = (Math.random() - 0.5) * 3.0;  // -1.5m to +1.5m in world Z
+                    mapPoints3D.push(px, py, pz);
+                  }
                 }
 
                 // Run plane detection if we have enough points
@@ -1427,17 +1418,17 @@
                     floorStatusEl.textContent = `y=${floor.center_y.toFixed(2)}`;
                     floorStatusEl.style.color = '#4ade80';
 
-                    // Update floor mesh position and visibility
-                    if (detectedFloorMesh) {
+                    // Update floor mesh position ONLY if not already placed
+                    // This "locks" the plane in world space
+                    if (detectedFloorMesh && !detectedFloorMesh.userData.locked) {
                       detectedFloorMesh.position.set(floor.center_x, floor.center_y, floor.center_z);
                       detectedFloorMesh.visible = true;
+                      detectedFloorMesh.userData.locked = true; // Lock it in place
+                      console.log(`Floor locked at world position: [${floor.center_x.toFixed(2)}, ${floor.center_y.toFixed(2)}, ${floor.center_z.toFixed(2)}]`);
                     }
                   } else {
                     floorStatusEl.textContent = 'NONE';
                     floorStatusEl.style.color = '#888';
-                    if (detectedFloorMesh) {
-                      detectedFloorMesh.visible = false;
-                    }
                   }
                 }
               }
@@ -1565,6 +1556,7 @@
       mapPoints3D = [];
       if (detectedFloorMesh) {
         detectedFloorMesh.visible = false;
+        detectedFloorMesh.userData.locked = false; // Allow re-detection after reset
       }
       planeCountEl.textContent = '0';
       floorStatusEl.textContent = '--';
