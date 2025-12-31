@@ -285,7 +285,7 @@
       </div>
       <div class="stat">
         <span class="stat-label">Scale: </span>
-        <span class="stat-value" id="scale-display">2.00</span>
+        <span class="stat-value" id="scale-display">10.00</span>
       </div>
       <div class="stat">
         <span class="stat-label">Gyro: </span>
@@ -409,26 +409,26 @@
         <div class="slider-group">
           <div class="slider-row">
             <label>Master:</label>
-            <input type="range" id="scale-slider" min="0.1" max="10" step="0.1" value="2.0">
-            <span class="value" id="scale-val">2.00</span>
+            <input type="range" id="scale-slider" min="0.1" max="20" step="0.1" value="10.0">
+            <span class="value" id="scale-val">10.00</span>
           </div>
         </div>
 
         <div class="slider-group">
           <div class="slider-row">
             <label style="color:#f87171">X (L/R):</label>
-            <input type="range" id="x-scale-slider" min="0" max="3" step="0.1" value="1.0">
-            <span class="value" id="x-scale-val">1.0</span>
+            <input type="range" id="x-scale-slider" min="0" max="5" step="0.1" value="2.5">
+            <span class="value" id="x-scale-val">2.5</span>
           </div>
           <div class="slider-row">
             <label style="color:#4ade80">Y (U/D):</label>
-            <input type="range" id="y-scale-slider" min="0" max="3" step="0.1" value="1.0">
-            <span class="value" id="y-scale-val">1.0</span>
+            <input type="range" id="y-scale-slider" min="0" max="5" step="0.1" value="2.0">
+            <span class="value" id="y-scale-val">2.0</span>
           </div>
           <div class="slider-row">
             <label style="color:#60a5fa">Z (F/B):</label>
-            <input type="range" id="z-scale-slider" min="0" max="10" step="0.1" value="3.0">
-            <span class="value" id="z-scale-val">3.0</span>
+            <input type="range" id="z-scale-slider" min="0" max="20" step="0.1" value="10.0">
+            <span class="value" id="z-scale-val">10.0</span>
           </div>
         </div>
 
@@ -601,10 +601,10 @@
     // Tracking state
     let totalDistance = 0;
     let lastPosition = new THREE.Vector3();
-    let currentScale = 2.0;  // Master scale (increased from 0.5 - raw values are small)
-    let xScale = 1.0;        // X axis multiplier
-    let yScale = 1.0;        // Y axis multiplier
-    let zScale = 3.0;        // Z axis multiplier (default 3x to compensate for smaller radial signal)
+    let currentScale = 10.0;  // Master scale
+    let xScale = 2.5;         // X axis multiplier
+    let yScale = 2.0;         // Y axis multiplier
+    let zScale = 10.0;        // Z axis multiplier
     let smoothing = 0.3;     // Smoothing factor (0-1, lower = smoother)
     let deadzone = 0.001;    // Dead zone threshold (was 0.05 - too high for small deltas)
     let rotFilter = 0.5;     // Rotation suppression multiplier (lowered from 2.0)
