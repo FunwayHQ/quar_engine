@@ -285,6 +285,7 @@
       <div class="stat">
         <span class="stat-label">Gyro Comp: </span>
         <span class="stat-value" id="gyro-comp">OFF</span>
+        <input type="checkbox" id="gyro-comp-toggle" checked style="margin-left: 8px;">
       </div>
       <div class="stat">
         <span class="stat-label">Flow: </span>
@@ -476,6 +477,7 @@
     const showTrajectoryCheckbox = document.getElementById('show-trajectory');
     const gyroRateEl = document.getElementById('gyro-rate');
     const gyroCompEl = document.getElementById('gyro-comp');
+    const gyroCompToggle = document.getElementById('gyro-comp-toggle');
     const flowDebugEl = document.getElementById('flow-debug');
 
     // Pose display elements
@@ -577,6 +579,15 @@
     invertZCheckbox.addEventListener('change', (e) => {
       invertZ = e.target.checked;
       invertZVal.textContent = invertZ ? 'on' : 'off';
+    });
+
+    // Gyro compensation toggle
+    let useGyroCompensation = true;
+    gyroCompToggle.addEventListener('change', (e) => {
+      useGyroCompensation = e.target.checked;
+      if (trackerHandle) {
+        trackerHandle.set_gyro_compensation(useGyroCompensation);
+      }
     });
 
     // Tuning panel collapse/expand
@@ -931,9 +942,11 @@
           const imgData = pCtx.getImageData(0, 0, 640, 480);
 
           // Get 6DoF pose from Essential matrix decomposition
-          // Use timestamped version for gyro compensation
+          // Use timestamped version only when gyro compensation is enabled
           const frameTime = performance.now();
-          const pose = trackerHandle.process_frame_with_time(imgData.data, 640, 480, frameTime);
+          const pose = useGyroCompensation
+            ? trackerHandle.process_frame_with_time(imgData.data, 640, 480, frameTime)
+            : trackerHandle.process_frame(imgData.data, 640, 480);
           const tracked = trackerHandle.tracked_points();
           const inliers = trackerHandle.inlier_points();
           const confidenceLevel = trackerHandle.confidence_level();
