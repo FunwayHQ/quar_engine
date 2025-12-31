@@ -223,7 +223,7 @@
         <span class="badge">Rust + WASM</span>
         <span class="badge">Three.js</span>
         <span class="badge">Visual-Inertial</span>
-        <span class="badge">85KB gzipped</span>
+        <span class="badge">51KB gzipped</span>
       </div>
     </header>
 
@@ -241,16 +241,15 @@
       <a href="6dof-demo.html" class="demo-card" style="border-color: #f472b6; background: rgba(244, 114, 182, 0.05);">
         <h2>
           6DoF Tracking
-          <span class="demo-tag" style="background: rgba(244, 114, 182, 0.3); color: #f472b6;">NEW</span>
-          <span class="demo-tag" style="background: rgba(250, 204, 21, 0.2); color: #facc15;">Preview</span>
+          <span class="demo-tag" style="background: rgba(74, 222, 128, 0.3); color: #4ade80;">WASM</span>
         </h2>
-        <p>Full 6 degrees of freedom tracking preview. Essential matrix estimation with RANSAC and triangulation for translation recovery.</p>
+        <p>Full 6 degrees of freedom tracking with rotation AND translation. Pure-Rust Essential matrix decomposition running entirely in WebAssembly.</p>
         <ul class="features">
-          <li>Essential Matrix (8-point)</li>
+          <li>Essential Matrix (8-point algorithm)</li>
           <li>RANSAC outlier rejection</li>
-          <li>Triangulation</li>
+          <li>Pure-Rust SVD & triangulation</li>
           <li>Camera trajectory visualization</li>
-          <li>Translation + rotation tracking</li>
+          <li>Real translation from epipolar geometry</li>
         </ul>
       </a>
 
