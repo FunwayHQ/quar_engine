@@ -354,7 +354,8 @@
             const sensitivity = 0.7;
 
             // Apply euler angles directly to camera with smoothing
-            camera.rotation.x += (-euler.y * sensitivity - camera.rotation.x) * smoothingFactor;
+            // Flip pitch sign - try positive
+            camera.rotation.x += (euler.y * sensitivity - camera.rotation.x) * smoothingFactor;
             camera.rotation.y += (-euler.z * sensitivity - camera.rotation.y) * smoothingFactor;
             camera.rotation.z += (euler.x * sensitivity - camera.rotation.z) * smoothingFactor;
 
