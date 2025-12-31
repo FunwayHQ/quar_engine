@@ -798,14 +798,20 @@
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
             flowDebugEl.textContent = `X:${rawX.toFixed(1)} Y:${rawY.toFixed(1)} Z:${rawZ.toFixed(1)}`;
 
-            // Scale the accumulated translation
-            const scale = currentScale * 0.5;  // Direct scaling of accumulated values
+            // Scale the accumulated translation (increased significantly)
+            const scale = currentScale * 2.0;
+
+            // Mobile camera might be rotated - try swapping X/Y
+            // Also use Y for Z (vertical motion often correlates with forward/back on mobile)
+            const mappedX = rawY * scale;  // Swap: use Y for horizontal
+            const mappedY = rawX * scale;  // Swap: use X for vertical
+            const mappedZ = rawZ * scale * 3.0;  // Z needs more sensitivity
 
             // Smooth transition to new position
-            const smoothing = 0.1;
-            smoothedPosition.x += (rawX * scale - smoothedPosition.x) * smoothing;
-            smoothedPosition.y += (rawY * scale - smoothedPosition.y) * smoothing;
-            smoothedPosition.z += (rawZ * scale - smoothedPosition.z) * smoothing;
+            const smoothing = 0.15;
+            smoothedPosition.x += (mappedX - smoothedPosition.x) * smoothing;
+            smoothedPosition.y += (mappedY - smoothedPosition.y) * smoothing;
+            smoothedPosition.z += (mappedZ - smoothedPosition.z) * smoothing;
 
             // Apply translation to camera position
             camera.position.x = smoothedPosition.x;

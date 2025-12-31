@@ -180,12 +180,12 @@ impl Tracker {
             let flow_y = curr.y - prev.y;
             let flow_mag = (flow_x * flow_x + flow_y * flow_y).sqrt();
 
-            // Skip very small or very large flows
-            if flow_mag < 0.3 || flow_mag > 40.0 {
+            // Skip only very large flows (outliers)
+            if flow_mag > 50.0 {
                 continue;
             }
 
-            // Accumulate lateral flow
+            // Accumulate lateral flow (all points, no minimum)
             total_flow_x += flow_x;
             total_flow_y += flow_y;
             lateral_count += 1;
@@ -195,8 +195,8 @@ impl Tracker {
             let prev_ry = prev.y - cy;
             let prev_dist = (prev_rx * prev_rx + prev_ry * prev_ry).sqrt();
 
-            // Only use peripheral points for radial detection
-            if prev_dist > 40.0 {
+            // Use points that are at least 20px from center for radial
+            if prev_dist > 20.0 {
                 let radial_x = prev_rx / prev_dist;
                 let radial_y = prev_ry / prev_dist;
                 let radial_component = flow_x * radial_x + flow_y * radial_y;
@@ -207,19 +207,19 @@ impl Tracker {
         }
 
         // Compute averages (negate lateral for correct camera direction)
-        let lateral_x = if lateral_count >= 4 {
+        let lateral_x = if lateral_count >= 2 {
             -total_flow_x / lateral_count as f32
         } else {
             0.0
         };
 
-        let lateral_y = if lateral_count >= 4 {
+        let lateral_y = if lateral_count >= 2 {
             -total_flow_y / lateral_count as f32
         } else {
             0.0
         };
 
-        let radial_z = if radial_count >= 4 {
+        let radial_z = if radial_count >= 2 {
             total_radial / radial_count as f32
         } else {
             0.0
