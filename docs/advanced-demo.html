@@ -147,8 +147,8 @@
         <span class="stat-value" id="state">initializing</span>
       </div>
       <div class="stat">
-        <span class="stat-label">Quat: </span>
-        <span class="stat-value" id="quat-debug" style="font-size:11px">--</span>
+        <span class="stat-label">Gyro: </span>
+        <span class="stat-value" id="gyro-debug" style="font-size:11px">--</span>
       </div>
       <div class="stat">
         <span class="stat-label">Cam: </span>
@@ -173,6 +173,11 @@
     </div>
 
     <div id="controls">
+      <div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,0.7);padding:10px 15px;border-radius:6px;">
+        <span style="font-size:12px;color:#888;">Sensitivity:</span>
+        <input type="range" id="sensitivity" min="0.1" max="2" step="0.1" value="1" style="width:100px;">
+        <span id="sens-val" style="font-size:12px;color:#4ade80;width:30px;">1.0</span>
+      </div>
       <button id="reset-btn" disabled>Reset</button>
     </div>
 
@@ -208,8 +213,17 @@
     const accelDot = document.getElementById('accel-dot');
     const calibDot = document.getElementById('calib-dot');
     const calibText = document.getElementById('calib-text');
-    const quatDebug = document.getElementById('quat-debug');
+    const gyroDebug = document.getElementById('gyro-debug');
     const camDebug = document.getElementById('cam-debug');
+    const sensitivitySlider = document.getElementById('sensitivity');
+    const sensVal = document.getElementById('sens-val');
+
+    // Sensitivity control
+    let sensitivity = 1.0;
+    sensitivitySlider.addEventListener('input', (e) => {
+      sensitivity = parseFloat(e.target.value);
+      sensVal.textContent = sensitivity.toFixed(1);
+    });
 
     const videoCtx = videoCanvas.getContext('2d');
 
@@ -244,7 +258,29 @@
     const GYRO_ALPHA = 0.98;
     const VISUAL_SMOOTHING = 0.15;
 
-    // Gyroscope integration
+    // Gyroscope integration for AR world-space locking
+    //
+    // Goal: When phone rotates, cube stays FIXED in real world
+    // Implementation: Rotate Three.js camera to match phone's real-world orientation
+    //
+    // DeviceMotion rotationRate (deg/s) - verified conventions:
+    // - beta:  pitch rate around X-axis (left-right axis of phone)
+    //          POSITIVE = top of phone tilts TOWARD user (looking DOWN at screen)
+    //          NEGATIVE = top of phone tilts AWAY from user (looking UP)
+    // - gamma: roll rate around Y-axis (top-bottom axis of phone)
+    //          POSITIVE = phone tilts to the RIGHT
+    // - alpha: yaw rate around Z-axis (out of screen)
+    //          POSITIVE = counter-clockwise rotation from above
+    //
+    // Three.js camera rotation:
+    // - rotation.x: pitch - POSITIVE = look DOWN, NEGATIVE = look UP
+    // - rotation.y: yaw - POSITIVE = look LEFT, NEGATIVE = look RIGHT
+    // - rotation.z: roll
+    //
+    // AR mapping for pitch:
+    //   Phone tilts UP (beta NEGATIVE) → gyro.x DECREASES → camera.rotation.x should be NEGATIVE
+    //   So: camera.rotation.x = fusedOrientation.x (NO inversion needed!)
+
     function handleGyro(event) {
       if (!event.rotationRate) return;
 
@@ -255,33 +291,36 @@
         return;
       }
 
-      const dt = (now - lastGyroTime) / 1000; // Convert to seconds
+      const dt = (now - lastGyroTime) / 1000;
       lastGyroTime = now;
 
-      // Get rotation rates (convert from deg/s to rad/s if needed)
-      // DeviceMotion uses deg/s, we need rad/s
       const degToRad = Math.PI / 180;
-      const alpha = (event.rotationRate.alpha || 0) * degToRad; // Z rotation
-      const beta = (event.rotationRate.beta || 0) * degToRad;   // X rotation
-      const gamma = (event.rotationRate.gamma || 0) * degToRad; // Y rotation
 
-      // Integrate gyroscope (accumulate rotation)
-      // Invert axes for correct AR behavior (object stays fixed in world)
-      gyroOrientation.x -= beta * dt;
-      gyroOrientation.y -= gamma * dt;
-      gyroOrientation.z -= alpha * dt;
+      // Get rotation rates and convert to radians
+      const betaRate = (event.rotationRate.beta || 0) * degToRad;   // pitch
+      const gammaRate = (event.rotationRate.gamma || 0) * degToRad; // roll
+      const alphaRate = (event.rotationRate.alpha || 0) * degToRad; // yaw
 
-      // Apply complementary filter: blend gyro with visual tracking
-      // High-pass filter on gyro (short-term), low-pass on visual (long-term)
+      // Integrate gyro - accumulate rotation
+      gyroOrientation.x += betaRate * dt;   // pitch: positive=look down, negative=look up
+      gyroOrientation.y += gammaRate * dt;  // roll
+      gyroOrientation.z += alphaRate * dt;  // yaw
+
+      // Complementary filter: blend gyro (fast, drifts) with visual (slow, stable)
       fusedOrientation.x = GYRO_ALPHA * gyroOrientation.x + (1 - GYRO_ALPHA) * visualOrientation.x;
       fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
       fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
 
-      // Apply to camera immediately for responsive updates
-      if (isRunning) {
-        camera.rotation.x = fusedOrientation.x;
-        camera.rotation.y = fusedOrientation.y;
-        camera.rotation.z = fusedOrientation.z;
+      // Apply to camera with sensitivity
+      if (isRunning && camera) {
+        camera.rotation.x = fusedOrientation.x * sensitivity;
+        camera.rotation.y = fusedOrientation.z * sensitivity;
+        camera.rotation.z = -fusedOrientation.y * sensitivity;
+
+        // Debug: show integrated gyro values (in degrees for readability)
+        const toDeg = 180 / Math.PI;
+        gyroDebug.textContent = `β:${(gyroOrientation.x * toDeg).toFixed(0)} γ:${(gyroOrientation.y * toDeg).toFixed(0)} α:${(gyroOrientation.z * toDeg).toFixed(0)}`;
+        camDebug.textContent = `x:${(camera.rotation.x * toDeg).toFixed(0)} y:${(camera.rotation.y * toDeg).toFixed(0)} z:${(camera.rotation.z * toDeg).toFixed(0)}`;
       }
     }
 
@@ -468,29 +507,28 @@
             const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
             const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
-            // Update visual orientation for fusion (drift correction)
-            // Invert to match gyro (object stays fixed in world)
-            visualOrientation.x += (-euler.y - visualOrientation.x) * VISUAL_SMOOTHING;
+            // Visual tracking provides euler angles from optical flow
+            // Tracker's coordinate system:
+            // - euler.x = pitch (vertical camera motion from optical flow)
+            // - euler.y = yaw (horizontal camera motion)
+            // - euler.z = roll
+            //
+            // We need to match gyro's coordinate system:
+            // - visualOrientation.x = pitch (matches gyroOrientation.x from beta)
+            // - visualOrientation.y = roll
+            // - visualOrientation.z = yaw
+            //
+            // The tracker already inverts some values, so we map directly:
+            visualOrientation.x += (euler.x - visualOrientation.x) * VISUAL_SMOOTHING;
             visualOrientation.y += (euler.z - visualOrientation.y) * VISUAL_SMOOTHING;
-            visualOrientation.z += (-euler.x - visualOrientation.z) * VISUAL_SMOOTHING;
-
-            // Also update gyro orientation to match visual (prevents large drift)
-            // This "pulls" the gyro towards the visual estimate over time
-            gyroOrientation.x += (visualOrientation.x - gyroOrientation.x) * 0.02;
-            gyroOrientation.y += (visualOrientation.y - gyroOrientation.y) * 0.02;
-            gyroOrientation.z += (visualOrientation.z - gyroOrientation.z) * 0.02;
-
-            // Debug output - raw visual values
-            quatDebug.textContent = `vis:${visualOrientation.x.toFixed(2)},${visualOrientation.y.toFixed(2)}`;
-
-            // Debug output - fused camera rotation
-            camDebug.textContent = `fus:${fusedOrientation.x.toFixed(2)},${fusedOrientation.y.toFixed(2)}`;
+            visualOrientation.z += (euler.y - visualOrientation.z) * VISUAL_SMOOTHING;
 
             // If no gyro available, fall back to visual-only
+            // Use same convention as gyro: direct mapping (no inversion)
             if (!gyroActive) {
               camera.rotation.x = visualOrientation.x;
-              camera.rotation.y = visualOrientation.y;
-              camera.rotation.z = visualOrientation.z;
+              camera.rotation.y = visualOrientation.z;
+              camera.rotation.z = -visualOrientation.y;
             }
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
@@ -498,9 +536,6 @@
           }
         }
       }
-
-      // Cube rotates slowly on its own axis (decorative)
-      cube.rotation.y += 0.005;
 
       // Render
       renderer.render(scene, camera);
