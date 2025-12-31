@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QUAR Engine - Feature Detection Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #video-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+
+    #feature-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* HUD Panel */
+    #hud {
+      position: absolute;
+      top: 20px; left: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      z-index: 100;
+      min-width: 180px;
+    }
+
+    #hud h2 {
+      color: #facc15;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .stat { margin: 5px 0; }
+    .stat-label { color: #888; }
+    .stat-value { color: #4ade80; }
+
+    /* Threshold slider */
+    #threshold-panel {
+      position: absolute;
+      top: 20px; right: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px 20px;
+      border-radius: 8px;
+      z-index: 100;
+      min-width: 200px;
+    }
+
+    #threshold-panel h3 {
+      color: #60a5fa;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    .slider-row label {
+      font-size: 12px;
+      color: #888;
+      min-width: 70px;
+    }
+
+    .slider-row input[type="range"] {
+      flex: 1;
+    }
+
+    .slider-row .value {
+      font-size: 13px;
+      color: #4ade80;
+      min-width: 30px;
+      text-align: right;
+    }
+
+    /* Controls */
+    #controls {
+      position: absolute;
+      bottom: 40px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 100;
+    }
+
+    button {
+      padding: 12px 25px;
+      background: #facc15;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover { background: #fde047; }
+    button:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; }
+
+    button.secondary {
+      background: #4b5563;
+      color: #fff;
+    }
+    button.secondary:hover { background: #6b7280; }
+
+    /* Start overlay */
+    #start-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #2d1f3d 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+
+    #start-overlay h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #facc15, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    #start-overlay p {
+      color: #888;
+      margin-bottom: 30px;
+    }
+
+    #start-overlay .features {
+      margin-bottom: 30px;
+      text-align: center;
+    }
+
+    #start-overlay .features span {
+      display: inline-block;
+      margin: 5px;
+      padding: 5px 12px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 20px;
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    #start-overlay.hidden { display: none; }
+
+    /* Feature visualization options */
+    #viz-options {
+      position: absolute;
+      bottom: 100px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 15px;
+      background: rgba(0,0,0,0.7);
+      padding: 10px 20px;
+      border-radius: 8px;
+      z-index: 100;
+    }
+
+    #viz-options label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="feature-canvas"></canvas>
+
+    <div id="hud">
+      <h2>FAST Features</h2>
+      <div class="stat">
+        <span class="stat-label">FPS: </span>
+        <span class="stat-value" id="fps">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Features: </span>
+        <span class="stat-value" id="features">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Detection: </span>
+        <span class="stat-value" id="detect-time">--</span>
+        <span class="stat-label"> ms</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Resolution: </span>
+        <span class="stat-value" id="resolution">--</span>
+      </div>
+    </div>
+
+    <div id="threshold-panel">
+      <h3>Detection Parameters</h3>
+      <div class="slider-row">
+        <label>Threshold:</label>
+        <input type="range" id="threshold-slider" min="5" max="100" value="25">
+        <span class="value" id="threshold-val">25</span>
+      </div>
+      <div class="slider-row">
+        <label>NMS Radius:</label>
+        <input type="range" id="nms-slider" min="0" max="20" value="8">
+        <span class="value" id="nms-val">8</span>
+      </div>
+      <div class="slider-row">
+        <label>Max Features:</label>
+        <input type="range" id="max-slider" min="50" max="500" step="50" value="200">
+        <span class="value" id="max-val">200</span>
+      </div>
+    </div>
+
+    <div id="viz-options">
+      <label>
+        <input type="checkbox" id="show-score" checked>
+        Color by score
+      </label>
+      <label>
+        <input type="checkbox" id="show-crosshair">
+        Crosshairs
+      </label>
+    </div>
+
+    <div id="controls">
+      <button id="switch-btn" class="secondary" disabled>Switch Camera</button>
+    </div>
+
+    <div id="start-overlay">
+      <h1>Feature Detection</h1>
+      <p>FAST Corner Detection Debug View</p>
+      <div class="features">
+        <span>FAST-9</span>
+        <span>Adjustable Threshold</span>
+        <span>NMS Filtering</span>
+        <span>Score Visualization</span>
+      </div>
+      <button id="start-btn">Start Detection</button>
+    </div>
+  </div>
+
+  <script type="module">
+    console.log('Feature Demo: Script loading...');
+
+    let init, detect_features, version;
+    try {
+      const wasm = await import('./pkg/quar_engine.js');
+      init = wasm.default;
+      detect_features = wasm.detect_features;
+      version = wasm.version;
+      console.log('Feature Demo: WASM module loaded');
+    } catch (e) {
+      console.error('Failed to load WASM module:', e);
+      document.getElementById('start-btn').textContent = 'WASM Load Failed';
+      document.getElementById('start-btn').style.background = '#f87171';
+      throw e;
+    }
+
+    // DOM elements
+    const videoCanvas = document.getElementById('video-canvas');
+    const featureCanvas = document.getElementById('feature-canvas');
+    const startOverlay = document.getElementById('start-overlay');
+    const startBtn = document.getElementById('start-btn');
+    const switchBtn = document.getElementById('switch-btn');
+    const fpsEl = document.getElementById('fps');
+    const featuresEl = document.getElementById('features');
+    const detectTimeEl = document.getElementById('detect-time');
+    const resolutionEl = document.getElementById('resolution');
+
+    const thresholdSlider = document.getElementById('threshold-slider');
+    const thresholdVal = document.getElementById('threshold-val');
+    const nmsSlider = document.getElementById('nms-slider');
+    const nmsVal = document.getElementById('nms-val');
+    const maxSlider = document.getElementById('max-slider');
+    const maxVal = document.getElementById('max-val');
+    const showScoreCheckbox = document.getElementById('show-score');
+    const showCrosshairCheckbox = document.getElementById('show-crosshair');
+
+    const videoCtx = videoCanvas.getContext('2d');
+    const featureCtx = featureCanvas.getContext('2d');
+
+    // State
+    let video = null;
+    let stream = null;
+    let animationId = null;
+    let isRunning = false;
+    let useFrontCamera = false;
+
+    // Parameters
+    let threshold = 25;
+    let nmsRadius = 8;
+    let maxFeatures = 200;
+
+    // FPS counter
+    let frameCount = 0;
+    let lastFpsTime = 0;
+
+    // Slider handlers
+    thresholdSlider.addEventListener('input', (e) => {
+      threshold = parseInt(e.target.value);
+      thresholdVal.textContent = threshold;
+    });
+
+    nmsSlider.addEventListener('input', (e) => {
+      nmsRadius = parseInt(e.target.value);
+      nmsVal.textContent = nmsRadius;
+    });
+
+    maxSlider.addEventListener('input', (e) => {
+      maxFeatures = parseInt(e.target.value);
+      maxVal.textContent = maxFeatures;
+    });
+
+    async function loadWasm() {
+      await init();
+      console.log('WASM initialized:', version());
+    }
+
+    async function startCamera() {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+
+      video = document.createElement('video');
+      video.setAttribute('playsinline', '');
+      video.muted = true;
+      video.autoplay = true;
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: useFrontCamera ? 'user' : 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      await new Promise(r => { video.onloadedmetadata = r; });
+      await video.play();
+
+      videoCanvas.width = window.innerWidth;
+      videoCanvas.height = window.innerHeight;
+      featureCanvas.width = window.innerWidth;
+      featureCanvas.height = window.innerHeight;
+
+      resolutionEl.textContent = `${video.videoWidth}x${video.videoHeight}`;
+    }
+
+    function onResize() {
+      videoCanvas.width = window.innerWidth;
+      videoCanvas.height = window.innerHeight;
+      featureCanvas.width = window.innerWidth;
+      featureCanvas.height = window.innerHeight;
+    }
+
+    window.addEventListener('resize', onResize);
+
+    function scoreToColor(score, maxScore) {
+      const ratio = Math.min(score / maxScore, 1);
+      // Green to yellow to red gradient
+      if (ratio < 0.5) {
+        const g = Math.floor(255 * (ratio * 2));
+        return `rgb(255, ${g}, 0)`;
+      } else {
+        const r = Math.floor(255 * (1 - (ratio - 0.5) * 2));
+        return `rgb(${r}, 255, 0)`;
+      }
+    }
+
+    function render() {
+      if (!isRunning) return;
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsEl.textContent = frameCount;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      // Draw video background
+      if (video && video.readyState >= 2) {
+        const vAspect = video.videoWidth / video.videoHeight;
+        const cAspect = videoCanvas.width / videoCanvas.height;
+        let dw, dh, ox, oy;
+        if (vAspect > cAspect) {
+          dh = videoCanvas.height;
+          dw = dh * vAspect;
+          ox = (videoCanvas.width - dw) / 2;
+          oy = 0;
+        } else {
+          dw = videoCanvas.width;
+          dh = dw / vAspect;
+          ox = 0;
+          oy = (videoCanvas.height - dh) / 2;
+        }
+        videoCtx.drawImage(video, ox, oy, dw, dh);
+
+        // Detect features
+        const pCanvas = document.createElement('canvas');
+        const pWidth = 640;
+        const pHeight = 480;
+        pCanvas.width = pWidth;
+        pCanvas.height = pHeight;
+        const pCtx = pCanvas.getContext('2d');
+        pCtx.drawImage(video, 0, 0, pWidth, pHeight);
+        const imgData = pCtx.getImageData(0, 0, pWidth, pHeight);
+
+        const t0 = performance.now();
+        const features = detect_features(imgData.data, pWidth, pHeight, threshold);
+        const detectTime = performance.now() - t0;
+
+        detectTimeEl.textContent = detectTime.toFixed(1);
+
+        // Clear feature canvas
+        featureCtx.clearRect(0, 0, featureCanvas.width, featureCanvas.height);
+
+        if (features && features.length > 0) {
+          // Scale factor from processing resolution to display
+          const scaleX = dw / pWidth;
+          const scaleY = dh / pHeight;
+
+          // Find max score for color scaling
+          let maxScore = 0;
+          for (const f of features) {
+            if (f.score > maxScore) maxScore = f.score;
+          }
+
+          // Limit to maxFeatures
+          const displayFeatures = features.slice(0, maxFeatures);
+          featuresEl.textContent = `${displayFeatures.length}/${features.length}`;
+
+          const showScore = showScoreCheckbox.checked;
+          const showCross = showCrosshairCheckbox.checked;
+
+          for (const f of displayFeatures) {
+            const x = ox + f.x * scaleX;
+            const y = oy + f.y * scaleY;
+
+            const color = showScore ? scoreToColor(f.score, maxScore) : '#4ade80';
+
+            if (showCross) {
+              // Draw crosshair
+              featureCtx.strokeStyle = color;
+              featureCtx.lineWidth = 1;
+              featureCtx.beginPath();
+              featureCtx.moveTo(x - 5, y);
+              featureCtx.lineTo(x + 5, y);
+              featureCtx.moveTo(x, y - 5);
+              featureCtx.lineTo(x, y + 5);
+              featureCtx.stroke();
+            } else {
+              // Draw circle
+              featureCtx.fillStyle = color;
+              featureCtx.beginPath();
+              featureCtx.arc(x, y, 3, 0, Math.PI * 2);
+              featureCtx.fill();
+            }
+          }
+        } else {
+          featuresEl.textContent = '0';
+        }
+      }
+
+      animationId = requestAnimationFrame(render);
+    }
+
+    async function switchCamera() {
+      useFrontCamera = !useFrontCamera;
+      await startCamera();
+    }
+
+    // Start button
+    console.log('Feature Demo: Attaching click handler');
+    startBtn.addEventListener('click', async () => {
+      console.log('Feature Demo: Start button clicked');
+      try {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Loading...';
+
+        await loadWasm();
+        await startCamera();
+
+        startOverlay.classList.add('hidden');
+        switchBtn.disabled = false;
+        isRunning = true;
+        lastFpsTime = performance.now();
+        render();
+
+      } catch (err) {
+        console.error(err);
+        alert('Error: ' + err.message);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start Detection';
+      }
+    });
+
+    switchBtn.addEventListener('click', switchCamera);
+  </script>
+</body>
+</html>
