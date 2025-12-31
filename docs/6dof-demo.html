@@ -283,6 +283,10 @@
         <span class="stat-label"> rad/s</span>
       </div>
       <div class="stat">
+        <span class="stat-label">Gyro Comp: </span>
+        <span class="stat-value" id="gyro-comp">OFF</span>
+      </div>
+      <div class="stat">
         <span class="stat-label">Flow: </span>
         <span class="stat-value" id="flow-debug" style="font-size:10px">--</span>
       </div>
@@ -471,6 +475,7 @@
     const deadzoneVal = document.getElementById('deadzone-val');
     const showTrajectoryCheckbox = document.getElementById('show-trajectory');
     const gyroRateEl = document.getElementById('gyro-rate');
+    const gyroCompEl = document.getElementById('gyro-comp');
     const flowDebugEl = document.getElementById('flow-debug');
 
     // Pose display elements
@@ -611,6 +616,13 @@
 
       // Track rotation rate magnitude for translation filtering
       currentGyroRate = Math.sqrt(betaRate * betaRate + gammaRate * gammaRate + alphaRate * alphaRate);
+
+      // Push gyro data to WASM for flow compensation
+      // Note: Device gyro axes may differ from camera axes - this mapping works for most phones
+      // X = beta (tilt forward/back), Y = gamma (tilt left/right), Z = alpha (rotate)
+      if (trackerHandle) {
+        trackerHandle.push_gyro(betaRate, gammaRate, alphaRate, now);
+      }
 
       // Integrate gyro
       gyroOrientation.x += betaRate * dt;
@@ -1009,8 +1021,11 @@
             // Keep camera at default position (rotation is handled by gyro)
             camera.position.set(0, 1, 3);
 
-            // Debug: show Z values
+            // Debug: show Z values and gyro compensation status
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
+            const gyroCompEnabled = trackerHandle.is_gyro_compensation_enabled();
+            gyroCompEl.textContent = gyroCompEnabled ? 'ON' : 'OFF';
+            gyroCompEl.style.color = gyroCompEnabled ? '#4ade80' : '#888';
             flowDebugEl.textContent = `z:${smoothedPosition.z.toFixed(2)} grp:${arGroup.position.z.toFixed(2)}`;
 
             // Update state

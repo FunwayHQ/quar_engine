@@ -388,6 +388,18 @@ export class TrackerHandle {
    */
   confidence_level(): number;
   /**
+   * Get current rotation rate from gyro (rad/s).
+   */
+  current_rotation_rate(): number;
+  /**
+   * Enable or disable gyro-based flow compensation.
+   */
+  set_gyro_compensation(enabled: boolean): void;
+  /**
+   * Check if gyro compensation is currently active.
+   */
+  is_gyro_compensation_enabled(): boolean;
+  /**
    * Create a new tracker.
    */
   constructor();
@@ -399,6 +411,12 @@ export class TrackerHandle {
    * Get the current pose as JSON.
    */
   get_pose(): any;
+  /**
+   * Push a gyroscope reading for flow compensation.
+   * omega_x, omega_y, omega_z are rotation rates in rad/s.
+   * timestamp_ms is the reading timestamp in milliseconds.
+   */
+  push_gyro(omega_x: number, omega_y: number, omega_z: number, timestamp_ms: number): void;
 }
 
 /**
@@ -593,11 +611,15 @@ export interface InitOutput {
   readonly tracker6dofhandle_test_essential: () => number;
   readonly tracker6dofhandle_tracked_points: (a: number) => number;
   readonly trackerhandle_confidence_level: (a: number) => number;
+  readonly trackerhandle_current_rotation_rate: (a: number) => number;
   readonly trackerhandle_get_pose: (a: number) => any;
   readonly trackerhandle_inlier_points: (a: number) => number;
+  readonly trackerhandle_is_gyro_compensation_enabled: (a: number) => number;
   readonly trackerhandle_new: () => number;
   readonly trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly trackerhandle_push_gyro: (a: number, b: number, c: number, d: number, e: number) => void;
   readonly trackerhandle_reset: (a: number) => void;
+  readonly trackerhandle_set_gyro_compensation: (a: number, b: number) => void;
   readonly trackerhandle_tracked_points: (a: number) => number;
   readonly trackerhandle_with_config: (a: number, b: number, c: number, d: number) => number;
   readonly version: () => [number, number];

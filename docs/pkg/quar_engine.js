@@ -1370,6 +1370,29 @@ export class TrackerHandle {
         return ret;
     }
     /**
+     * Get current rotation rate from gyro (rad/s).
+     * @returns {number}
+     */
+    current_rotation_rate() {
+        const ret = wasm.trackerhandle_current_rotation_rate(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Enable or disable gyro-based flow compensation.
+     * @param {boolean} enabled
+     */
+    set_gyro_compensation(enabled) {
+        wasm.trackerhandle_set_gyro_compensation(this.__wbg_ptr, enabled);
+    }
+    /**
+     * Check if gyro compensation is currently active.
+     * @returns {boolean}
+     */
+    is_gyro_compensation_enabled() {
+        const ret = wasm.trackerhandle_is_gyro_compensation_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * Create a new tracker.
      */
     constructor() {
@@ -1391,6 +1414,18 @@ export class TrackerHandle {
     get_pose() {
         const ret = wasm.trackerhandle_get_pose(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Push a gyroscope reading for flow compensation.
+     * omega_x, omega_y, omega_z are rotation rates in rad/s.
+     * timestamp_ms is the reading timestamp in milliseconds.
+     * @param {number} omega_x
+     * @param {number} omega_y
+     * @param {number} omega_z
+     * @param {number} timestamp_ms
+     */
+    push_gyro(omega_x, omega_y, omega_z, timestamp_ms) {
+        wasm.trackerhandle_push_gyro(this.__wbg_ptr, omega_x, omega_y, omega_z, timestamp_ms);
     }
 }
 if (Symbol.dispose) TrackerHandle.prototype[Symbol.dispose] = TrackerHandle.prototype.free;

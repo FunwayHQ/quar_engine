@@ -23,13 +23,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 12: Memory & Performance** - Arena allocator, frame pool, adaptive quality
 - **Sprint 13: Pure-Rust Linear Algebra** - Replaced nalgebra with WASM-compatible pure-Rust implementations
 - **Sprint 21: Robust Feature Tracking** - RANSAC flow outlier rejection, feature quality scoring, tracking confidence levels, grid-based distribution
+- **Sprint 20: Gyro-Compensated Flow** - Gyro-based rotation prediction, flow compensation to isolate translation, gyro buffer with interpolation
 
 ### Current Status
 - **Full 6DoF tracking working in WASM** (~51KB gzipped)
-- 172 unit tests passing
+- 182 unit tests passing
 - Pure-Rust linear algebra (no external math dependencies)
 - RANSAC-based outlier rejection for stable tracking
 - Tracking confidence levels (Lost/Low/Medium/High)
+- Gyro-compensated optical flow for rotation/translation separation
 
 ## Technology Stack
 
@@ -93,6 +95,7 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 - `src/tracker/triangulation.rs` - DLT triangulation, depth validation
 - `src/tracker/linalg.rs` - Pure-Rust linear algebra (Vec2, Vec3, Mat3, SVD, eigensolvers)
 - `src/tracker/robust.rs` - RANSAC flow filtering, feature quality, tracking confidence, grid distribution
+- `src/tracker/flow_compensation.rs` - Gyro-based rotation prediction, flow compensation, gyro buffer
 
 **Memory & Performance:**
 - `src/memory/arena.rs` - Arena allocator, FixedVec

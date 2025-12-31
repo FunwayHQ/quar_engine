@@ -14,6 +14,7 @@ pub mod triangulation;
 mod tracker_6dof;
 pub mod linalg;
 pub mod robust;
+pub mod flow_compensation;
 
 pub use optical_flow::LucasKanadeTracker;
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -23,6 +24,10 @@ pub use tracker_6dof::{Tracker6DoF, Tracker6DoFConfig, ScaleMethod};
 pub use robust::{
     AffineModel, FeatureGrid, FeatureQuality, RobustTracker, TrackingConfidence,
     TrackingThresholds, ransac_flow_filter,
+};
+pub use flow_compensation::{
+    FlowCameraParams, FlowCompensator, GyroBuffer, GyroReading,
+    compensate_flow_batch, compensate_point, predict_rotation_flow,
 };
 
 use wasm_bindgen::prelude::*;
@@ -53,6 +58,10 @@ pub struct Tracker {
     tracking_confidence: TrackingConfidence,
     /// Last inlier count (for debugging/display)
     last_inlier_count: usize,
+    /// Flow compensator for gyro-based rotation removal
+    flow_compensator: FlowCompensator,
+    /// Whether gyro compensation is enabled
+    gyro_compensation_enabled: bool,
 }
 
 impl Tracker {
@@ -75,6 +84,8 @@ impl Tracker {
             robust_tracker: RobustTracker::new(640, 480), // Default resolution
             tracking_confidence: TrackingConfidence::Lost,
             last_inlier_count: 0,
+            flow_compensator: FlowCompensator::new(FlowCameraParams::from_fov(640, 480, 60.0)),
+            gyro_compensation_enabled: false,
         }
     }
 
@@ -92,6 +103,8 @@ impl Tracker {
             robust_tracker: RobustTracker::new(width, height),
             tracking_confidence: TrackingConfidence::Lost,
             last_inlier_count: 0,
+            flow_compensator: FlowCompensator::new(FlowCameraParams::from_fov(width, height, 60.0)),
+            gyro_compensation_enabled: false,
         }
     }
 
@@ -326,6 +339,31 @@ impl Tracker {
         self.robust_tracker.reset();
         self.tracking_confidence = TrackingConfidence::Lost;
         self.last_inlier_count = 0;
+        self.flow_compensator.reset();
+    }
+
+    /// Push a gyroscope reading for flow compensation.
+    pub fn push_gyro(&mut self, omega_x: f32, omega_y: f32, omega_z: f32, timestamp_ms: f64) {
+        self.flow_compensator.push_gyro(omega_x, omega_y, omega_z, timestamp_ms);
+        // Auto-enable compensation when we start receiving gyro data
+        if !self.gyro_compensation_enabled && self.flow_compensator.gyro_buffer_len() >= 2 {
+            self.gyro_compensation_enabled = true;
+        }
+    }
+
+    /// Enable or disable gyro compensation.
+    pub fn set_gyro_compensation(&mut self, enabled: bool) {
+        self.gyro_compensation_enabled = enabled;
+    }
+
+    /// Check if gyro compensation is active.
+    pub fn is_gyro_compensation_enabled(&self) -> bool {
+        self.gyro_compensation_enabled && self.flow_compensator.has_gyro_data()
+    }
+
+    /// Get current rotation rate from gyro (rad/s).
+    pub fn current_rotation_rate(&self) -> f32 {
+        self.flow_compensator.current_rotation_rate()
     }
 
     /// Get the current pose.
@@ -440,6 +478,32 @@ impl TrackerHandle {
     #[wasm_bindgen]
     pub fn get_pose(&self) -> JsValue {
         serde_wasm_bindgen::to_value(&self.tracker.get_pose()).unwrap_or(JsValue::NULL)
+    }
+
+    /// Push a gyroscope reading for flow compensation.
+    /// omega_x, omega_y, omega_z are rotation rates in rad/s.
+    /// timestamp_ms is the reading timestamp in milliseconds.
+    #[wasm_bindgen]
+    pub fn push_gyro(&mut self, omega_x: f32, omega_y: f32, omega_z: f32, timestamp_ms: f64) {
+        self.tracker.push_gyro(omega_x, omega_y, omega_z, timestamp_ms);
+    }
+
+    /// Enable or disable gyro-based flow compensation.
+    #[wasm_bindgen]
+    pub fn set_gyro_compensation(&mut self, enabled: bool) {
+        self.tracker.set_gyro_compensation(enabled);
+    }
+
+    /// Check if gyro compensation is currently active.
+    #[wasm_bindgen]
+    pub fn is_gyro_compensation_enabled(&self) -> bool {
+        self.tracker.is_gyro_compensation_enabled()
+    }
+
+    /// Get current rotation rate from gyro (rad/s).
+    #[wasm_bindgen]
+    pub fn current_rotation_rate(&self) -> f32 {
+        self.tracker.current_rotation_rate()
     }
 }
 
