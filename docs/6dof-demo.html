@@ -437,11 +437,14 @@
       fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
       fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
 
-      // Apply to camera - this makes objects appear fixed in real world
+      // Apply to camera - axis mapping from device testing:
+      // Phone tilt forward/back (beta) → camera pitch (x)
+      // Phone rotate left/right (alpha) → camera yaw (y)
+      // Phone tilt left/right (gamma) → camera roll (z)
       if (isRunning && camera) {
-        camera.rotation.x = fusedOrientation.z * sensitivity;
-        camera.rotation.y = fusedOrientation.x * sensitivity;
-        camera.rotation.z = fusedOrientation.y * sensitivity;
+        camera.rotation.x = -fusedOrientation.x * sensitivity;  // pitch (inverted)
+        camera.rotation.y = -fusedOrientation.z * sensitivity;  // yaw (inverted)
+        camera.rotation.z = fusedOrientation.y * sensitivity;   // roll
       }
 
       gyroActive = true;
@@ -758,9 +761,9 @@
 
             // If no gyro, use visual-only for camera rotation
             if (!gyroActive) {
-              camera.rotation.x = visualOrientation.x;
-              camera.rotation.y = visualOrientation.z;
-              camera.rotation.z = -visualOrientation.y;
+              camera.rotation.x = -visualOrientation.x;
+              camera.rotation.y = -visualOrientation.z;
+              camera.rotation.z = visualOrientation.y;
             }
 
             // Translation tracking
