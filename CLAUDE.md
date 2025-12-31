@@ -46,9 +46,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Position stabilization with drift correction
 - ORB descriptors for feature matching
 - Keyframe management and covisibility graph
-- Plane detection with hit testing
+- Plane detection with hit testing (world-space locked planes)
 
 ### Known Issues / Debug Notes
+- **Plane detection**: Planes are detected in world space and locked once found. Floor mesh added to scene directly (not arGroup) to stay fixed as camera moves.
 - **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
 - **Rotation vs Translation**: Camera rotation (tilting) works via gyro fusion. Translation (panning) works via optical flow deltas accumulated over time.
 - **Debug output in demo**: HUD shows `d:[x,y,z]` (deltas) and `a:[x,y,z]` (accumulated). Console logs detailed chain every ~2 seconds.
