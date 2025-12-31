@@ -225,6 +225,15 @@
         <span class="stat-value" id="scale-display">0.01</span>
         <span class="stat-label"> m/unit</span>
       </div>
+      <div class="stat">
+        <span class="stat-label">Gyro: </span>
+        <span class="stat-value" id="gyro-rate">0.00</span>
+        <span class="stat-label"> rad/s</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Flow: </span>
+        <span class="stat-value" id="flow-debug" style="font-size:10px">--</span>
+      </div>
     </div>
 
     <div id="pose-panel">
@@ -346,6 +355,8 @@
     const scaleSlider = document.getElementById('scale-slider');
     const scaleVal = document.getElementById('scale-val');
     const showTrajectoryCheckbox = document.getElementById('show-trajectory');
+    const gyroRateEl = document.getElementById('gyro-rate');
+    const flowDebugEl = document.getElementById('flow-debug');
 
     // Pose display elements
     const txEl = document.getElementById('tx');
@@ -394,7 +405,7 @@
     // Gyro rotation rate for translation filtering
     // When rotation rate is high, optical flow is from rotation, not translation
     let currentGyroRate = 0;  // Magnitude of rotation rate (rad/s)
-    const ROTATION_THRESHOLD = 0.15;  // Below this, consider it translation
+    const ROTATION_THRESHOLD = 0.5;  // Increased - allow more translation during slight rotation
 
     // Translation tracking
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
@@ -778,7 +789,6 @@
             }
 
             // 6DoF Translation tracking from optical flow
-            // Only apply translation when rotation rate is LOW (phone translating, not rotating)
             const t = pose.translation || [0, 0, 0];
 
             // Get delta translation since last frame
@@ -787,22 +797,25 @@
             const deltaZ = (t[2] ?? 0) - lastTranslation.z;
             lastTranslation.set(t[0] ?? 0, t[1] ?? 0, t[2] ?? 0);
 
-            // Calculate translation weight based on rotation rate
-            // High rotation = low weight (ignore translation from rotation)
-            // Low rotation = high weight (apply translation)
-            const rotationFactor = Math.max(0, 1 - currentGyroRate / ROTATION_THRESHOLD);
-            const translationWeight = rotationFactor * rotationFactor; // Square for smoother transition
+            // Debug: show raw flow values and gyro rate
+            gyroRateEl.textContent = currentGyroRate.toFixed(2);
+            flowDebugEl.textContent = `X:${deltaX.toFixed(2)} Y:${deltaY.toFixed(2)} Z:${deltaZ.toFixed(2)}`;
 
-            // Only accumulate translation when not rotating much
-            if (translationWeight > 0.1) {
-              const scale = currentScale * 15 * translationWeight;
-              smoothedPosition.x += deltaX * scale;
-              smoothedPosition.y += deltaY * scale;
-              smoothedPosition.z += deltaZ * scale * 1.5; // Z more sensitive (radial flow)
-            }
+            // Calculate translation weight based on rotation rate
+            // High rotation = low weight, Low rotation = high weight
+            const rotationFactor = Math.max(0, 1 - currentGyroRate / ROTATION_THRESHOLD);
+            const translationWeight = rotationFactor; // Linear, not squared
+
+            // Always accumulate some translation (reduce weight, don't block completely)
+            const minWeight = 0.3; // Always apply at least 30%
+            const effectiveWeight = minWeight + (1 - minWeight) * translationWeight;
+
+            const scale = currentScale * 25 * effectiveWeight; // Increased scale
+            smoothedPosition.x += deltaX * scale;
+            smoothedPosition.y += deltaY * scale;
+            smoothedPosition.z += deltaZ * scale * 2.0; // Z even more sensitive
 
             // Apply translation to camera position
-            // Base position is (0, 1, 3), then offset by tracked movement
             camera.position.x = smoothedPosition.x;
             camera.position.y = 1 + smoothedPosition.y;
             camera.position.z = Math.max(0.5, Math.min(10, 3 - smoothedPosition.z));
