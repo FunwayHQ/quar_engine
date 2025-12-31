@@ -33,6 +33,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Tracking confidence levels (Lost/Low/Medium/High)
 - Gyro-compensated optical flow for rotation/translation separation
 
+### Known Issues / Debug Notes
+- **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
+- **Rotation vs Translation**: Camera rotation (tilting) works via gyro fusion. Translation (panning) works via optical flow deltas accumulated over time.
+- **Debug output in demo**: HUD shows `d:[x,y,z]` (deltas) and `a:[x,y,z]` (accumulated). Console logs detailed chain every ~2 seconds.
+- **Tunable parameters**: Master scale, per-axis scales (X/Y/Z), smoothing, deadzone, rotation filter - all adjustable via sliders in demo.
+
 ## Technology Stack
 
 - **Core Language:** Rust (Stable)
