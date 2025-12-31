@@ -217,15 +217,11 @@ impl Tracker {
                         };
 
                         // Calculate optical flow components for 6DoF translation using compensated points
-                        let (flow_x, flow_y, radial_z) =
+                        let (flow_x, flow_y, _radial_z) =
                             self.calculate_flow_components(&comp_prev, &comp_curr, width, height);
 
-                        // Debug: ALWAYS log when we compute flow (to verify code is reached)
-                        let lateral_mag = (flow_x * flow_x + flow_y * flow_y).sqrt();
-                        console::log_1(&format!(
-                            "RUST_FLOW: lat={:.2} z={:.4} supp={}",
-                            lateral_mag, radial_z, lateral_mag > 0.5
-                        ).into());
+                        // DEBUG v7: Force radial_z to ZERO to test if this code path is reached
+                        let radial_z = 0.0f32;
 
                         // Scale translation by confidence
                         let confidence_scale = confidence.translation_scale();
