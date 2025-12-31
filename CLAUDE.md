@@ -49,6 +49,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Plane detection with hit testing (world-space locked planes)
 
 ### Known Issues / Debug Notes
+- **Real Map Points (v19)**: Plane detection now uses real triangulated 3D points from Essential matrix decomposition instead of simulated points. Points are triangulated when parallax is sufficient (>2° min_parallax) and stored with FIFO management (max 500 points).
 - **Plane detection**: Planes are detected in world space and locked once found. Floor mesh added to scene directly (not arGroup) to stay fixed as camera moves.
 - **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
 - **Rotation vs Translation**: Camera rotation (tilting) works via gyro fusion. Translation (panning) works via optical flow deltas accumulated over time.
