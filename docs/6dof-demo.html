@@ -33,22 +33,63 @@
       pointer-events: none;
     }
 
-    /* HUD Panel - 6DoF Info */
-    #hud {
+    /* Collapsible Panel Base */
+    .panel {
       position: absolute;
-      top: 20px; left: 20px;
       background: rgba(0,0,0,0.8);
-      padding: 15px 20px;
       border-radius: 8px;
       font-family: monospace;
       font-size: 13px;
       z-index: 100;
-      min-width: 200px;
+      min-width: 180px;
+      overflow: hidden;
     }
-    #hud h2 {
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .panel-header:hover {
+      background: rgba(255,255,255,0.05);
+    }
+    .panel-header h2, .panel-header h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .panel-toggle {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 14px;
+      padding: 0;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .panel-content {
+      padding: 0 15px 15px 15px;
+      max-height: 500px;
+      overflow-y: auto;
+      transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.2s ease;
+    }
+    .panel-content.collapsed {
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      opacity: 0;
+    }
+    .panel-toggle.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    /* HUD Panel - 6DoF Info */
+    #hud {
+      top: 20px; left: 20px;
+    }
+    #hud .panel-header h2 {
       color: #f472b6;
-      margin-bottom: 10px;
-      font-size: 16px;
     }
     .stat { margin: 5px 0; }
     .stat-label { color: #888; }
@@ -58,20 +99,11 @@
 
     /* Pose Panel */
     #pose-panel {
-      position: absolute;
       top: 20px; right: 20px;
-      background: rgba(0,0,0,0.8);
-      padding: 15px 20px;
-      border-radius: 8px;
-      font-family: monospace;
       font-size: 12px;
-      z-index: 100;
-      min-width: 180px;
     }
-    #pose-panel h3 {
+    #pose-panel .panel-header h3 {
       color: #4cc9f0;
-      margin-bottom: 10px;
-      font-size: 14px;
     }
     .pose-section {
       margin: 10px 0;
@@ -123,42 +155,13 @@
 
     /* Tuning panel */
     #tuning-panel {
-      position: absolute;
       bottom: 100px; left: 10px;
       right: 10px;
-      background: rgba(0,0,0,0.9);
-      padding: 12px 15px;
-      border-radius: 8px;
-      z-index: 100;
       max-width: 400px;
       margin: 0 auto;
     }
-    #tuning-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      cursor: pointer;
-    }
-    #tuning-header h3 {
+    #tuning-panel .panel-header h3 {
       color: #f472b6;
-      font-size: 14px;
-      margin: 0;
-    }
-    #tuning-toggle {
-      background: none;
-      border: none;
-      color: #888;
-      font-size: 18px;
-      padding: 0 5px;
-      cursor: pointer;
-    }
-    #tuning-content {
-      overflow: hidden;
-      transition: max-height 0.3s ease;
-      max-height: 300px;
-    }
-    #tuning-content.collapsed {
-      max-height: 0;
     }
     .slider-row {
       display: flex;
@@ -254,12 +257,16 @@
     <canvas id="video-canvas"></canvas>
     <canvas id="three-canvas"></canvas>
 
-    <div id="hud">
-      <h2>6DoF Tracking</h2>
-      <div class="stat">
-        <span class="stat-label">FPS: </span>
-        <span class="stat-value" id="fps">--</span>
+    <div id="hud" class="panel">
+      <div class="panel-header" onclick="togglePanel('hud')">
+        <h2>6DoF Tracking</h2>
+        <button class="panel-toggle" id="hud-toggle">▼</button>
       </div>
+      <div class="panel-content" id="hud-content">
+        <div class="stat">
+          <span class="stat-label">FPS: </span>
+          <span class="stat-value" id="fps">--</span>
+        </div>
       <div class="stat">
         <span class="stat-label">Features: </span>
         <span class="stat-value" id="features">--</span>
@@ -336,10 +343,15 @@
         <span class="stat-label">Floor: </span>
         <span class="stat-value" id="floor-status">--</span>
       </div>
+      </div>
     </div>
 
-    <div id="pose-panel">
-      <h3>Camera Pose</h3>
+    <div id="pose-panel" class="panel">
+      <div class="panel-header" onclick="togglePanel('pose-panel')">
+        <h3>Camera Pose</h3>
+        <button class="panel-toggle" id="pose-panel-toggle">▼</button>
+      </div>
+      <div class="panel-content" id="pose-panel-content">
       <div class="pose-section">
         <h4>TRANSLATION (meters)</h4>
         <div class="pose-row">
@@ -378,6 +390,7 @@
           <span>m</span>
         </div>
       </div>
+      </div>
     </div>
 
     <div id="trajectory-toggle">
@@ -387,12 +400,12 @@
       </label>
     </div>
 
-    <div id="tuning-panel">
-      <div id="tuning-header">
+    <div id="tuning-panel" class="panel">
+      <div class="panel-header" onclick="togglePanel('tuning-panel')">
         <h3>Translation Tuning</h3>
-        <button id="tuning-toggle">▼</button>
+        <button class="panel-toggle" id="tuning-panel-toggle">▼</button>
       </div>
-      <div id="tuning-content">
+      <div class="panel-content" id="tuning-panel-content">
         <div class="slider-group">
           <div class="slider-row">
             <label>Master:</label>
@@ -469,6 +482,18 @@
       <button id="start-btn">Start Tracking</button>
     </div>
   </div>
+
+  <script>
+    // Panel toggle function (must be in global scope for onclick handlers)
+    function togglePanel(panelId) {
+      const content = document.getElementById(panelId + '-content');
+      const toggle = document.getElementById(panelId + '-toggle');
+      if (content && toggle) {
+        content.classList.toggle('collapsed');
+        toggle.classList.toggle('collapsed');
+      }
+    }
+  </script>
 
   <script type="importmap">
   {
@@ -829,15 +854,6 @@
       }
       stabilizerStatusEl.textContent = useStabilization ? 'ON' : 'OFF';
       stabilizerStatusEl.style.color = useStabilization ? '#4ade80' : '#888';
-    });
-
-    // Tuning panel collapse/expand
-    const tuningHeader = document.getElementById('tuning-header');
-    const tuningContent = document.getElementById('tuning-content');
-    const tuningToggle = document.getElementById('tuning-toggle');
-    tuningHeader.addEventListener('click', () => {
-      tuningContent.classList.toggle('collapsed');
-      tuningToggle.textContent = tuningContent.classList.contains('collapsed') ? '▶' : '▼';
     });
 
     // Trajectory toggle
