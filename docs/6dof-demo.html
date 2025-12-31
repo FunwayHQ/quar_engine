@@ -383,10 +383,12 @@
     // Smoothing for stable tracking
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
     let smoothedQuaternion = new THREE.Quaternion(0, 0, 0, 1);
-    const positionSmoothing = 0.15; // Lower = smoother but more lag
-    const rotationSmoothing = 0.1;  // Lower = smoother rotations
+    let lastRawQuaternion = new THREE.Quaternion(0, 0, 0, 1);
+    const positionSmoothing = 0.03; // Much lower = much smoother
+    const rotationSmoothing = 0.02; // Much lower = much smoother rotations
     let lastValidPose = null;
     let poseConfidence = 0;
+    let framesSinceGoodPose = 0;
 
     // Scale slider - updates the tracker's scale
     scaleSlider.addEventListener('input', (e) => {
@@ -689,12 +691,18 @@
           if (pose && tracked > 15) {
             // Get rotation (quaternion) - handle both object and array access
             const q = pose.rotation || [0, 0, 0, 1];
-            const rawQuat = new THREE.Quaternion(
+            let rawQuat = new THREE.Quaternion(
               q[0] ?? q.x ?? 0,
               q[1] ?? q.y ?? 0,
               q[2] ?? q.z ?? 0,
               q[3] ?? q.w ?? 1
             );
+
+            // CRITICAL: Fix quaternion sign flip (q and -q are the same rotation)
+            // Choose the sign that's closer to the previous quaternion
+            if (rawQuat.dot(lastRawQuaternion) < 0) {
+              rawQuat.set(-rawQuat.x, -rawQuat.y, -rawQuat.z, -rawQuat.w);
+            }
 
             // Get translation (from Essential matrix decomposition)
             const t = pose.translation || [0, 0, 0];
@@ -704,42 +712,52 @@
               t[2] ?? t.z ?? 0
             );
 
-            // Debug: log actual values being used
-            if (frameCount % 60 === 0) {
-              console.log('Using quat:', rawQuat.x, rawQuat.y, rawQuat.z, rawQuat.w);
-              console.log('Using pos:', rawPosition.x, rawPosition.y, rawPosition.z);
+            // Strict outlier rejection - Essential matrix is very noisy
+            let isValidPose = true;
+            const rotationDelta = rawQuat.angleTo(lastRawQuaternion);
+
+            // Reject if rotation changed too much (> 15 degrees per frame is unrealistic)
+            if (rotationDelta > 0.26) { // ~15 degrees in radians
+              isValidPose = false;
+              framesSinceGoodPose++;
             }
 
-            // Outlier rejection: check if pose change is reasonable
-            let isValidPose = true;
+            // Also reject wild position jumps
             if (lastValidPose) {
               const positionDelta = rawPosition.distanceTo(lastValidPose.position);
-              const rotationDelta = rawQuat.angleTo(lastValidPose.quaternion);
-
-              // Reject if position jumped too far (> 0.1 meters per frame)
-              // or rotation changed too much (> 30 degrees per frame)
-              if (positionDelta > 0.1 || rotationDelta > 0.5) {
+              if (positionDelta > 0.05) { // 5cm per frame max
                 isValidPose = false;
-                poseConfidence = Math.max(0, poseConfidence - 0.1);
               }
             }
 
             if (isValidPose) {
-              poseConfidence = Math.min(1, poseConfidence + 0.05);
+              framesSinceGoodPose = 0;
+              poseConfidence = Math.min(1, poseConfidence + 0.02);
+
               lastValidPose = {
                 position: rawPosition.clone(),
                 quaternion: rawQuat.clone()
               };
+              lastRawQuaternion.copy(rawQuat);
 
-              // Adaptive smoothing based on confidence
-              const adaptivePosSmoothng = positionSmoothing * (0.5 + poseConfidence * 0.5);
-              const adaptiveRotSmoothing = rotationSmoothing * (0.5 + poseConfidence * 0.5);
+              // Very aggressive smoothing - Essential matrix output is noisy
+              const adaptivePosSmoothng = positionSmoothing * (0.3 + poseConfidence * 0.7);
+              const adaptiveRotSmoothing = rotationSmoothing * (0.3 + poseConfidence * 0.7);
 
               // Apply exponential smoothing to position
               smoothedPosition.lerp(rawPosition, adaptivePosSmoothng);
 
               // Apply spherical interpolation to rotation
               smoothedQuaternion.slerp(rawQuat, adaptiveRotSmoothing);
+            } else {
+              // Decrease confidence when rejecting poses
+              poseConfidence = Math.max(0, poseConfidence - 0.05);
+
+              // If we've had too many bad frames, slowly drift back to identity
+              if (framesSinceGoodPose > 30) {
+                const identityQuat = new THREE.Quaternion(0, 0, 0, 1);
+                smoothedQuaternion.slerp(identityQuat, 0.01);
+              }
             }
 
             // Update state display based on confidence
@@ -849,8 +867,10 @@
       lastPosition.set(0, 0, 0);
       smoothedPosition.set(0, 0, 0);
       smoothedQuaternion.set(0, 0, 0, 1);
+      lastRawQuaternion.set(0, 0, 0, 1);
       lastValidPose = null;
       poseConfidence = 0;
+      framesSinceGoodPose = 0;
 
       // Reset camera and arGroup
       camera.position.set(0, 1, 3);
