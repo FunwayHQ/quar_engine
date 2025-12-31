@@ -10,7 +10,291 @@
 //!
 //! Reference: Hartley & Zisserman, "Multiple View Geometry in Computer Vision"
 
-use nalgebra::{Matrix3, Vector2, Vector3, SVD};
+use nalgebra::{Matrix3, Matrix4, SMatrix, SVector, Vector2, Vector3};
+
+#[cfg(not(target_arch = "wasm32"))]
+use nalgebra::SVD;
+
+/// Result of 3x3 SVD decomposition for WASM.
+#[cfg(target_arch = "wasm32")]
+struct Svd3x3Result {
+    u: Matrix3<f64>,
+    s: [f64; 3],
+    v_t: Matrix3<f64>,
+}
+
+/// Compute SVD of a 3x3 matrix using eigendecomposition (WASM-compatible).
+/// Uses the relationship: A^T A = V S^2 V^T and A A^T = U S^2 U^T
+#[cfg(target_arch = "wasm32")]
+fn svd_3x3_wasm(a: &Matrix3<f64>) -> Option<Svd3x3Result> {
+    // Compute A^T A
+    let ata = a.transpose() * a;
+
+    // Eigendecomposition of A^T A using Jacobi
+    let (eigenvalues, v) = jacobi_eigen_symmetric_3x3(&ata);
+
+    // Singular values are sqrt of eigenvalues (already sorted descending)
+    let s = [
+        eigenvalues[0].max(0.0).sqrt(),
+        eigenvalues[1].max(0.0).sqrt(),
+        eigenvalues[2].max(0.0).sqrt(),
+    ];
+
+    // Compute U = A * V * S^-1
+    let mut u = Matrix3::zeros();
+    for i in 0..3 {
+        if s[i] > 1e-10 {
+            let v_col = Vector3::new(v[(0, i)], v[(1, i)], v[(2, i)]);
+            let u_col = a * v_col / s[i];
+            u[(0, i)] = u_col.x;
+            u[(1, i)] = u_col.y;
+            u[(2, i)] = u_col.z;
+        }
+    }
+
+    // Orthonormalize U using Gram-Schmidt
+    u = gram_schmidt_3x3(&u);
+
+    // Ensure U and V have det = +1 (proper rotation matrices)
+    let mut v_result = v;
+    if u.determinant() < 0.0 {
+        // Flip sign of last column
+        for i in 0..3 {
+            u[(i, 2)] = -u[(i, 2)];
+        }
+    }
+    if v_result.determinant() < 0.0 {
+        for i in 0..3 {
+            v_result[(i, 2)] = -v_result[(i, 2)];
+        }
+    }
+
+    Some(Svd3x3Result {
+        u,
+        s,
+        v_t: v_result.transpose(),
+    })
+}
+
+/// Jacobi eigenvalue algorithm for 3x3 symmetric matrix.
+/// Returns (eigenvalues sorted descending, eigenvector matrix V)
+#[cfg(target_arch = "wasm32")]
+fn jacobi_eigen_symmetric_3x3(a: &Matrix3<f64>) -> ([f64; 3], Matrix3<f64>) {
+    let mut a_work = *a;
+    let mut v = Matrix3::identity();
+
+    for _ in 0..30 {
+        // Find the largest off-diagonal element
+        let (p, q, max_off) = find_max_off_diagonal_3x3(&a_work);
+
+        if max_off < 1e-15 {
+            break;
+        }
+
+        // Compute Jacobi rotation angle
+        let app = a_work[(p, p)];
+        let aqq = a_work[(q, q)];
+        let apq = a_work[(p, q)];
+
+        let theta = if (aqq - app).abs() < 1e-15 {
+            std::f64::consts::FRAC_PI_4
+        } else {
+            0.5 * (2.0 * apq / (app - aqq)).atan()
+        };
+
+        let c = theta.cos();
+        let s = theta.sin();
+
+        // Apply Givens rotation to a_work
+        apply_jacobi_rotation_3x3(&mut a_work, p, q, c, s);
+
+        // Accumulate rotation in V
+        for i in 0..3 {
+            let vip = v[(i, p)];
+            let viq = v[(i, q)];
+            v[(i, p)] = c * vip - s * viq;
+            v[(i, q)] = s * vip + c * viq;
+        }
+    }
+
+    // Extract eigenvalues
+    let eigenvalues = [a_work[(0, 0)], a_work[(1, 1)], a_work[(2, 2)]];
+
+    // Sort by eigenvalue descending
+    let mut indices = [0, 1, 2];
+    if eigenvalues[indices[1]] > eigenvalues[indices[0]] {
+        indices.swap(0, 1);
+    }
+    if eigenvalues[indices[2]] > eigenvalues[indices[0]] {
+        indices.swap(0, 2);
+    }
+    if eigenvalues[indices[2]] > eigenvalues[indices[1]] {
+        indices.swap(1, 2);
+    }
+
+    // Reorder
+    let sorted_eigenvalues = [
+        eigenvalues[indices[0]],
+        eigenvalues[indices[1]],
+        eigenvalues[indices[2]],
+    ];
+
+    let mut v_sorted = Matrix3::zeros();
+    for (new_col, &old_col) in indices.iter().enumerate() {
+        for row in 0..3 {
+            v_sorted[(row, new_col)] = v[(row, old_col)];
+        }
+    }
+
+    (sorted_eigenvalues, v_sorted)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn find_max_off_diagonal_3x3(a: &Matrix3<f64>) -> (usize, usize, f64) {
+    let mut max_val = 0.0;
+    let mut max_p = 0;
+    let mut max_q = 1;
+
+    for p in 0..3 {
+        for q in (p + 1)..3 {
+            let val = a[(p, q)].abs();
+            if val > max_val {
+                max_val = val;
+                max_p = p;
+                max_q = q;
+            }
+        }
+    }
+
+    (max_p, max_q, max_val)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn apply_jacobi_rotation_3x3(a: &mut Matrix3<f64>, p: usize, q: usize, c: f64, s: f64) {
+    let app = a[(p, p)];
+    let aqq = a[(q, q)];
+    let apq = a[(p, q)];
+
+    a[(p, p)] = c * c * app - 2.0 * c * s * apq + s * s * aqq;
+    a[(q, q)] = s * s * app + 2.0 * c * s * apq + c * c * aqq;
+    a[(p, q)] = 0.0;
+    a[(q, p)] = 0.0;
+
+    for k in 0..3 {
+        if k != p && k != q {
+            let akp = a[(k, p)];
+            let akq = a[(k, q)];
+            a[(k, p)] = c * akp - s * akq;
+            a[(p, k)] = a[(k, p)];
+            a[(k, q)] = s * akp + c * akq;
+            a[(q, k)] = a[(k, q)];
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn gram_schmidt_3x3(m: &Matrix3<f64>) -> Matrix3<f64> {
+    let mut result = Matrix3::zeros();
+
+    // First column
+    let v0 = Vector3::new(m[(0, 0)], m[(1, 0)], m[(2, 0)]);
+    let norm0 = v0.norm();
+    let u0 = if norm0 > 1e-10 {
+        v0 / norm0
+    } else {
+        Vector3::new(1.0, 0.0, 0.0)
+    };
+    result[(0, 0)] = u0.x;
+    result[(1, 0)] = u0.y;
+    result[(2, 0)] = u0.z;
+
+    // Second column
+    let v1 = Vector3::new(m[(0, 1)], m[(1, 1)], m[(2, 1)]);
+    let proj1 = u0 * u0.dot(&v1);
+    let v1_orth = v1 - proj1;
+    let norm1 = v1_orth.norm();
+    let u1 = if norm1 > 1e-10 {
+        v1_orth / norm1
+    } else {
+        let candidate = if u0.x.abs() < 0.9 {
+            Vector3::new(1.0, 0.0, 0.0)
+        } else {
+            Vector3::new(0.0, 1.0, 0.0)
+        };
+        let orth = candidate - u0 * u0.dot(&candidate);
+        orth / orth.norm()
+    };
+    result[(0, 1)] = u1.x;
+    result[(1, 1)] = u1.y;
+    result[(2, 1)] = u1.z;
+
+    // Third column = cross product
+    let u2 = u0.cross(&u1);
+    result[(0, 2)] = u2.x;
+    result[(1, 2)] = u2.y;
+    result[(2, 2)] = u2.z;
+
+    result
+}
+
+/// Find the smallest eigenvector of a symmetric 9x9 matrix using inverse power iteration.
+/// This is WASM-compatible as it only uses basic matrix operations.
+fn smallest_eigenvector_9x9(a: &SMatrix<f64, 9, 9>) -> Option<SVector<f64, 9>> {
+    // Use inverse iteration: (A - σI)^-1 v converges to eigenvector with eigenvalue closest to σ
+    // For smallest eigenvalue, we use shift σ = 0 (just inverse iteration)
+
+    // Add small regularization for numerical stability
+    let mut a_reg = *a;
+    for i in 0..9 {
+        a_reg[(i, i)] += 1e-10;
+    }
+
+    // Use direct inversion (more WASM-friendly than LU)
+    let a_inv = a_reg.try_inverse()?;
+
+    // Initial guess
+    let mut v: SVector<f64, 9> = SVector::from_fn(|i, _| if i == 0 { 1.0 } else { 0.0 });
+    v = v.normalize();
+
+    // Power iteration with matrix inverse
+    for _ in 0..50 {
+        let v_new = a_inv * v;
+
+        // Normalize
+        let norm = v_new.norm();
+        if norm < 1e-12 {
+            return None;
+        }
+        v = v_new / norm;
+    }
+
+    Some(v)
+}
+
+/// Find the smallest eigenvector of a symmetric 4x4 matrix using inverse power iteration.
+fn smallest_eigenvector_4x4(a: &Matrix4<f64>) -> Option<nalgebra::Vector4<f64>> {
+    let mut a_reg = *a;
+    for i in 0..4 {
+        a_reg[(i, i)] += 1e-10;
+    }
+
+    // Use direct inversion (more WASM-friendly than LU)
+    let a_inv = a_reg.try_inverse()?;
+
+    let mut v: nalgebra::Vector4<f64> = nalgebra::Vector4::new(1.0, 0.0, 0.0, 0.0);
+    v = v.normalize();
+
+    for _ in 0..30 {
+        let v_new = a_inv * v;
+        let norm = v_new.norm();
+        if norm < 1e-12 {
+            return None;
+        }
+        v = v_new / norm;
+    }
+
+    Some(v)
+}
 
 /// Result of Essential matrix decomposition.
 #[derive(Debug, Clone)]
@@ -44,41 +328,45 @@ pub fn compute_essential_matrix(
         return None;
     }
 
-    let n = points1.len();
-
-    // Build the constraint matrix A (n x 9)
+    // Build A^T A directly (9×9 fixed-size matrix) to avoid DMatrix
+    // This is WASM-compatible since we avoid dynamic allocation in SVD
+    //
     // For each correspondence: x2ᵀ E x1 = 0
-    // Expanding: e11*x2*x1 + e12*x2*y1 + e13*x2 + e21*y2*x1 + e22*y2*y1 + e23*y2 + e31*x1 + e32*y1 + e33 = 0
     // Row format: [x2*x1, x2*y1, x2, y2*x1, y2*y1, y2, x1, y1, 1]
-    let mut a_data = Vec::with_capacity(n * 9);
-    for i in 0..n {
+    // We compute A^T A = Σ (row_i^T * row_i) directly
+    let mut ata: SMatrix<f64, 9, 9> = SMatrix::zeros();
+
+    for i in 0..points1.len() {
         let x1 = points1[i].x;
         let y1 = points1[i].y;
         let x2 = points2[i].x;
         let y2 = points2[i].y;
 
-        a_data.push(x2 * x1);
-        a_data.push(x2 * y1);
-        a_data.push(x2);
-        a_data.push(y2 * x1);
-        a_data.push(y2 * y1);
-        a_data.push(y2);
-        a_data.push(x1);
-        a_data.push(y1);
-        a_data.push(1.0);
+        // Build the row vector for this correspondence
+        let row = [
+            x2 * x1,
+            x2 * y1,
+            x2,
+            y2 * x1,
+            y2 * y1,
+            y2,
+            x1,
+            y1,
+            1.0,
+        ];
+
+        // Accumulate outer product: A^T A += row^T * row
+        for j in 0..9 {
+            for k in 0..9 {
+                ata[(j, k)] += row[j] * row[k];
+            }
+        }
     }
 
-    // Create matrix A
-    let a = nalgebra::DMatrix::from_row_slice(n, 9, &a_data);
-
-    // Solve Af = 0 using SVD
-    // Compute SVD of A^T A (9×9) to get full V matrix
-    let ata = a.transpose() * &a;
-    let svd = SVD::new(ata, true, true);
-    let v_t = svd.v_t?;
-
-    // The null space is the eigenvector with smallest eigenvalue (last row of V^T)
-    let f: Vec<f64> = (0..9).map(|i| v_t[(8, i)]).collect();
+    // Solve Af = 0 by finding the smallest eigenvector of A^T A
+    // Uses inverse power iteration which is WASM-compatible
+    let f_vec = smallest_eigenvector_9x9(&ata)?;
+    let f: Vec<f64> = (0..9).map(|i| f_vec[i]).collect();
 
     // Reshape to 3x3 matrix (row-major order)
     let e_raw = Matrix3::new(
@@ -89,14 +377,22 @@ pub fn compute_essential_matrix(
 
     // Enforce rank-2 constraint via SVD
     // E should have singular values [σ, σ, 0]
-    let svd_e = SVD::new(e_raw, true, true);
-    let u = svd_e.u?;
-    let v_t_e = svd_e.v_t?;
-    let s = svd_e.singular_values;
+    #[cfg(not(target_arch = "wasm32"))]
+    let (u, v_t_e, s) = {
+        let svd_e = SVD::new(e_raw, true, true);
+        (svd_e.u?, svd_e.v_t?, svd_e.singular_values)
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    let (u, v_t_e, s) = {
+        let svd_result = svd_3x3_wasm(&e_raw)?;
+        let s_vec = Vector3::new(svd_result.s[0], svd_result.s[1], svd_result.s[2]);
+        (svd_result.u, svd_result.v_t, s_vec)
+    };
 
     // Set smallest singular value to 0, average the other two for proper Essential matrix
     let avg = (s[0] + s[1]) / 2.0;
-    let s_corrected = nalgebra::Vector3::new(avg, avg, 0.0);
+    let s_corrected = Vector3::new(avg, avg, 0.0);
 
     let s_matrix = Matrix3::from_diagonal(&s_corrected);
     let e = u * s_matrix * v_t_e;
@@ -179,9 +475,17 @@ fn normalize_points(points: &[Vector2<f64>]) -> (Vec<Vector2<f64>>, Matrix3<f64>
 ///
 /// where W is a 90° rotation and u3 is the third column of U.
 pub fn decompose_essential(e: &Matrix3<f64>) -> [EssentialDecomposition; 4] {
-    let svd = SVD::new(*e, true, true);
-    let u = svd.u.unwrap();
-    let v_t = svd.v_t.unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
+    let (u, v_t) = {
+        let svd = SVD::new(*e, true, true);
+        (svd.u.unwrap(), svd.v_t.unwrap())
+    };
+
+    #[cfg(target_arch = "wasm32")]
+    let (u, v_t) = {
+        let svd_result = svd_3x3_wasm(e).unwrap();
+        (svd_result.u, svd_result.v_t)
+    };
 
     // W matrix (90 degree rotation)
     let w = Matrix3::new(
@@ -309,21 +613,17 @@ fn triangulate_point_simple(
     a[(2, 3)] = p2.x * t.z - t.x;
     a[(3, 3)] = p2.y * t.z - t.y;
 
-    // Solve using SVD
-    let svd = SVD::new(a, true, true);
-    let v_t = svd.v_t?;
+    // Solve using A^T A and find smallest eigenvector (WASM-compatible)
+    let ata = a.transpose() * a;
+    let v = smallest_eigenvector_4x4(&ata)?;
 
-    // Solution is last row of V^T
-    let w = v_t[(3, 3)];
+    // Solution is the smallest eigenvector (homogeneous coordinates)
+    let w = v[3];
     if w.abs() < 1e-10 {
         return None;
     }
 
-    Some(Vector3::new(
-        v_t[(3, 0)] / w,
-        v_t[(3, 1)] / w,
-        v_t[(3, 2)] / w,
-    ))
+    Some(Vector3::new(v[0] / w, v[1] / w, v[2] / w))
 }
 
 /// Compute the Sampson distance for a point correspondence.

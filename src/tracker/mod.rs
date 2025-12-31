@@ -258,14 +258,13 @@ impl Default for TrackerHandle {
     }
 }
 
-// Note: 6DoF Tracker WASM bindings are temporarily disabled due to
-// nalgebra DMatrix WASM compatibility issues. The Tracker6DoF struct
-// is fully functional for native Rust usage and tests.
+// 6DoF Tracker WASM bindings temporarily disabled.
+// The issue is that nalgebra's matrix operations (try_inverse, LU, SVD)
+// have WASM compatibility issues with the type system.
+// The Tracker6DoF struct is fully functional for native Rust usage.
 //
-// TODO: Fix WASM bindings by either:
-// 1. Using fixed-size matrices instead of DMatrix
-// 2. Adding nalgebra's std feature for WASM
-// 3. Using a different SVD implementation for WASM target
+// TODO: Fix by implementing pure-Rust matrix operations without nalgebra's
+// generic implementations that cause WASM type mismatches.
 
 #[cfg(test)]
 mod tests {

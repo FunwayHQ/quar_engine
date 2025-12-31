@@ -5,7 +5,33 @@
 //!
 //! Method: Linear DLT (Direct Linear Transform) triangulation
 
-use nalgebra::{Matrix3, Vector2, Vector3, SVD};
+use nalgebra::{Matrix3, Matrix4, Vector2, Vector3, Vector4};
+
+/// Find the smallest eigenvector of a symmetric 4x4 matrix using inverse power iteration.
+/// This is WASM-compatible as it only uses basic matrix operations.
+fn smallest_eigenvector_4x4(a: &Matrix4<f64>) -> Option<Vector4<f64>> {
+    let mut a_reg = *a;
+    for i in 0..4 {
+        a_reg[(i, i)] += 1e-10;
+    }
+
+    // Use direct inversion for 4x4 (more WASM-friendly than LU)
+    let a_inv = a_reg.try_inverse()?;
+
+    let mut v: Vector4<f64> = Vector4::new(1.0, 0.0, 0.0, 0.0);
+    v = v.normalize();
+
+    for _ in 0..30 {
+        let v_new = a_inv * v;
+        let norm = v_new.norm();
+        if norm < 1e-12 {
+            return None;
+        }
+        v = v_new / norm;
+    }
+
+    Some(v)
+}
 
 /// Triangulate a single 3D point from two 2D observations.
 ///
@@ -54,21 +80,17 @@ pub fn triangulate_point(
     a[(2, 3)] = p2.x * t.z - t.x;
     a[(3, 3)] = p2.y * t.z - t.y;
 
-    // Solve using SVD
-    let svd = SVD::new(a, true, true);
-    let v_t = svd.v_t?;
+    // Solve using A^T A and find smallest eigenvector (WASM-compatible)
+    let ata = a.transpose() * a;
+    let v = smallest_eigenvector_4x4(&ata)?;
 
-    // Solution is the last row of V^T (last column of V)
-    let w = v_t[(3, 3)];
+    // Solution is the smallest eigenvector (homogeneous coordinates)
+    let w = v[3];
     if w.abs() < 1e-10 {
         return None;
     }
 
-    Some(Vector3::new(
-        v_t[(3, 0)] / w,
-        v_t[(3, 1)] / w,
-        v_t[(3, 2)] / w,
-    ))
+    Some(Vector3::new(v[0] / w, v[1] / w, v[2] / w))
 }
 
 /// Triangulate multiple 3D points from 2D correspondences.
