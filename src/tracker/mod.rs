@@ -220,9 +220,9 @@ impl Tracker {
             0.0
         };
 
-        // Negate radial for correct direction (expansion = moving forward = negative Z motion)
+        // Positive radial = expansion = moving forward
         let radial_z = if radial_count >= 2 {
-            -total_radial / radial_count as f32
+            total_radial / radial_count as f32
         } else {
             0.0
         };

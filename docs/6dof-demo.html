@@ -372,6 +372,11 @@
             <input type="range" id="deadzone-slider" min="0" max="0.5" step="0.01" value="0.05">
             <span class="value" id="deadzone-val">0.05</span>
           </div>
+          <div class="slider-row">
+            <label>Invert Z:</label>
+            <input type="checkbox" id="invert-z-checkbox">
+            <span class="value" id="invert-z-val">off</span>
+          </div>
         </div>
       </div>
     </div>
@@ -490,6 +495,7 @@
     let zScale = 1.0;        // Z axis multiplier
     let smoothing = 0.3;     // Smoothing factor (0-1, lower = smoother)
     let deadzone = 0.05;     // Dead zone threshold
+    let invertZ = false;     // Invert Z direction
 
     // IMU Fusion state (from advanced-demo.html)
     let gyroOrientation = { x: 0, y: 0, z: 0 };
@@ -536,6 +542,12 @@
     deadzoneSlider.addEventListener('input', (e) => {
       deadzone = parseFloat(e.target.value);
       deadzoneVal.textContent = deadzone.toFixed(2);
+    });
+    const invertZCheckbox = document.getElementById('invert-z-checkbox');
+    const invertZVal = document.getElementById('invert-z-val');
+    invertZCheckbox.addEventListener('change', (e) => {
+      invertZ = e.target.checked;
+      invertZVal.textContent = invertZ ? 'on' : 'off';
     });
 
     // Tuning panel collapse/expand
@@ -941,10 +953,11 @@
             // Apply translations to camera FIRST
             // X: left/right - direct
             // Y: up/down - inverted
-            // Z: forward/back - direct subtraction
+            // Z: forward/back - with optional invert
             const newX = smoothedPosition.x;
             const newY = 1 - smoothedPosition.y;
-            const newZ = 3 - smoothedPosition.z * 3.0;
+            const zVal = invertZ ? -smoothedPosition.z : smoothedPosition.z;
+            const newZ = 3 - zVal * 3.0;
 
             camera.position.set(newX, newY, newZ);
 
