@@ -280,14 +280,12 @@ impl Tracker {
         let cx = width as f32 / 2.0;
         let cy = height as f32 / 2.0;
 
+        // First pass: compute average lateral flow
         let mut total_flow_x = 0.0f32;
         let mut total_flow_y = 0.0f32;
-        let mut total_radial = 0.0f32;
         let mut lateral_count = 0;
-        let mut radial_count = 0;
 
         for (prev, curr) in prev_points.iter().zip(curr_points.iter()) {
-            // Flow vector
             let flow_x = curr.x - prev.x;
             let flow_y = curr.y - prev.y;
             let flow_mag = (flow_x * flow_x + flow_y * flow_y).sqrt();
@@ -297,21 +295,49 @@ impl Tracker {
                 continue;
             }
 
-            // Accumulate lateral flow (all points, no minimum)
             total_flow_x += flow_x;
             total_flow_y += flow_y;
             lateral_count += 1;
+        }
+
+        if lateral_count < 2 {
+            return (0.0, 0.0, 0.0);
+        }
+
+        // Compute average lateral flow
+        let avg_flow_x = total_flow_x / lateral_count as f32;
+        let avg_flow_y = total_flow_y / lateral_count as f32;
+
+        // Second pass: compute radial flow with lateral component REMOVED
+        // This prevents left/right panning from affecting Z
+        let mut total_radial = 0.0f32;
+        let mut radial_count = 0;
+
+        for (prev, curr) in prev_points.iter().zip(curr_points.iter()) {
+            let flow_x = curr.x - prev.x;
+            let flow_y = curr.y - prev.y;
+            let flow_mag = (flow_x * flow_x + flow_y * flow_y).sqrt();
+
+            if flow_mag > 50.0 {
+                continue;
+            }
 
             // For radial flow, use distance from center
             let prev_rx = prev.x - cx;
             let prev_ry = prev.y - cy;
             let prev_dist = (prev_rx * prev_rx + prev_ry * prev_ry).sqrt();
 
-            // Use points that are at least 10px from center for radial (lowered threshold)
+            // Use points that are at least 10px from center for radial
             if prev_dist > 10.0 {
+                // IMPORTANT: Subtract average lateral flow to isolate radial component
+                // This prevents pure lateral movement from affecting Z
+                let radial_flow_x = flow_x - avg_flow_x;
+                let radial_flow_y = flow_y - avg_flow_y;
+
                 let radial_x = prev_rx / prev_dist;
                 let radial_y = prev_ry / prev_dist;
-                let radial_component = flow_x * radial_x + flow_y * radial_y;
+                let radial_component = radial_flow_x * radial_x + radial_flow_y * radial_y;
+
                 // Weight by distance - points further from center give better signal
                 let weight = (prev_dist / (width as f32 * 0.2)).min(2.0);
                 total_radial += radial_component * weight;
@@ -319,18 +345,9 @@ impl Tracker {
             }
         }
 
-        // Compute averages (negate lateral for correct camera direction)
-        let lateral_x = if lateral_count >= 2 {
-            -total_flow_x / lateral_count as f32
-        } else {
-            0.0
-        };
-
-        let lateral_y = if lateral_count >= 2 {
-            -total_flow_y / lateral_count as f32
-        } else {
-            0.0
-        };
+        // Negate lateral for correct camera direction
+        let lateral_x = -avg_flow_x;
+        let lateral_y = -avg_flow_y;
 
         // Positive radial = expansion = moving forward
         let radial_z = if radial_count >= 2 {
