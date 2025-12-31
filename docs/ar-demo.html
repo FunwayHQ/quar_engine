@@ -351,7 +351,7 @@
             const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
             const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
-            const sensitivity = 0.85;
+            const sensitivity = 1.0;
 
             // Apply euler angles directly to camera with smoothing
             // Flip pitch sign - try positive
