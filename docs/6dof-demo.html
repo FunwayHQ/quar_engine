@@ -944,11 +944,11 @@
 
             // Apply translations to camera
             // X: left/right - direct
-            // Y: up/down - INVERTED (subtract instead of add)
-            // Z: forward/back - INVERTED (add instead of subtract)
+            // Y: up/down - inverted
+            // Z: forward/back - needs higher sensitivity, use subtraction
             camera.position.x = smoothedPosition.x;
             camera.position.y = 1 - smoothedPosition.y;
-            camera.position.z = 3 + smoothedPosition.z;
+            camera.position.z = 3 - smoothedPosition.z * 3.0;  // Extra 3x boost for Z
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
