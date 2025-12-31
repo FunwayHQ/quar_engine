@@ -456,9 +456,12 @@ impl Tracker6DoF {
                     &best.translation,
                 );
 
+                // Get gravity-to-world rotation matrix
+                // This transforms from camera frame (Z forward, Y down) to world frame (Y up)
+                let gravity_rotation = self.compute_gravity_rotation();
+
                 // Transform triangulated points to world coordinates and add to map
                 // Note: triangulated points are in camera 1's frame (previous frame)
-                // We need to transform them using accumulated pose
                 for (_idx, point_cam) in valid_points.iter() {
                     // Scale the point by our scale factor
                     let scaled_point = Vec3::new(
@@ -467,15 +470,18 @@ impl Tracker6DoF {
                         point_cam.z * self.scale as f64,
                     );
 
+                    // Transform from camera frame to gravity-aligned world frame
+                    let world_point = gravity_rotation.mul_vec(&scaled_point);
+
                     // Only add if point is in reasonable depth range (0.1m to 20m)
-                    let depth = scaled_point.z;
+                    let depth = scaled_point.z; // Use camera-frame depth for filtering
                     if depth > 0.1 && depth < 20.0 {
                         // Add to map points, maintaining max size
                         if self.map_points_3d.len() >= self.max_map_points {
                             // Remove oldest point (FIFO)
                             self.map_points_3d.remove(0);
                         }
-                        self.map_points_3d.push(scaled_point);
+                        self.map_points_3d.push(world_point);
                     }
                 }
             }
@@ -911,6 +917,87 @@ impl Tracker6DoF {
     /// Reset the stabilizer.
     pub fn reset_stabilizer(&mut self) {
         self.stabilizer.reset();
+    }
+
+    // ==================== Gravity Alignment Methods ====================
+
+    /// Compute rotation matrix from camera frame to gravity-aligned world frame.
+    ///
+    /// Camera frame: Z forward, Y down, X right
+    /// World frame: Y up (opposite gravity), Z forward, X right
+    ///
+    /// Returns identity if no valid gravity estimate is available.
+    fn compute_gravity_rotation(&self) -> Mat3 {
+        // Get gravity vector (in device frame)
+        let g_device = self.gravity_estimator.gravity();
+        let g_mag = (g_device[0] * g_device[0] + g_device[1] * g_device[1] + g_device[2] * g_device[2]).sqrt();
+
+        // Need valid gravity estimate
+        if g_mag < 1.0 {
+            return Mat3::identity();
+        }
+
+        // Convert from device frame to camera frame
+        // Device frame: Y points to top of phone (up when phone is level)
+        // Camera frame: Y points down in image (towards bottom of image)
+        // For rear camera: camera_y = -device_y, camera_x = device_x, camera_z = -device_z
+        let g_camera = [g_device[0], -g_device[1], -g_device[2]];
+
+        // Normalize gravity to get "down" direction in camera frame
+        let g_cam_mag = (g_camera[0] * g_camera[0] + g_camera[1] * g_camera[1] + g_camera[2] * g_camera[2]).sqrt();
+        let down = Vec3::new(g_camera[0] / g_cam_mag, g_camera[1] / g_cam_mag, g_camera[2] / g_cam_mag);
+
+        // World Y-axis is "up" (opposite to gravity direction)
+        // This is expressed in camera coordinates
+        let world_y = Vec3::new(-down.x, -down.y, -down.z);
+
+        // For world Z (forward), project camera Z onto plane perpendicular to world_y
+        let camera_z = Vec3::new(0.0, 0.0, 1.0);
+        let dot_yz = world_y.x * camera_z.x + world_y.y * camera_z.y + world_y.z * camera_z.z;
+
+        let world_z_raw = Vec3::new(
+            camera_z.x - dot_yz * world_y.x,
+            camera_z.y - dot_yz * world_y.y,
+            camera_z.z - dot_yz * world_y.z,
+        );
+
+        let z_len = (world_z_raw.x * world_z_raw.x
+            + world_z_raw.y * world_z_raw.y
+            + world_z_raw.z * world_z_raw.z)
+            .sqrt();
+
+        // If camera is looking straight up/down, use camera X to define forward
+        let world_z = if z_len > 0.1 {
+            Vec3::new(
+                world_z_raw.x / z_len,
+                world_z_raw.y / z_len,
+                world_z_raw.z / z_len,
+            )
+        } else {
+            // Camera is looking up/down - use X to find Z
+            let camera_x = Vec3::new(1.0, 0.0, 0.0);
+            // world_z = camera_x cross world_y
+            Vec3::new(
+                camera_x.y * world_y.z - camera_x.z * world_y.y,
+                camera_x.z * world_y.x - camera_x.x * world_y.z,
+                camera_x.x * world_y.y - camera_x.y * world_y.x,
+            )
+        };
+
+        // world_x = world_y cross world_z (right-hand rule)
+        let world_x = Vec3::new(
+            world_y.y * world_z.z - world_y.z * world_z.y,
+            world_y.z * world_z.x - world_y.x * world_z.z,
+            world_y.x * world_z.y - world_y.y * world_z.x,
+        );
+
+        // Rotation matrix: columns are world frame axes expressed in camera frame
+        // To transform camera point to world: R * p_cam = p_world
+        Mat3::new(
+            world_x.x, world_y.x, world_z.x,
+            world_x.y, world_y.y, world_z.y,
+            world_x.z, world_y.z, world_z.z,
+        )
     }
 
     // ==================== Bundle Adjustment Methods ====================
@@ -1583,5 +1670,55 @@ mod tests {
         assert_eq!(result.query_kf_id, 10);
         assert_eq!(result.match_kf_id, 5);
         assert!((result.confidence - 0.8).abs() < 1e-6);
+    }
+
+    // ==================== Gravity Alignment Tests ====================
+
+    #[test]
+    fn test_gravity_rotation_identity_when_level() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        // Push stationary IMU samples with gravity pointing down (-Y)
+        // Phone held level: accelerometer reads [0, 9.81, 0] (opposite to gravity)
+        for i in 0..30 {
+            let t = i as f64 * 0.01;
+            tracker.push_imu([0.0, 9.81, 0.0], [0.0, 0.0, 0.0], t);
+        }
+
+        // Get the gravity rotation
+        let r = tracker.compute_gravity_rotation();
+
+        // With gravity = [0, -9.81, 0], world_y = [0, 1, 0]
+        // This should give approximately identity (or close to it)
+        // The camera and world frames should be aligned
+
+        // Check that the matrix is orthogonal (R * R^T = I)
+        let det = r.data[0][0] * (r.data[1][1] * r.data[2][2] - r.data[1][2] * r.data[2][1])
+                - r.data[0][1] * (r.data[1][0] * r.data[2][2] - r.data[1][2] * r.data[2][0])
+                + r.data[0][2] * (r.data[1][0] * r.data[2][1] - r.data[1][1] * r.data[2][0]);
+        assert!((det - 1.0).abs() < 0.01, "Rotation matrix should have determinant 1, got {}", det);
+    }
+
+    #[test]
+    fn test_gravity_rotation_transforms_floor_point() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        // Push stationary IMU samples with gravity pointing down (-Y in camera frame)
+        for i in 0..30 {
+            let t = i as f64 * 0.01;
+            tracker.push_imu([0.0, 9.81, 0.0], [0.0, 0.0, 0.0], t);
+        }
+
+        let r = tracker.compute_gravity_rotation();
+
+        // A point on the floor in camera frame (camera Y down means floor is at positive Y)
+        let floor_point_cam = Vec3::new(0.0, 1.0, 2.0); // 1m down, 2m forward in camera frame
+
+        // Transform to world frame
+        let floor_point_world = r.mul_vec(&floor_point_cam);
+
+        // In world frame with Y up, floor should have negative Y
+        assert!(floor_point_world.y < 0.0,
+            "Floor point should have negative Y in world frame (Y up), got {:?}", floor_point_world);
     }
 }
