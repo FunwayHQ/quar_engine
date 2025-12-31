@@ -1036,12 +1036,13 @@
             // Keep camera at default position (rotation is handled by gyro)
             camera.position.set(0, 1, 3);
 
-            // Debug: show Z values and gyro compensation status
+            // Debug: show raw translation from Rust and gyro status
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
             const gyroCompEnabled = trackerHandle.is_gyro_compensation_enabled();
             gyroCompEl.textContent = gyroCompEnabled ? 'ON' : 'OFF';
             gyroCompEl.style.color = gyroCompEnabled ? '#4ade80' : '#888';
-            flowDebugEl.textContent = `z:${smoothedPosition.z.toFixed(2)} grp:${arGroup.position.z.toFixed(2)}`;
+            // Show raw X,Y,Z from Rust to debug what's actually being computed
+            flowDebugEl.textContent = `raw: ${rawX.toFixed(1)},${rawY.toFixed(1)},${rawZ.toFixed(1)}`;
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
