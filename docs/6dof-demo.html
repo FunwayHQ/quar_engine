@@ -688,7 +688,7 @@
 
           featuresEl.textContent = tracked;
 
-          if (pose && tracked > 15) {
+          if (pose && tracked >= 8) {
             // Get rotation (quaternion) - handle both object and array access
             const q = pose.rotation || [0, 0, 0, 1];
             let rawQuat = new THREE.Quaternion(
@@ -703,6 +703,7 @@
             if (rawQuat.dot(lastRawQuaternion) < 0) {
               rawQuat.set(-rawQuat.x, -rawQuat.y, -rawQuat.z, -rawQuat.w);
             }
+            lastRawQuaternion.copy(rawQuat);
 
             // Get translation (from Essential matrix decomposition)
             const t = pose.translation || [0, 0, 0];
@@ -712,66 +713,17 @@
               t[2] ?? t.z ?? 0
             );
 
-            // Relaxed outlier rejection - Essential matrix is very noisy
-            // We rely more on smoothing than rejection
-            let isValidPose = true;
-            const rotationDelta = rawQuat.angleTo(lastRawQuaternion);
+            // Simple approach: just apply very heavy smoothing
+            // No outlier rejection - the smoothing will handle the noise
+            poseConfidence = Math.min(1, poseConfidence + 0.1);
 
-            // Only reject extreme jumps (> 60 degrees per frame)
-            if (rotationDelta > 1.05) { // ~60 degrees in radians
-              isValidPose = false;
-              framesSinceGoodPose++;
-            }
+            // Very heavy smoothing (1-2% per frame)
+            smoothedPosition.lerp(rawPosition, 0.02);
+            smoothedQuaternion.slerp(rawQuat, 0.015);
 
-            // Only reject extreme position jumps (> 20cm per frame)
-            if (lastValidPose) {
-              const positionDelta = rawPosition.distanceTo(lastValidPose.position);
-              if (positionDelta > 0.2) {
-                isValidPose = false;
-              }
-            }
-
-            if (isValidPose) {
-              framesSinceGoodPose = 0;
-              poseConfidence = Math.min(1, poseConfidence + 0.05); // Faster confidence gain
-
-              lastValidPose = {
-                position: rawPosition.clone(),
-                quaternion: rawQuat.clone()
-              };
-              lastRawQuaternion.copy(rawQuat);
-
-              // Very aggressive smoothing - Essential matrix output is noisy
-              const adaptivePosSmoothng = positionSmoothing * (0.3 + poseConfidence * 0.7);
-              const adaptiveRotSmoothing = rotationSmoothing * (0.3 + poseConfidence * 0.7);
-
-              // Apply exponential smoothing to position
-              smoothedPosition.lerp(rawPosition, adaptivePosSmoothng);
-
-              // Apply spherical interpolation to rotation
-              smoothedQuaternion.slerp(rawQuat, adaptiveRotSmoothing);
-            } else {
-              // Decrease confidence when rejecting poses
-              poseConfidence = Math.max(0, poseConfidence - 0.05);
-
-              // If we've had too many bad frames, slowly drift back to identity
-              if (framesSinceGoodPose > 30) {
-                const identityQuat = new THREE.Quaternion(0, 0, 0, 1);
-                smoothedQuaternion.slerp(identityQuat, 0.01);
-              }
-            }
-
-            // Update state display based on confidence
-            if (poseConfidence > 0.5) {
-              stateEl.textContent = 'tracking';
-              stateEl.style.color = '#4ade80';
-            } else if (poseConfidence > 0.2) {
-              stateEl.textContent = 'stabilizing';
-              stateEl.style.color = '#facc15';
-            } else {
-              stateEl.textContent = 'initializing';
-              stateEl.style.color = '#f97316';
-            }
+            // Update state - always "tracking" if we have enough points
+            stateEl.textContent = 'tracking';
+            stateEl.style.color = '#4ade80';
 
             // Get euler from smoothed quaternion for display
             const euler = new THREE.Euler().setFromQuaternion(smoothedQuaternion);
@@ -816,14 +768,12 @@
               }
             }
 
-          } else if (tracked > 8) {
-            stateEl.textContent = 'initializing';
+          } else if (tracked > 0) {
+            stateEl.textContent = 'few features';
             stateEl.style.color = '#facc15';
-            poseConfidence = Math.max(0, poseConfidence - 0.02);
           } else {
-            stateEl.textContent = 'searching';
+            stateEl.textContent = 'no features';
             stateEl.style.color = '#f87171';
-            poseConfidence = 0;
           }
 
           // Update scale display from tracker
