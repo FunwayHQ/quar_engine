@@ -32,11 +32,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 8 (VIO): IMU Preintegration** - Full accelerometer+gyro fusion, IMU preintegration (Forster et al.), scale estimation from IMU, gravity estimation, bias correction
 - **Sprint 19: Plane Detection & Hit Testing** - RANSAC plane fitting, plane classification (horizontal/vertical), ray-plane intersection, hit testing API
 - **Sprint 5 (Web Workers)** - TypeScript SDK with Web Worker architecture, SharedArrayBuffer zero-copy transfer, WorkerBridge, AetherWorker, worker-demo.html
+- **Sprint 16: Local Bundle Adjustment** - Levenberg-Marquardt optimizer, Jacobians, reprojection residuals, Huber robust cost, structure/motion optimization (39 tests)
+- **Sprint 18: Loop Closure** - LSH visual vocabulary, Bag of Words, TF-IDF weighting, place recognition database, pose graph optimization (38 tests)
 
 ### Current Status
-- **Full 6DoF tracking with VIO, mapping, and plane detection in WASM** (~111KB gzipped)
+- **Full 6DoF tracking with VIO, mapping, BA, loop closure, and plane detection in WASM** (~111KB gzipped)
 - **TypeScript SDK** with Web Worker support in `/sdk/` (builds to ES/CJS modules)
-- 333 unit tests passing (Rust) + SDK tests (TypeScript)
+- 424 unit tests passing (Rust) + SDK tests (TypeScript)
+- Bundle Adjustment integrated into tracker (39 BA tests)
+- Loop Closure integrated into tracker (38 LC tests)
 - Pure-Rust linear algebra (no external math dependencies)
 - RANSAC-based outlier rejection for stable tracking
 - Tracking confidence levels (Lost/Low/Medium/High)

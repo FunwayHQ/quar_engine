@@ -17,11 +17,11 @@ This document extends the original sprint plan with the components needed for fu
 | 14 | ORB Descriptors & Matching | ✅ COMPLETED |
 | **Phase 4: Mapping & Optimization** |||
 | 15 | Keyframe Management & Map Building | ✅ COMPLETED |
-| 16 | Local Bundle Adjustment | ⏸️ DEFERRED |
+| 16 | Local Bundle Adjustment | ✅ COMPLETED |
 | **Phase 5: Scale & VIO Integration** |||
 | 17 | Visual-Inertial Odometry | ✅ COMPLETED (as "Sprint 8 VIO" in CLAUDE.md) |
 | **Phase 6: Loop Closure** |||
-| 18 | Place Recognition & Loop Closure | ⏸️ DEFERRED |
+| 18 | Place Recognition & Loop Closure | ✅ COMPLETED |
 | **Sprint 19: AR Placement** |||
 | 19 | Plane Detection & Hit Testing | ✅ COMPLETED |
 | **Phase 7: 6DoF Stability** |||
@@ -42,11 +42,13 @@ This document extends the original sprint plan with the components needed for fu
 - ✅ Kalman filter pose smoothing
 - ✅ ZUPT and position stabilization
 - ✅ Plane detection and hit testing
+- ✅ Local Bundle Adjustment (Sprint 16) - LM optimizer, Jacobians, Huber cost
+- ✅ Loop Closure (Sprint 18) - BoW vocabulary, place recognition, pose graph
 
 ### Remaining Work
-- ⏸️ Local Bundle Adjustment (Sprint 16)
-- ⏸️ Loop Closure (Sprint 18)
-- ⏸️ Lighting Estimation
+- ⏸️ Three.js SDK (Sprint 9) - Production Three.js adapter
+- ⏸️ Lighting Estimation (Sprint 11) - Environment lighting for realistic AR
+- ⏸️ Production Hardening (Sprint 12) - Documentation, examples, polishing
 
 ---
 
@@ -76,9 +78,9 @@ This document extends the original sprint plan with the components needed for fu
 ### ⏸️ Deferred / Remaining
 | Component | Priority | Sprint | Notes |
 |-----------|----------|--------|-------|
-| Local Bundle Adjustment | Medium | 16 | Drift reduction, complex implementation |
-| Loop closure | Low | 18 | Long-term accuracy, needs BoW vocabulary |
+| Three.js SDK | Medium | 9 | Production adapter for Three.js |
 | Lighting Estimation | Low | 11 | Nice-to-have for realistic AR |
+| Production Hardening | Low | 12 | Documentation, examples, performance tuning |
 
 ---
 
