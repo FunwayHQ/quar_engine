@@ -317,14 +317,14 @@
     import * as THREE from 'three';
     console.log('6DoF Demo: Three.js loaded');
 
-    // Full 6DoF tracking using Tracker6DoFHandle with Essential matrix decomposition
-    let init, Tracker6DoFHandle, version;
+    // Use simpler TrackerHandle with optical flow-based rotation (much more stable)
+    let init, TrackerHandle, version;
     try {
       const wasm = await import('./pkg/quar_engine.js');
       init = wasm.default;
-      Tracker6DoFHandle = wasm.Tracker6DoFHandle;
+      TrackerHandle = wasm.TrackerHandle;
       version = wasm.version;
-      console.log('6DoF Demo: WASM module loaded');
+      console.log('6DoF Demo: WASM module loaded (optical flow tracker)');
     } catch (e) {
       console.error('Failed to load WASM module:', e);
       document.getElementById('start-btn').textContent = 'WASM Load Failed';
@@ -395,9 +395,6 @@
       currentScale = parseFloat(e.target.value);
       scaleVal.textContent = currentScale.toFixed(3);
       scaleDisplay.textContent = currentScale.toFixed(3);
-      if (trackerHandle) {
-        trackerHandle.set_scale(currentScale);
-      }
     });
 
     // Trajectory toggle
@@ -689,7 +686,7 @@
           featuresEl.textContent = tracked;
 
           if (pose && tracked >= 8) {
-            // Get rotation (quaternion) - handle both object and array access
+            // Get rotation (quaternion) from optical flow
             const q = pose.rotation || [0, 0, 0, 1];
             let rawQuat = new THREE.Quaternion(
               q[0] ?? q.x ?? 0,
@@ -699,29 +696,25 @@
             );
 
             // CRITICAL: Fix quaternion sign flip (q and -q are the same rotation)
-            // Choose the sign that's closer to the previous quaternion
             if (rawQuat.dot(lastRawQuaternion) < 0) {
               rawQuat.set(-rawQuat.x, -rawQuat.y, -rawQuat.z, -rawQuat.w);
             }
             lastRawQuaternion.copy(rawQuat);
 
-            // Get translation (from Essential matrix decomposition)
+            // Optical flow tracker: translation is from accumulated pose
+            // but it's less reliable, so we scale it down
             const t = pose.translation || [0, 0, 0];
             const rawPosition = new THREE.Vector3(
-              t[0] ?? t.x ?? 0,
-              t[1] ?? t.y ?? 0,
-              t[2] ?? t.z ?? 0
+              (t[0] ?? 0) * currentScale,
+              (t[1] ?? 0) * currentScale,
+              (t[2] ?? 0) * currentScale
             );
 
-            // Simple approach: just apply very heavy smoothing
-            // No outlier rejection - the smoothing will handle the noise
-            poseConfidence = Math.min(1, poseConfidence + 0.1);
+            // Moderate smoothing - optical flow is more stable than Essential matrix
+            smoothedQuaternion.slerp(rawQuat, 0.15); // 15% per frame
+            smoothedPosition.lerp(rawPosition, 0.1);  // 10% per frame
 
-            // Very heavy smoothing (1-2% per frame)
-            smoothedPosition.lerp(rawPosition, 0.02);
-            smoothedQuaternion.slerp(rawQuat, 0.015);
-
-            // Update state - always "tracking" if we have enough points
+            // Update state
             stateEl.textContent = 'tracking';
             stateEl.style.color = '#4ade80';
 
@@ -776,9 +769,8 @@
             stateEl.style.color = '#f87171';
           }
 
-          // Update scale display from tracker
-          const trackerScale = trackerHandle.get_scale();
-          scaleDisplay.textContent = trackerScale.toFixed(3);
+          // Scale is now just a UI slider value (no translation from optical flow tracker)
+          scaleDisplay.textContent = currentScale.toFixed(3);
         }
       }
 
@@ -810,7 +802,6 @@
     function reset() {
       if (trackerHandle) {
         trackerHandle.reset();
-        trackerHandle.set_scale(currentScale);
       }
 
       // Reset tracking state
@@ -858,10 +849,9 @@
         await loadWasm();
         await startCamera();
 
-        // Create 6DoF tracker with Essential matrix decomposition
-        trackerHandle = new Tracker6DoFHandle(640, 480);
-        trackerHandle.set_scale(currentScale);
-        console.log('6DoF Tracker created (Essential matrix + RANSAC)');
+        // Create optical flow tracker (simpler, more stable than Essential matrix)
+        trackerHandle = new TrackerHandle();
+        console.log('Optical flow tracker created');
 
         initThreeJS();
         onResize();
