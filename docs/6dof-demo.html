@@ -445,12 +445,12 @@
     // Use simpler TrackerHandle with optical flow-based rotation (much more stable)
     let init, TrackerHandle, version;
     try {
-      // Cache bust: v3 with aggressive lateral suppression
-      const wasm = await import('./pkg/quar_engine.js?v=3');
+      // Cache bust: v4 with RUST debug logging
+      const wasm = await import('./pkg/quar_engine.js?v=4');
       init = wasm.default;
       TrackerHandle = wasm.TrackerHandle;
       version = wasm.version;
-      console.log('6DoF Demo: WASM module loaded v3 - aggressive lateral suppression');
+      console.log('6DoF Demo: WASM v4 loaded - check for RUST flow logs');
     } catch (e) {
       console.error('Failed to load WASM module:', e);
       document.getElementById('start-btn').textContent = 'WASM Load Failed';

@@ -219,6 +219,14 @@ impl Tracker {
                         let (flow_x, flow_y, radial_z) =
                             self.calculate_flow_components(&comp_prev, &comp_curr, width, height);
 
+                        // Debug: log flow components every 60 frames
+                        if self.frame_count % 60 == 0 {
+                            crate::log(&format!(
+                                "RUST flow: lateral=[{:.3}, {:.3}] radial_z={:.4}",
+                                flow_x, flow_y, radial_z
+                            ));
+                        }
+
                         // Scale translation by confidence
                         let confidence_scale = confidence.translation_scale();
                         let translation_scale = 0.003 * confidence_scale;
