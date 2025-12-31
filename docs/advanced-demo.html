@@ -423,7 +423,7 @@
             const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
             const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
-            const sensitivity = 0.7;
+            const sensitivity = 0.85;
 
             // Debug output - raw values
             quatDebug.textContent = `x:${euler.x.toFixed(2)} y:${euler.y.toFixed(2)} z:${euler.z.toFixed(2)}`;
