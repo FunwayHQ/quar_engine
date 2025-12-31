@@ -216,22 +216,9 @@ impl Tracker {
                             (inlier_prev.clone(), inlier_curr.clone())
                         };
 
-                        // Calculate optical flow components for 6DoF translation using compensated points
-                        let (flow_x, flow_y, _radial_z) =
-                            self.calculate_flow_components(&comp_prev, &comp_curr, width, height);
-
-                        // DEBUG v7: Force radial_z to ZERO to test if this code path is reached
-                        let radial_z = 0.0f32;
-
-                        // Scale translation by confidence
-                        let confidence_scale = confidence.translation_scale();
-                        let translation_scale = 0.003 * confidence_scale;
-                        self.accumulated_translation[0] += flow_x * translation_scale;
-                        self.accumulated_translation[1] += flow_y * translation_scale;
-                        self.accumulated_translation[2] += radial_z * translation_scale;
-
-                        // Update pose translation
-                        self.current_pose.translation = self.accumulated_translation;
+                        // DEBUG v8: Force ALL translation to ZERO (skip flow calculation)
+                        self.accumulated_translation = [0.0, 0.0, 0.0];
+                        self.current_pose.translation = [0.0, 0.0, 0.0];
                     }
 
                     // Update tracked points with inliers only for better stability
