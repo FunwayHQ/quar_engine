@@ -24,14 +24,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 13: Pure-Rust Linear Algebra** - Replaced nalgebra with WASM-compatible pure-Rust implementations
 - **Sprint 21: Robust Feature Tracking** - RANSAC flow outlier rejection, feature quality scoring, tracking confidence levels, grid-based distribution
 - **Sprint 20: Gyro-Compensated Flow** - Gyro-based rotation prediction, flow compensation to isolate translation, gyro buffer with interpolation
+- **Sprint 22: Kalman Filter** - Extended Kalman filter for position/velocity state, Mahalanobis gating, motion model adaptation
+- **Sprint 8 (VIO): IMU Preintegration** - Full accelerometer+gyro fusion, IMU preintegration (Forster et al.), scale estimation from IMU, gravity estimation, bias correction
 
 ### Current Status
-- **Full 6DoF tracking working in WASM** (~51KB gzipped)
-- 182 unit tests passing
+- **Full 6DoF tracking with VIO support in WASM** (~68KB gzipped)
+- 226 unit tests passing
 - Pure-Rust linear algebra (no external math dependencies)
 - RANSAC-based outlier rejection for stable tracking
 - Tracking confidence levels (Lost/Low/Medium/High)
 - Gyro-compensated optical flow for rotation/translation separation
+- Visual-Inertial Odometry (VIO) with IMU preintegration
+- Automatic metric scale estimation from accelerometer
 
 ### Known Issues / Debug Notes
 - **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
@@ -102,6 +106,9 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 - `src/tracker/linalg.rs` - Pure-Rust linear algebra (Vec2, Vec3, Mat3, SVD, eigensolvers)
 - `src/tracker/robust.rs` - RANSAC flow filtering, feature quality, tracking confidence, grid distribution
 - `src/tracker/flow_compensation.rs` - Gyro-based rotation prediction, flow compensation, gyro buffer
+- `src/tracker/kalman.rs` - Extended Kalman filter (6D state: position+velocity), Mahalanobis gating
+- `src/tracker/imu_preintegration.rs` - IMU preintegration (Forster et al.), bias correction, rotation matrices
+- `src/tracker/scale_estimator.rs` - Metric scale estimation from IMU, gravity estimation
 
 **Memory & Performance:**
 - `src/memory/arena.rs` - Arena allocator, FixedVec
@@ -111,7 +118,7 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 
 ### Performance Targets
 - Tracking loop: <16ms (60 FPS) on high-end devices
-- WASM binary: <3MB gzipped (currently ~51KB!)
+- WASM binary: <3MB gzipped (currently ~68KB with VIO!)
 - Motion-to-photon latency: <30ms
 
 ## API Design

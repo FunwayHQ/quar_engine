@@ -331,9 +331,25 @@ export class Tracker6DoFHandle {
   free(): void;
   [Symbol.dispose](): void;
   /**
+   * Get estimated gravity vector as [gx, gy, gz].
+   */
+  get_gravity(): Float64Array;
+  /**
+   * Get current VIO scale estimate.
+   */
+  get_vio_scale(): number;
+  /**
    * Process a frame and return the 6DoF pose as JSON.
    */
   process_frame(rgba: Uint8Array, width: number, height: number): any;
+  /**
+   * Get IMU buffer length (number of IMU samples stored).
+   */
+  imu_buffer_len(): number;
+  /**
+   * Check if VIO mode is enabled.
+   */
+  is_vio_enabled(): boolean;
   /**
    * Test Essential matrix computation (for WASM debugging).
    */
@@ -342,6 +358,27 @@ export class Tracker6DoFHandle {
    * Get the number of tracked points.
    */
   tracked_points(): number;
+  /**
+   * Enable or disable VIO (Visual-Inertial Odometry) mode.
+   */
+  set_vio_enabled(enabled: boolean): void;
+  /**
+   * Clear the IMU buffer.
+   */
+  clear_imu_buffer(): void;
+  /**
+   * Process a frame with VIO fusion.
+   * Returns the pose as JSON.
+   */
+  process_frame_vio(rgba: Uint8Array, width: number, height: number, timestamp: number): any;
+  /**
+   * Check if VIO is initialized (gravity estimated).
+   */
+  is_vio_initialized(): boolean;
+  /**
+   * Get scale estimation confidence (0.0-1.0).
+   */
+  get_scale_confidence(): number;
   /**
    * Create a new 6DoF tracker.
    */
@@ -354,6 +391,15 @@ export class Tracker6DoFHandle {
    * Get the current pose as JSON.
    */
   get_pose(): any;
+  /**
+   * Push an IMU measurement (accelerometer + gyroscope).
+   *
+   * # Arguments
+   * * `ax, ay, az` - Acceleration in m/s²
+   * * `gx, gy, gz` - Angular velocity in rad/s
+   * * `timestamp` - Timestamp in seconds
+   */
+  push_imu(ax: number, ay: number, az: number, gx: number, gy: number, gz: number, timestamp: number): void;
   /**
    * Get the current scale estimate.
    */
@@ -623,12 +669,22 @@ export interface InitOutput {
   readonly timingreport_meets_30fps: (a: number) => number;
   readonly timingreport_meets_60fps: (a: number) => number;
   readonly timingreport_to_json: (a: number) => [number, number];
+  readonly tracker6dofhandle_clear_imu_buffer: (a: number) => void;
+  readonly tracker6dofhandle_get_gravity: (a: number) => [number, number];
   readonly tracker6dofhandle_get_pose: (a: number) => any;
   readonly tracker6dofhandle_get_scale: (a: number) => number;
+  readonly tracker6dofhandle_get_scale_confidence: (a: number) => number;
+  readonly tracker6dofhandle_get_vio_scale: (a: number) => number;
+  readonly tracker6dofhandle_imu_buffer_len: (a: number) => number;
+  readonly tracker6dofhandle_is_vio_enabled: (a: number) => number;
+  readonly tracker6dofhandle_is_vio_initialized: (a: number) => number;
   readonly tracker6dofhandle_new: (a: number, b: number) => number;
   readonly tracker6dofhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly tracker6dofhandle_process_frame_vio: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
+  readonly tracker6dofhandle_push_imu: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
   readonly tracker6dofhandle_reset: (a: number) => void;
   readonly tracker6dofhandle_set_scale: (a: number, b: number) => void;
+  readonly tracker6dofhandle_set_vio_enabled: (a: number, b: number) => void;
   readonly tracker6dofhandle_test_essential: () => number;
   readonly tracker6dofhandle_tracked_points: (a: number) => number;
   readonly trackerhandle_confidence_level: (a: number) => number;

@@ -11,6 +11,11 @@ function getArrayF32FromWasm0(ptr, len) {
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
+function getArrayF64FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat64ArrayMemory0().subarray(ptr / 8, ptr / 8 + len);
+}
+
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
@@ -30,6 +35,14 @@ function getFloat32ArrayMemory0() {
         cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
     }
     return cachedFloat32ArrayMemory0;
+}
+
+let cachedFloat64ArrayMemory0 = null;
+function getFloat64ArrayMemory0() {
+    if (cachedFloat64ArrayMemory0 === null || cachedFloat64ArrayMemory0.byteLength === 0) {
+        cachedFloat64ArrayMemory0 = new Float64Array(wasm.memory.buffer);
+    }
+    return cachedFloat64ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -1228,6 +1241,24 @@ export class Tracker6DoFHandle {
         wasm.__wbg_tracker6dofhandle_free(ptr, 0);
     }
     /**
+     * Get estimated gravity vector as [gx, gy, gz].
+     * @returns {Float64Array}
+     */
+    get_gravity() {
+        const ret = wasm.tracker6dofhandle_get_gravity(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * Get current VIO scale estimate.
+     * @returns {number}
+     */
+    get_vio_scale() {
+        const ret = wasm.tracker6dofhandle_get_vio_scale(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Process a frame and return the 6DoF pose as JSON.
      * @param {Uint8Array} rgba
      * @param {number} width
@@ -1239,6 +1270,22 @@ export class Tracker6DoFHandle {
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.tracker6dofhandle_process_frame(this.__wbg_ptr, ptr0, len0, width, height);
         return ret;
+    }
+    /**
+     * Get IMU buffer length (number of IMU samples stored).
+     * @returns {number}
+     */
+    imu_buffer_len() {
+        const ret = wasm.tracker6dofhandle_imu_buffer_len(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Check if VIO mode is enabled.
+     * @returns {boolean}
+     */
+    is_vio_enabled() {
+        const ret = wasm.tracker6dofhandle_is_vio_enabled(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
      * Test Essential matrix computation (for WASM debugging).
@@ -1255,6 +1302,50 @@ export class Tracker6DoFHandle {
     tracked_points() {
         const ret = wasm.tracker6dofhandle_tracked_points(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Enable or disable VIO (Visual-Inertial Odometry) mode.
+     * @param {boolean} enabled
+     */
+    set_vio_enabled(enabled) {
+        wasm.tracker6dofhandle_set_vio_enabled(this.__wbg_ptr, enabled);
+    }
+    /**
+     * Clear the IMU buffer.
+     */
+    clear_imu_buffer() {
+        wasm.tracker6dofhandle_clear_imu_buffer(this.__wbg_ptr);
+    }
+    /**
+     * Process a frame with VIO fusion.
+     * Returns the pose as JSON.
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @param {number} timestamp
+     * @returns {any}
+     */
+    process_frame_vio(rgba, width, height, timestamp) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.tracker6dofhandle_process_frame_vio(this.__wbg_ptr, ptr0, len0, width, height, timestamp);
+        return ret;
+    }
+    /**
+     * Check if VIO is initialized (gravity estimated).
+     * @returns {boolean}
+     */
+    is_vio_initialized() {
+        const ret = wasm.tracker6dofhandle_is_vio_initialized(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Get scale estimation confidence (0.0-1.0).
+     * @returns {number}
+     */
+    get_scale_confidence() {
+        const ret = wasm.tracker6dofhandle_get_scale_confidence(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Create a new 6DoF tracker.
@@ -1280,6 +1371,24 @@ export class Tracker6DoFHandle {
     get_pose() {
         const ret = wasm.tracker6dofhandle_get_pose(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Push an IMU measurement (accelerometer + gyroscope).
+     *
+     * # Arguments
+     * * `ax, ay, az` - Acceleration in m/s²
+     * * `gx, gy, gz` - Angular velocity in rad/s
+     * * `timestamp` - Timestamp in seconds
+     * @param {number} ax
+     * @param {number} ay
+     * @param {number} az
+     * @param {number} gx
+     * @param {number} gy
+     * @param {number} gz
+     * @param {number} timestamp
+     */
+    push_imu(ax, ay, az, gx, gy, gz, timestamp) {
+        wasm.tracker6dofhandle_push_imu(this.__wbg_ptr, ax, ay, az, gx, gy, gz, timestamp);
     }
     /**
      * Get the current scale estimate.
@@ -1802,6 +1911,7 @@ function __wbg_finalize_init(instance, module) {
     __wbg_init.__wbindgen_wasm_module = module;
     cachedDataViewMemory0 = null;
     cachedFloat32ArrayMemory0 = null;
+    cachedFloat64ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
 
 

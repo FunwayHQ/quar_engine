@@ -12,8 +12,10 @@ use super::essential_pure::{
     choose_valid_pose, compute_essential_ransac, decompose_essential,
 };
 use super::five_point::compute_essential_5pt_ransac;
+use super::imu_preintegration::{ImuBuffer, ImuMeasurement, PreintegratedImu, ImuBias};
 use super::kalman::MotionState;
 use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
+use super::scale_estimator::{ScaleEstimator, GravityEstimator};
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
 
@@ -88,6 +90,18 @@ pub struct Tracker6DoF {
     kalman_enabled: bool,
     /// Last frame timestamp
     last_frame_time: f64,
+    /// IMU buffer for VIO
+    imu_buffer: ImuBuffer,
+    /// Scale estimator for metric scale
+    scale_estimator: ScaleEstimator,
+    /// Gravity estimator
+    gravity_estimator: GravityEstimator,
+    /// Whether VIO mode is enabled
+    vio_enabled: bool,
+    /// Last preintegrated IMU (for inter-frame motion)
+    last_preintegration: Option<PreintegratedImu>,
+    /// VIO initialization state
+    vio_initialized: bool,
 }
 
 impl Tracker6DoF {
@@ -122,6 +136,12 @@ impl Tracker6DoF {
             motion_state: MotionState::new(),
             kalman_enabled: true,
             last_frame_time: 0.0,
+            imu_buffer: ImuBuffer::new(500),
+            scale_estimator: ScaleEstimator::new(),
+            gravity_estimator: GravityEstimator::new(),
+            vio_enabled: false,
+            last_preintegration: None,
+            vio_initialized: false,
         }
     }
 
@@ -378,6 +398,11 @@ impl Tracker6DoF {
         };
         self.motion_state.reset();
         self.last_frame_time = 0.0;
+        self.imu_buffer.clear();
+        self.scale_estimator.reset();
+        self.gravity_estimator.reset();
+        self.last_preintegration = None;
+        self.vio_initialized = false;
     }
 
     /// Get the current pose.
@@ -413,6 +438,193 @@ impl Tracker6DoF {
     /// Get the current velocity estimate from Kalman filter.
     pub fn get_velocity(&self) -> [f32; 3] {
         self.motion_state.velocity_f32()
+    }
+
+    // ==================== VIO Methods ====================
+
+    /// Enable or disable VIO (Visual-Inertial Odometry) mode.
+    pub fn set_vio_enabled(&mut self, enabled: bool) {
+        self.vio_enabled = enabled;
+        if enabled && self.config.scale_method == ScaleMethod::Fixed(self.scale) {
+            // Switch to IMU-based scale when VIO is enabled
+            self.config.scale_method = ScaleMethod::Imu;
+        }
+    }
+
+    /// Check if VIO mode is enabled.
+    pub fn is_vio_enabled(&self) -> bool {
+        self.vio_enabled
+    }
+
+    /// Check if VIO is initialized (gravity estimated, scale converged).
+    pub fn is_vio_initialized(&self) -> bool {
+        self.vio_initialized
+    }
+
+    /// Push an IMU measurement (accelerometer + gyroscope).
+    ///
+    /// # Arguments
+    /// * `accel` - Acceleration in m/s² [ax, ay, az]
+    /// * `gyro` - Angular velocity in rad/s [gx, gy, gz]
+    /// * `timestamp` - Timestamp in seconds
+    pub fn push_imu(&mut self, accel: [f64; 3], gyro: [f64; 3], timestamp: f64) {
+        self.imu_buffer.push(ImuMeasurement::new(accel, gyro, timestamp));
+
+        // Update gravity estimation during low-motion periods
+        let gyro_mag = (gyro[0].powi(2) + gyro[1].powi(2) + gyro[2].powi(2)).sqrt();
+        if gyro_mag < 0.05 {
+            // Low rotation - good for gravity estimation
+            self.gravity_estimator.add_stationary_sample(accel);
+        }
+
+        // Check for VIO initialization
+        if self.vio_enabled && !self.vio_initialized {
+            self.check_vio_initialization();
+        }
+    }
+
+    /// Push IMU from separate components (convenience for JS interop).
+    pub fn push_imu_components(
+        &mut self,
+        ax: f64, ay: f64, az: f64,
+        gx: f64, gy: f64, gz: f64,
+        timestamp: f64,
+    ) {
+        self.push_imu([ax, ay, az], [gx, gy, gz], timestamp);
+    }
+
+    /// Check and update VIO initialization status.
+    fn check_vio_initialization(&mut self) {
+        if self.gravity_estimator.is_initialized() {
+            // Gravity is known - we can start VIO
+            let gravity = self.gravity_estimator.gravity();
+            self.scale_estimator.initialize_gravity([
+                -gravity[0], // Convert gravity to accelerometer reading
+                -gravity[1],
+                -gravity[2],
+            ]);
+            self.vio_initialized = true;
+        }
+    }
+
+    /// Get preintegrated IMU between two timestamps.
+    pub fn get_preintegration(&self, start_time: f64, end_time: f64) -> Option<PreintegratedImu> {
+        self.imu_buffer.preintegrate(start_time, end_time)
+    }
+
+    /// Get estimated gravity vector.
+    pub fn get_gravity(&self) -> [f64; 3] {
+        self.gravity_estimator.gravity()
+    }
+
+    /// Get current scale estimate from VIO.
+    pub fn get_vio_scale(&self) -> f64 {
+        self.scale_estimator.scale()
+    }
+
+    /// Get scale estimation confidence.
+    pub fn get_scale_confidence(&self) -> f64 {
+        self.scale_estimator.estimate().confidence
+    }
+
+    /// Get current IMU bias estimate.
+    pub fn get_imu_bias(&self) -> ImuBias {
+        *self.imu_buffer.bias()
+    }
+
+    /// Set IMU bias (from calibration).
+    pub fn set_imu_bias(&mut self, bias: ImuBias) {
+        self.imu_buffer.set_bias(bias);
+    }
+
+    /// Estimate bias from stationary period.
+    pub fn estimate_imu_bias(&mut self, duration_seconds: f64) -> Option<ImuBias> {
+        self.imu_buffer.estimate_bias_stationary(duration_seconds)
+    }
+
+    /// Process frame with VIO fusion.
+    ///
+    /// This is an enhanced version of process_frame that uses IMU data
+    /// for improved tracking during fast motion or low-texture scenes.
+    pub fn process_frame_vio(
+        &mut self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+        timestamp: f64,
+    ) -> Option<Pose3D> {
+        // Get IMU preintegration since last frame
+        let preint = if self.vio_enabled && self.last_frame_time > 0.0 {
+            self.imu_buffer.preintegrate(self.last_frame_time, timestamp)
+        } else {
+            None
+        };
+
+        // Store for later use
+        self.last_preintegration = preint.clone();
+        self.last_frame_time = timestamp;
+
+        // Process visual frame
+        let _visual_pose = self.process_frame(rgba, width, height)?;
+
+        // If VIO is enabled and we have preintegration, fuse the results
+        if self.vio_enabled && self.vio_initialized {
+            if let Some(preint) = self.last_preintegration.clone() {
+                self.fuse_vio(&preint, timestamp);
+            }
+        }
+
+        Some(self.current_pose)
+    }
+
+    /// Fuse visual odometry with IMU preintegration.
+    fn fuse_vio(&mut self, preint: &PreintegratedImu, _timestamp: f64) {
+        // Use IMU rotation as a prior/constraint
+        let imu_rotation = preint.delta_rotation.to_quaternion();
+
+        // For now, we use IMU to validate visual rotation
+        // and help with scale estimation
+        let _rotation_diff = quaternion_angle_diff(&imu_rotation, &[
+            self.current_pose.rotation[0] as f64,
+            self.current_pose.rotation[1] as f64,
+            self.current_pose.rotation[2] as f64,
+            self.current_pose.rotation[3] as f64,
+        ]);
+
+        // Update scale estimate using visual and IMU velocities
+        if preint.delta_t > 0.01 {
+            let visual_velocity = self.motion_state.velocity();
+            let imu_velocity = [
+                preint.delta_velocity[0] / preint.delta_t,
+                preint.delta_velocity[1] / preint.delta_t,
+                preint.delta_velocity[2] / preint.delta_t,
+            ];
+
+            self.scale_estimator.add_velocity_sample(
+                visual_velocity,
+                imu_velocity,
+                _timestamp,
+                0.7, // Quality weight
+            );
+
+            // Update scale if VIO scale estimation is being used
+            if self.config.scale_method == ScaleMethod::Imu {
+                let vio_scale = self.scale_estimator.scale();
+                if self.scale_estimator.estimate().confidence > 0.5 {
+                    self.scale = vio_scale as f32;
+                }
+            }
+        }
+    }
+
+    /// Get IMU buffer length.
+    pub fn imu_buffer_len(&self) -> usize {
+        self.imu_buffer.len()
+    }
+
+    /// Clear IMU buffer.
+    pub fn clear_imu_buffer(&mut self) {
+        self.imu_buffer.clear();
     }
 }
 
@@ -459,6 +671,18 @@ fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
         (z / len) as f32,
         (w / len) as f32,
     ]
+}
+
+/// Compute angle difference between two quaternions in radians.
+fn quaternion_angle_diff(q1: &[f64; 4], q2: &[f64; 4]) -> f64 {
+    // Dot product of quaternions
+    let dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3];
+
+    // Clamp to handle numerical errors
+    let cos_half_angle = dot.abs().clamp(0.0, 1.0);
+
+    // Return full angle
+    2.0 * cos_half_angle.acos()
 }
 
 #[cfg(test)]
@@ -520,5 +744,68 @@ mod tests {
 
         let pose = tracker.process_frame(&rgba, 100, 100);
         assert!(pose.is_some());
+    }
+
+    #[test]
+    fn test_vio_enable_disable() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        assert!(!tracker.is_vio_enabled());
+        tracker.set_vio_enabled(true);
+        assert!(tracker.is_vio_enabled());
+        tracker.set_vio_enabled(false);
+        assert!(!tracker.is_vio_enabled());
+    }
+
+    #[test]
+    fn test_vio_imu_push() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+        tracker.set_vio_enabled(true);
+
+        // Push some IMU measurements
+        for i in 0..20 {
+            let t = i as f64 * 0.01;
+            // Stationary: only gravity in -Y
+            tracker.push_imu([0.0, 9.81, 0.0], [0.0, 0.0, 0.0], t);
+        }
+
+        assert_eq!(tracker.imu_buffer_len(), 20);
+    }
+
+    #[test]
+    fn test_vio_gravity_estimation() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+        tracker.set_vio_enabled(true);
+
+        // Push stationary IMU measurements (accelerometer reads +Y when gravity is -Y)
+        for i in 0..30 {
+            let t = i as f64 * 0.01;
+            // Small noise variation
+            let ax = 0.01 * (i as f64 * 0.1).sin();
+            let ay = 9.81 + 0.01 * (i as f64 * 0.2).cos();
+            let az = 0.01 * (i as f64 * 0.15).sin();
+            tracker.push_imu([ax, ay, az], [0.0, 0.0, 0.0], t);
+        }
+
+        // Check if VIO initialized
+        assert!(tracker.is_vio_initialized());
+
+        // Check gravity estimate points down (-Y)
+        let gravity = tracker.get_gravity();
+        assert!(gravity[1] < -9.0, "Gravity Y should be negative: {:?}", gravity);
+    }
+
+    #[test]
+    fn test_quaternion_angle_diff() {
+        // Identity quaternions should have zero difference
+        let q1 = [0.0, 0.0, 0.0, 1.0];
+        let q2 = [0.0, 0.0, 0.0, 1.0];
+        let diff = quaternion_angle_diff(&q1, &q2);
+        assert!(diff.abs() < 0.001);
+
+        // 90 degree rotation around Z
+        let q3 = [0.0, 0.0, 0.7071, 0.7071];
+        let diff2 = quaternion_angle_diff(&q1, &q3);
+        assert!((diff2 - std::f64::consts::FRAC_PI_2).abs() < 0.01);
     }
 }

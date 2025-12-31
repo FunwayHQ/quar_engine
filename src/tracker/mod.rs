@@ -17,6 +17,8 @@ pub mod robust;
 pub mod flow_compensation;
 pub mod five_point;
 pub mod kalman;
+pub mod imu_preintegration;
+pub mod scale_estimator;
 
 pub use optical_flow::{LucasKanadeTracker, FBTrackResult};
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -35,6 +37,11 @@ pub use five_point::{
     compute_essential_5pt, compute_essential_5pt_ransac, FivePointResult,
 };
 pub use kalman::{MotionState, MotionModel};
+pub use imu_preintegration::{
+    ImuMeasurement, ImuBias, ImuBuffer, PreintegratedImu, RotationMatrix,
+    GRAVITY_MAGNITUDE, GRAVITY_WORLD,
+};
+pub use scale_estimator::{ScaleEstimate, ScaleEstimator, GravityEstimator};
 
 use wasm_bindgen::prelude::*;
 
@@ -835,6 +842,89 @@ impl Tracker6DoFHandle {
     #[wasm_bindgen]
     pub fn set_scale(&mut self, scale: f32) {
         self.tracker.set_scale(scale);
+    }
+
+    // ==================== VIO Methods ====================
+
+    /// Enable or disable VIO (Visual-Inertial Odometry) mode.
+    #[wasm_bindgen]
+    pub fn set_vio_enabled(&mut self, enabled: bool) {
+        self.tracker.set_vio_enabled(enabled);
+    }
+
+    /// Check if VIO mode is enabled.
+    #[wasm_bindgen]
+    pub fn is_vio_enabled(&self) -> bool {
+        self.tracker.is_vio_enabled()
+    }
+
+    /// Check if VIO is initialized (gravity estimated).
+    #[wasm_bindgen]
+    pub fn is_vio_initialized(&self) -> bool {
+        self.tracker.is_vio_initialized()
+    }
+
+    /// Push an IMU measurement (accelerometer + gyroscope).
+    ///
+    /// # Arguments
+    /// * `ax, ay, az` - Acceleration in m/s²
+    /// * `gx, gy, gz` - Angular velocity in rad/s
+    /// * `timestamp` - Timestamp in seconds
+    #[wasm_bindgen]
+    pub fn push_imu(
+        &mut self,
+        ax: f64, ay: f64, az: f64,
+        gx: f64, gy: f64, gz: f64,
+        timestamp: f64,
+    ) {
+        self.tracker.push_imu_components(ax, ay, az, gx, gy, gz, timestamp);
+    }
+
+    /// Process a frame with VIO fusion.
+    /// Returns the pose as JSON.
+    #[wasm_bindgen]
+    pub fn process_frame_vio(
+        &mut self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+        timestamp: f64,
+    ) -> JsValue {
+        match self.tracker.process_frame_vio(rgba, width, height, timestamp) {
+            Some(pose) => serde_wasm_bindgen::to_value(&pose).unwrap_or(JsValue::NULL),
+            None => JsValue::NULL,
+        }
+    }
+
+    /// Get estimated gravity vector as [gx, gy, gz].
+    #[wasm_bindgen]
+    pub fn get_gravity(&self) -> Vec<f64> {
+        let g = self.tracker.get_gravity();
+        vec![g[0], g[1], g[2]]
+    }
+
+    /// Get current VIO scale estimate.
+    #[wasm_bindgen]
+    pub fn get_vio_scale(&self) -> f64 {
+        self.tracker.get_vio_scale()
+    }
+
+    /// Get scale estimation confidence (0.0-1.0).
+    #[wasm_bindgen]
+    pub fn get_scale_confidence(&self) -> f64 {
+        self.tracker.get_scale_confidence()
+    }
+
+    /// Get IMU buffer length (number of IMU samples stored).
+    #[wasm_bindgen]
+    pub fn imu_buffer_len(&self) -> usize {
+        self.tracker.imu_buffer_len()
+    }
+
+    /// Clear the IMU buffer.
+    #[wasm_bindgen]
+    pub fn clear_imu_buffer(&mut self) {
+        self.tracker.clear_imu_buffer();
     }
 }
 
