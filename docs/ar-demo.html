@@ -347,13 +347,13 @@
             stateEl.style.color = '#4ade80';
 
             // Get quaternion directly from tracker
-            // Swap axes, invert all rotations for world-anchored AR
+            // Remap: tracker [x,y,z,w] -> Three.js uses y for pitch
             const q = pose.rotation;
             const sensitivity = 0.7;
             const targetQuat = new THREE.Quaternion(
-              -q[0] * sensitivity,   // pitch (up/down) - inverted
-              -q[2] * sensitivity,   // yaw (left/right) - inverted
-              q[1] * sensitivity,    // roll - not inverted
+              -q[1] * sensitivity,   // pitch from tracker Y
+              -q[2] * sensitivity,   // yaw from tracker Z
+              q[0] * sensitivity,    // roll from tracker X
               q[3]
             );
 
