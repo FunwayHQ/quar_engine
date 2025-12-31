@@ -521,6 +521,8 @@
 
     // Translation tracking
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
+    let lastRawTranslation = { x: 0, y: 0, z: 0 };  // For computing deltas
+    let accumulatedPosition = new THREE.Vector3(0, 0, 0);  // Our own accumulation with decay
 
 
     // Tuning sliders
@@ -941,30 +943,42 @@
             }
 
             // 6DoF Translation tracking from optical flow
+            // Use DELTA values (change since last frame) instead of accumulated
             const t = pose.translation || [0, 0, 0];
             const rawX = t[0] ?? 0;
             const rawY = t[1] ?? 0;
             const rawZ = t[2] ?? 0;
 
-            // Apply dead zone - ignore small movements
-            const applyDeadzone = (val) => Math.abs(val) < deadzone ? 0 : val;
-            const dzX = applyDeadzone(rawX);
-            const dzY = applyDeadzone(rawY);
-            const dzZ = applyDeadzone(rawZ);
+            // Compute deltas (change since last frame)
+            const deltaX = rawX - lastRawTranslation.x;
+            const deltaY = rawY - lastRawTranslation.y;
+            const deltaZ = rawZ - lastRawTranslation.z;
+            lastRawTranslation = { x: rawX, y: rawY, z: rawZ };
 
-            // Suppress translation when rotating (optical flow can't distinguish them)
-            // Scale down translation based on rotation rate (higher rotFilter = more suppression)
+            // Apply dead zone to deltas
+            const applyDeadzone = (val) => Math.abs(val) < deadzone ? 0 : val;
+            const dzX = applyDeadzone(deltaX);
+            const dzY = applyDeadzone(deltaY);
+            const dzZ = applyDeadzone(deltaZ);
+
+            // Suppress translation when rotating
             const rotationSuppress = Math.max(0, 1 - currentGyroRate * rotFilter);
 
-            // Apply per-axis and master scale, with rotation suppression
-            const targetX = dzX * currentScale * xScale * rotationSuppress;
-            const targetY = dzY * currentScale * yScale * rotationSuppress;
-            const targetZ = dzZ * currentScale * zScale * rotationSuppress;
+            // Scale the deltas
+            const scaledX = dzX * currentScale * xScale * rotationSuppress;
+            const scaledY = dzY * currentScale * yScale * rotationSuppress;
+            const scaledZ = dzZ * currentScale * zScale * rotationSuppress;
 
-            // Smooth transition (lower smoothing = more smoothing)
-            smoothedPosition.x += (targetX - smoothedPosition.x) * smoothing;
-            smoothedPosition.y += (targetY - smoothedPosition.y) * smoothing;
-            smoothedPosition.z += (targetZ - smoothedPosition.z) * smoothing;
+            // Accumulate position ourselves (with optional decay for stability)
+            const decay = 0.995;  // Slight decay to prevent runaway drift
+            accumulatedPosition.x = accumulatedPosition.x * decay + scaledX;
+            accumulatedPosition.y = accumulatedPosition.y * decay + scaledY;
+            accumulatedPosition.z = accumulatedPosition.z * decay + scaledZ;
+
+            // Smooth the accumulated position
+            smoothedPosition.x += (accumulatedPosition.x - smoothedPosition.x) * smoothing;
+            smoothedPosition.y += (accumulatedPosition.y - smoothedPosition.y) * smoothing;
+            smoothedPosition.z += (accumulatedPosition.z - smoothedPosition.z) * smoothing;
 
             // Move the SCENE (arGroup) instead of camera for translation
             // This works better with gyro-controlled camera rotation
@@ -1068,6 +1082,8 @@
       totalDistance = 0;
       lastPosition.set(0, 0, 0);
       smoothedPosition.set(0, 0, 0);
+      accumulatedPosition.set(0, 0, 0);
+      lastRawTranslation = { x: 0, y: 0, z: 0 };
       currentGyroRate = 0;
 
       // Reset IMU fusion state
