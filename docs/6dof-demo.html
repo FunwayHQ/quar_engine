@@ -943,9 +943,12 @@
             flowDebugEl.textContent = `${smoothedPosition.x.toFixed(2)},${smoothedPosition.y.toFixed(2)},${smoothedPosition.z.toFixed(2)}`;
 
             // Apply translations to camera
+            // X: left/right - direct
+            // Y: up/down - INVERTED (subtract instead of add)
+            // Z: forward/back - INVERTED (add instead of subtract)
             camera.position.x = smoothedPosition.x;
-            camera.position.y = 1 + smoothedPosition.y;
-            camera.position.z = 3 - smoothedPosition.z;
+            camera.position.y = 1 - smoothedPosition.y;
+            camera.position.z = 3 + smoothedPosition.z;
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
