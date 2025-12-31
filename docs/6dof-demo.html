@@ -938,17 +938,19 @@
             smoothedPosition.y += (targetY - smoothedPosition.y) * smoothing;
             smoothedPosition.z += (targetZ - smoothedPosition.z) * smoothing;
 
-            // Debug: show raw and smoothed values
-            gyroRateEl.textContent = currentGyroRate.toFixed(2);
-            flowDebugEl.textContent = `${smoothedPosition.x.toFixed(2)},${smoothedPosition.y.toFixed(2)},${smoothedPosition.z.toFixed(2)}`;
-
-            // Apply translations to camera
+            // Apply translations to camera FIRST
             // X: left/right - direct
             // Y: up/down - inverted
-            // Z: forward/back - needs higher sensitivity, use subtraction
-            camera.position.x = smoothedPosition.x;
-            camera.position.y = 1 - smoothedPosition.y;
-            camera.position.z = 3 - smoothedPosition.z * 3.0;  // Extra 3x boost for Z
+            // Z: forward/back - direct subtraction
+            const newX = smoothedPosition.x;
+            const newY = 1 - smoothedPosition.y;
+            const newZ = 3 - smoothedPosition.z * 3.0;
+
+            camera.position.set(newX, newY, newZ);
+
+            // Debug: show smoothed values AND actual camera Z
+            gyroRateEl.textContent = currentGyroRate.toFixed(2);
+            flowDebugEl.textContent = `z:${smoothedPosition.z.toFixed(2)} cam:${camera.position.z.toFixed(2)}`;
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
