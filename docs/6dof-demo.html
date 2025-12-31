@@ -118,30 +118,54 @@
     }
     button.secondary:hover { background: #6b7280; }
 
-    /* Scale slider */
-    #scale-panel {
+    /* Tuning panel */
+    #tuning-panel {
       position: absolute;
-      bottom: 100px; left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      background: rgba(0,0,0,0.8);
-      padding: 12px 20px;
+      bottom: 100px; left: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.9);
+      padding: 15px;
       border-radius: 8px;
       z-index: 100;
+      max-width: 400px;
+      margin: 0 auto;
     }
-    #scale-panel label {
-      font-size: 13px;
+    #tuning-panel h3 {
+      color: #f472b6;
+      font-size: 14px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .slider-row label {
+      font-size: 12px;
       color: #888;
+      min-width: 70px;
     }
-    #scale-panel input[type="range"] {
-      width: 120px;
+    .slider-row input[type="range"] {
+      flex: 1;
+      min-width: 80px;
     }
-    #scale-panel .value {
-      font-size: 13px;
+    .slider-row .value {
+      font-size: 12px;
       color: #4ade80;
-      min-width: 50px;
+      min-width: 45px;
+      text-align: right;
+    }
+    .slider-group {
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding-top: 10px;
+      margin-top: 10px;
+    }
+    .slider-group:first-child {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
     }
 
     /* Start overlay */
@@ -222,8 +246,7 @@
       </div>
       <div class="stat">
         <span class="stat-label">Scale: </span>
-        <span class="stat-value" id="scale-display">0.01</span>
-        <span class="stat-label"> m/unit</span>
+        <span class="stat-value" id="scale-display">0.50</span>
       </div>
       <div class="stat">
         <span class="stat-label">Gyro: </span>
@@ -285,10 +308,47 @@
       </label>
     </div>
 
-    <div id="scale-panel">
-      <label>Translation Scale:</label>
-      <input type="range" id="scale-slider" min="0.001" max="0.1" step="0.001" value="0.01">
-      <span class="value" id="scale-val">0.010</span>
+    <div id="tuning-panel">
+      <h3>Translation Tuning</h3>
+
+      <div class="slider-group">
+        <div class="slider-row">
+          <label>Master:</label>
+          <input type="range" id="scale-slider" min="0.1" max="5" step="0.1" value="0.5">
+          <span class="value" id="scale-val">0.50</span>
+        </div>
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-row">
+          <label style="color:#f87171">X (L/R):</label>
+          <input type="range" id="x-scale-slider" min="0" max="3" step="0.1" value="1.0">
+          <span class="value" id="x-scale-val">1.0</span>
+        </div>
+        <div class="slider-row">
+          <label style="color:#4ade80">Y (U/D):</label>
+          <input type="range" id="y-scale-slider" min="0" max="3" step="0.1" value="1.0">
+          <span class="value" id="y-scale-val">1.0</span>
+        </div>
+        <div class="slider-row">
+          <label style="color:#60a5fa">Z (F/B):</label>
+          <input type="range" id="z-scale-slider" min="0" max="3" step="0.1" value="1.0">
+          <span class="value" id="z-scale-val">1.0</span>
+        </div>
+      </div>
+
+      <div class="slider-group">
+        <div class="slider-row">
+          <label>Smoothing:</label>
+          <input type="range" id="smooth-slider" min="0.05" max="1" step="0.05" value="0.3">
+          <span class="value" id="smooth-val">0.30</span>
+        </div>
+        <div class="slider-row">
+          <label>Dead Zone:</label>
+          <input type="range" id="deadzone-slider" min="0" max="0.5" step="0.01" value="0.05">
+          <span class="value" id="deadzone-val">0.05</span>
+        </div>
+      </div>
     </div>
 
     <div id="controls">
@@ -354,6 +414,16 @@
     const scaleDisplay = document.getElementById('scale-display');
     const scaleSlider = document.getElementById('scale-slider');
     const scaleVal = document.getElementById('scale-val');
+    const xScaleSlider = document.getElementById('x-scale-slider');
+    const xScaleVal = document.getElementById('x-scale-val');
+    const yScaleSlider = document.getElementById('y-scale-slider');
+    const yScaleVal = document.getElementById('y-scale-val');
+    const zScaleSlider = document.getElementById('z-scale-slider');
+    const zScaleVal = document.getElementById('z-scale-val');
+    const smoothSlider = document.getElementById('smooth-slider');
+    const smoothVal = document.getElementById('smooth-val');
+    const deadzoneSlider = document.getElementById('deadzone-slider');
+    const deadzoneVal = document.getElementById('deadzone-val');
     const showTrajectoryCheckbox = document.getElementById('show-trajectory');
     const gyroRateEl = document.getElementById('gyro-rate');
     const flowDebugEl = document.getElementById('flow-debug');
@@ -389,7 +459,12 @@
     // Tracking state
     let totalDistance = 0;
     let lastPosition = new THREE.Vector3();
-    let currentScale = 0.01;
+    let currentScale = 0.5;  // Master scale
+    let xScale = 1.0;        // X axis multiplier
+    let yScale = 1.0;        // Y axis multiplier
+    let zScale = 1.0;        // Z axis multiplier
+    let smoothing = 0.3;     // Smoothing factor (0-1, lower = smoother)
+    let deadzone = 0.05;     // Dead zone threshold
 
     // IMU Fusion state (from advanced-demo.html)
     let gyroOrientation = { x: 0, y: 0, z: 0 };
@@ -411,11 +486,31 @@
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
 
 
-    // Scale slider - updates the tracker's scale
+    // Tuning sliders
     scaleSlider.addEventListener('input', (e) => {
       currentScale = parseFloat(e.target.value);
-      scaleVal.textContent = currentScale.toFixed(3);
-      scaleDisplay.textContent = currentScale.toFixed(3);
+      scaleVal.textContent = currentScale.toFixed(2);
+      scaleDisplay.textContent = currentScale.toFixed(2);
+    });
+    xScaleSlider.addEventListener('input', (e) => {
+      xScale = parseFloat(e.target.value);
+      xScaleVal.textContent = xScale.toFixed(1);
+    });
+    yScaleSlider.addEventListener('input', (e) => {
+      yScale = parseFloat(e.target.value);
+      yScaleVal.textContent = yScale.toFixed(1);
+    });
+    zScaleSlider.addEventListener('input', (e) => {
+      zScale = parseFloat(e.target.value);
+      zScaleVal.textContent = zScale.toFixed(1);
+    });
+    smoothSlider.addEventListener('input', (e) => {
+      smoothing = parseFloat(e.target.value);
+      smoothVal.textContent = smoothing.toFixed(2);
+    });
+    deadzoneSlider.addEventListener('input', (e) => {
+      deadzone = parseFloat(e.target.value);
+      deadzoneVal.textContent = deadzone.toFixed(2);
     });
 
     // Trajectory toggle
@@ -793,29 +888,27 @@
             const rawY = t[1] ?? 0;
             const rawZ = t[2] ?? 0;
 
-            // Debug every 30 frames: show raw values
-            if (frameCount % 30 === 0) {
-              console.log('Raw translation from Rust:', rawX.toFixed(3), rawY.toFixed(3), rawZ.toFixed(3));
-            }
+            // Apply dead zone - ignore small movements
+            const applyDeadzone = (val) => Math.abs(val) < deadzone ? 0 : val;
+            const dzX = applyDeadzone(rawX);
+            const dzY = applyDeadzone(rawY);
+            const dzZ = applyDeadzone(rawZ);
 
-            // Scale - very large for debugging visibility
-            const scale = currentScale * 50.0;  // 50x multiplier for testing
+            // Apply per-axis and master scale
+            const targetX = dzX * currentScale * xScale;
+            const targetY = dzY * currentScale * yScale;
+            const targetZ = dzZ * currentScale * zScale;
 
-            // Direct mapping - no swap, just scale
-            const targetX = rawX * scale;
-            const targetY = rawY * scale;
-            const targetZ = rawZ * scale * 2.0;
+            // Smooth transition (lower smoothing = more smoothing)
+            smoothedPosition.x += (targetX - smoothedPosition.x) * smoothing;
+            smoothedPosition.y += (targetY - smoothedPosition.y) * smoothing;
+            smoothedPosition.z += (targetZ - smoothedPosition.z) * smoothing;
 
-            // NO smoothing - apply directly to see raw values
-            smoothedPosition.x = targetX;
-            smoothedPosition.y = targetY;
-            smoothedPosition.z = targetZ;
-
-            // Debug: show raw translation values from Rust
+            // Debug: show raw and smoothed values
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
-            flowDebugEl.textContent = `raw:${rawX.toFixed(1)},${rawY.toFixed(1)},${rawZ.toFixed(1)}`;
+            flowDebugEl.textContent = `${smoothedPosition.x.toFixed(2)},${smoothedPosition.y.toFixed(2)},${smoothedPosition.z.toFixed(2)}`;
 
-            // Apply ALL translations to camera - direct, no smoothing
+            // Apply translations to camera
             camera.position.x = smoothedPosition.x;
             camera.position.y = 1 + smoothedPosition.y;
             camera.position.z = 3 - smoothedPosition.z;
@@ -862,8 +955,8 @@
             stateEl.style.color = '#f87171';
           }
 
-          // Scale is now just a UI slider value (no translation from optical flow tracker)
-          scaleDisplay.textContent = currentScale.toFixed(3);
+          // Update scale display
+          scaleDisplay.textContent = currentScale.toFixed(2);
         }
       }
 
