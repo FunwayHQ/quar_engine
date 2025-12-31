@@ -1,17 +1,31 @@
 //! Feature detection module for QUAR WebAR Engine.
 //!
-//! This module provides FAST corner detection with non-maximum suppression.
+//! This module provides:
+//! - FAST corner detection with non-maximum suppression
+//! - ORB descriptors (256-bit binary) for feature matching
+//! - Descriptor matching with cross-check and ratio test
+//!
 //! Optimized for WebAssembly performance targeting <5ms for 640x480 frames.
 
+mod descriptor;
 mod fast;
 mod grayscale;
 mod keypoint;
+mod matcher;
 mod nms;
+mod orientation;
 
+pub use descriptor::{compute_descriptors, compute_descriptors_filtered, OrbDescriptor, DESCRIPTOR_BORDER};
 pub use fast::FastDetector;
 pub use grayscale::rgba_to_grayscale;
 pub use keypoint::KeyPoint;
+pub use matcher::{
+    match_cross_check, match_descriptors, match_with_ratio_test, knn_match,
+    filter_by_distance, sort_by_distance, BruteForceMatcher, Match, MatchStats,
+    DEFAULT_MAX_DISTANCE, DEFAULT_RATIO,
+};
 pub use nms::non_maximum_suppression;
+pub use orientation::{compute_orientation, compute_orientations, DEFAULT_PATCH_RADIUS};
 
 use wasm_bindgen::prelude::*;
 
@@ -83,6 +97,197 @@ pub fn count_features(rgba_data: &[u8], width: u32, height: u32, threshold: u8) 
     let keypoints = detector.detect(&grayscale, width, height);
     let filtered = non_maximum_suppression(&keypoints, 3);
     filtered.len() as u32
+}
+
+// =============================================================================
+// Feature with Descriptor
+// =============================================================================
+
+use serde::{Deserialize, Serialize};
+
+/// A complete feature with keypoint, orientation, and descriptor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Feature {
+    /// The keypoint location and score
+    pub keypoint: KeyPoint,
+    /// Patch orientation in radians
+    pub orientation: f32,
+    /// ORB descriptor (if computed)
+    pub descriptor: Option<OrbDescriptor>,
+}
+
+impl Feature {
+    /// Create a new feature with a keypoint only.
+    pub fn new(keypoint: KeyPoint) -> Self {
+        Self {
+            keypoint,
+            orientation: 0.0,
+            descriptor: None,
+        }
+    }
+
+    /// Create a feature with keypoint and orientation.
+    pub fn with_orientation(keypoint: KeyPoint, orientation: f32) -> Self {
+        Self {
+            keypoint,
+            orientation,
+            descriptor: None,
+        }
+    }
+
+    /// Create a complete feature with descriptor.
+    pub fn complete(keypoint: KeyPoint, orientation: f32, descriptor: OrbDescriptor) -> Self {
+        Self {
+            keypoint,
+            orientation,
+            descriptor: Some(descriptor),
+        }
+    }
+}
+
+/// Configuration for feature extraction.
+#[derive(Debug, Clone)]
+pub struct FeatureConfig {
+    /// FAST threshold (intensity difference)
+    pub threshold: u8,
+    /// NMS radius in pixels
+    pub nms_radius: u32,
+    /// Whether to compute descriptors
+    pub compute_descriptors: bool,
+    /// Maximum number of features to return
+    pub max_features: Option<usize>,
+}
+
+impl Default for FeatureConfig {
+    fn default() -> Self {
+        Self {
+            threshold: 20,
+            nms_radius: 3,
+            compute_descriptors: true,
+            max_features: Some(500),
+        }
+    }
+}
+
+/// Extract features with descriptors from an image.
+///
+/// This is the main feature extraction function that:
+/// 1. Detects FAST corners
+/// 2. Applies non-maximum suppression
+/// 3. Computes orientation for each keypoint
+/// 4. Computes ORB descriptors
+pub fn extract_features(
+    grayscale: &[u8],
+    width: usize,
+    height: usize,
+    config: &FeatureConfig,
+) -> Vec<Feature> {
+    // Detect FAST corners
+    let detector = FastDetector::new(config.threshold);
+    let keypoints = detector.detect(grayscale, width as u32, height as u32);
+
+    // Apply NMS
+    let mut keypoints = non_maximum_suppression(&keypoints, config.nms_radius);
+
+    // Limit number of features
+    if let Some(max) = config.max_features {
+        keypoints.truncate(max);
+    }
+
+    // Create features with orientation and descriptors
+    keypoints
+        .into_iter()
+        .filter_map(|kp| {
+            let x = kp.x as usize;
+            let y = kp.y as usize;
+
+            // Compute orientation
+            let orientation = compute_orientation(grayscale, width, height, x, y);
+
+            // Compute descriptor if requested
+            if config.compute_descriptors {
+                if let Some(desc) = OrbDescriptor::compute(grayscale, width, height, &kp) {
+                    Some(Feature::complete(kp, orientation, desc))
+                } else {
+                    // Skip features near border (no descriptor)
+                    None
+                }
+            } else {
+                Some(Feature::with_orientation(kp, orientation))
+            }
+        })
+        .collect()
+}
+
+/// Extract features from RGBA image data (convenience wrapper).
+pub fn extract_features_rgba(
+    rgba_data: &[u8],
+    width: usize,
+    height: usize,
+    config: &FeatureConfig,
+) -> Vec<Feature> {
+    let grayscale = rgba_to_grayscale(rgba_data);
+    extract_features(&grayscale, width, height, config)
+}
+
+// =============================================================================
+// WASM Bindings for Descriptors
+// =============================================================================
+
+/// Extract features with ORB descriptors (WASM binding).
+///
+/// Returns a JsValue containing an array of features with keypoints and descriptors.
+#[wasm_bindgen]
+pub fn extract_features_with_descriptors(
+    rgba_data: &[u8],
+    width: u32,
+    height: u32,
+    threshold: u8,
+    max_features: u32,
+) -> JsValue {
+    let config = FeatureConfig {
+        threshold,
+        nms_radius: 3,
+        compute_descriptors: true,
+        max_features: Some(max_features as usize),
+    };
+
+    let features = extract_features_rgba(rgba_data, width as usize, height as usize, &config);
+    serde_wasm_bindgen::to_value(&features).unwrap_or(JsValue::NULL)
+}
+
+/// Match features between two frames (WASM binding).
+///
+/// Returns matched feature pairs as indices.
+#[wasm_bindgen]
+pub fn match_features(
+    features1_js: &JsValue,
+    features2_js: &JsValue,
+    max_distance: u32,
+) -> JsValue {
+    let features1: Vec<Feature> = match serde_wasm_bindgen::from_value(features1_js.clone()) {
+        Ok(f) => f,
+        Err(_) => return JsValue::NULL,
+    };
+    let features2: Vec<Feature> = match serde_wasm_bindgen::from_value(features2_js.clone()) {
+        Ok(f) => f,
+        Err(_) => return JsValue::NULL,
+    };
+
+    // Extract descriptors
+    let descs1: Vec<OrbDescriptor> = features1
+        .iter()
+        .filter_map(|f| f.descriptor)
+        .collect();
+    let descs2: Vec<OrbDescriptor> = features2
+        .iter()
+        .filter_map(|f| f.descriptor)
+        .collect();
+
+    // Match with cross-check
+    let matches = match_cross_check(&descs1, &descs2, max_distance);
+
+    serde_wasm_bindgen::to_value(&matches).unwrap_or(JsValue::NULL)
 }
 
 #[cfg(test)]

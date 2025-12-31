@@ -547,6 +547,13 @@ export function detect_features_advanced(rgba_data: Uint8Array, width: number, h
 export function error(message: string): void;
 
 /**
+ * Extract features with ORB descriptors (WASM binding).
+ *
+ * Returns a JsValue containing an array of features with keypoints and descriptors.
+ */
+export function extract_features_with_descriptors(rgba_data: Uint8Array, width: number, height: number, threshold: number, max_features: number): any;
+
+/**
  * Get the grayscale version of an RGBA image.
  * Useful for debugging or visualization.
  */
@@ -574,6 +581,13 @@ export function init(): void;
  * Log a message to the browser console.
  */
 export function log(message: string): void;
+
+/**
+ * Match features between two frames (WASM binding).
+ *
+ * Returns matched feature pairs as indices.
+ */
+export function match_features(features1_js: any, features2_js: any, max_distance: number): any;
 
 /**
  * Returns the version of the Aether engine.
@@ -672,12 +686,14 @@ export interface InitOutput {
   readonly engineconfig_set_target_fps: (a: number, b: number) => void;
   readonly engineconfig_target_fps: (a: number) => number;
   readonly error: (a: number, b: number) => void;
+  readonly extract_features_with_descriptors: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
   readonly frametiming_new: () => number;
   readonly get_grayscale: (a: number, b: number) => [number, number];
   readonly get_performance_now: () => number;
   readonly greet: (a: number, b: number) => [number, number];
   readonly init: () => void;
   readonly log: (a: number, b: number) => void;
+  readonly match_features: (a: any, b: any, c: number) => any;
   readonly pose3d_from_components: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
   readonly pose3d_new: () => number;
   readonly pose3d_position: (a: number) => [number, number];
@@ -760,12 +776,12 @@ export interface InitOutput {
   readonly __wbg_get_timingreport_avg_total_ms: (a: number) => number;
   readonly __wbg_get_timingreport_avg_tracking_ms: (a: number) => number;
   readonly __wbg_qualitysettings_free: (a: number, b: number) => void;
+  readonly __wbindgen_malloc: (a: number, b: number) => number;
+  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;
   readonly __externref_table_alloc: () => number;
   readonly __wbindgen_externrefs: WebAssembly.Table;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
-  readonly __wbindgen_malloc: (a: number, b: number) => number;
-  readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_start: () => void;
 }
 
