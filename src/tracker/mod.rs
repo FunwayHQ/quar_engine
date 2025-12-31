@@ -246,6 +246,10 @@ impl Tracker {
         }
 
         self.prev_gray = Some(curr_gray);
+
+        // DEBUG v9: Force translation to ZERO at the very end, unconditionally
+        self.current_pose.translation = [0.0, 0.0, 0.0];
+
         Some(self.current_pose)
     }
 
