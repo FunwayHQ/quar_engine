@@ -266,9 +266,10 @@
       const gamma = (event.rotationRate.gamma || 0) * degToRad; // Y rotation
 
       // Integrate gyroscope (accumulate rotation)
-      gyroOrientation.x += beta * dt;
-      gyroOrientation.y += gamma * dt;
-      gyroOrientation.z += alpha * dt;
+      // Invert axes for correct AR behavior (object stays fixed in world)
+      gyroOrientation.x -= beta * dt;
+      gyroOrientation.y -= gamma * dt;
+      gyroOrientation.z -= alpha * dt;
 
       // Apply complementary filter: blend gyro with visual tracking
       // High-pass filter on gyro (short-term), low-pass on visual (long-term)
@@ -468,10 +469,10 @@
             const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
             // Update visual orientation for fusion (drift correction)
-            // Smooth the visual orientation update
-            visualOrientation.x += (euler.y - visualOrientation.x) * VISUAL_SMOOTHING;
-            visualOrientation.y += (-euler.z - visualOrientation.y) * VISUAL_SMOOTHING;
-            visualOrientation.z += (euler.x - visualOrientation.z) * VISUAL_SMOOTHING;
+            // Invert to match gyro (object stays fixed in world)
+            visualOrientation.x += (-euler.y - visualOrientation.x) * VISUAL_SMOOTHING;
+            visualOrientation.y += (euler.z - visualOrientation.y) * VISUAL_SMOOTHING;
+            visualOrientation.z += (-euler.x - visualOrientation.z) * VISUAL_SMOOTHING;
 
             // Also update gyro orientation to match visual (prevents large drift)
             // This "pulls" the gyro towards the visual estimate over time
