@@ -373,6 +373,11 @@
             <span class="value" id="deadzone-val">0.05</span>
           </div>
           <div class="slider-row">
+            <label>Rot Filter:</label>
+            <input type="range" id="rot-filter-slider" min="0" max="5" step="0.5" value="2">
+            <span class="value" id="rot-filter-val">2.0</span>
+          </div>
+          <div class="slider-row">
             <label>Invert Z:</label>
             <input type="checkbox" id="invert-z-checkbox">
             <span class="value" id="invert-z-val">off</span>
@@ -495,6 +500,7 @@
     let zScale = 1.0;        // Z axis multiplier
     let smoothing = 0.3;     // Smoothing factor (0-1, lower = smoother)
     let deadzone = 0.05;     // Dead zone threshold
+    let rotFilter = 2.0;     // Rotation suppression multiplier
     let invertZ = false;     // Invert Z direction
 
     // IMU Fusion state (from advanced-demo.html)
@@ -542,6 +548,12 @@
     deadzoneSlider.addEventListener('input', (e) => {
       deadzone = parseFloat(e.target.value);
       deadzoneVal.textContent = deadzone.toFixed(2);
+    });
+    const rotFilterSlider = document.getElementById('rot-filter-slider');
+    const rotFilterVal = document.getElementById('rot-filter-val');
+    rotFilterSlider.addEventListener('input', (e) => {
+      rotFilter = parseFloat(e.target.value);
+      rotFilterVal.textContent = rotFilter.toFixed(1);
     });
     const invertZCheckbox = document.getElementById('invert-z-checkbox');
     const invertZVal = document.getElementById('invert-z-val');
@@ -940,10 +952,14 @@
             const dzY = applyDeadzone(rawY);
             const dzZ = applyDeadzone(rawZ);
 
-            // Apply per-axis and master scale
-            const targetX = dzX * currentScale * xScale;
-            const targetY = dzY * currentScale * yScale;
-            const targetZ = dzZ * currentScale * zScale;
+            // Suppress translation when rotating (optical flow can't distinguish them)
+            // Scale down translation based on rotation rate (higher rotFilter = more suppression)
+            const rotationSuppress = Math.max(0, 1 - currentGyroRate * rotFilter);
+
+            // Apply per-axis and master scale, with rotation suppression
+            const targetX = dzX * currentScale * xScale * rotationSuppress;
+            const targetY = dzY * currentScale * yScale * rotationSuppress;
+            const targetZ = dzZ * currentScale * zScale * rotationSuppress;
 
             // Smooth transition (lower smoothing = more smoothing)
             smoothedPosition.x += (targetX - smoothedPosition.x) * smoothing;
