@@ -414,7 +414,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF Visual Tracking Demo <strong>v9</strong></p>
+      <p>6DoF Visual Tracking Demo <strong>v10</strong></p>
       <div class="features">
         <span>Essential Matrix</span>
         <span>RANSAC</span>
@@ -445,12 +445,12 @@
     // Use simpler TrackerHandle with optical flow-based rotation (much more stable)
     let init, TrackerHandle, version;
     try {
-      // Cache bust: v9 - translation forced to ZERO at end of process_frame
-      const wasm = await import('./pkg/quar_engine.js?v=9');
+      // Cache bust: v10 - fresh rebuild with translation forced to [0,0,0]
+      const wasm = await import('./pkg/quar_engine.js?v=10');
       init = wasm.default;
       TrackerHandle = wasm.TrackerHandle;
       version = wasm.version;
-      console.log('6DoF Demo: WASM v9 - translation ALWAYS [0,0,0]');
+      console.log('6DoF Demo: WASM v10 - Raw should ALWAYS be [0,0,0]');
     } catch (e) {
       console.error('Failed to load WASM module:', e);
       document.getElementById('start-btn').textContent = 'WASM Load Failed';

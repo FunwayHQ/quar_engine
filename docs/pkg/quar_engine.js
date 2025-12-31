@@ -1809,8 +1809,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (typeof module_or_path === 'undefined') {
-        // Cache bust v9: add timestamp to WASM URL
-        module_or_path = new URL('quar_engine_bg.wasm?v=9', import.meta.url);
+        module_or_path = new URL('quar_engine_bg.wasm?v=10', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
