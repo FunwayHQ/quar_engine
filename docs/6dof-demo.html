@@ -409,7 +409,6 @@
 
     // Translation tracking
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
-    let lastTranslation = new THREE.Vector3(0, 0, 0);  // For delta calculation
 
 
     // Scale slider - updates the tracker's scale
@@ -789,31 +788,24 @@
             }
 
             // 6DoF Translation tracking from optical flow
+            // Use accumulated values directly from tracker (not deltas)
             const t = pose.translation || [0, 0, 0];
+            const rawX = t[0] ?? 0;
+            const rawY = t[1] ?? 0;
+            const rawZ = t[2] ?? 0;
 
-            // Get delta translation since last frame
-            const deltaX = (t[0] ?? 0) - lastTranslation.x;
-            const deltaY = (t[1] ?? 0) - lastTranslation.y;
-            const deltaZ = (t[2] ?? 0) - lastTranslation.z;
-            lastTranslation.set(t[0] ?? 0, t[1] ?? 0, t[2] ?? 0);
-
-            // Debug: show raw flow values and gyro rate
+            // Debug: show raw tracker values and gyro rate
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
-            flowDebugEl.textContent = `X:${deltaX.toFixed(2)} Y:${deltaY.toFixed(2)} Z:${deltaZ.toFixed(2)}`;
+            flowDebugEl.textContent = `X:${rawX.toFixed(1)} Y:${rawY.toFixed(1)} Z:${rawZ.toFixed(1)}`;
 
-            // Calculate translation weight based on rotation rate
-            // High rotation = low weight, Low rotation = high weight
-            const rotationFactor = Math.max(0, 1 - currentGyroRate / ROTATION_THRESHOLD);
-            const translationWeight = rotationFactor; // Linear, not squared
+            // Scale the accumulated translation
+            const scale = currentScale * 0.5;  // Direct scaling of accumulated values
 
-            // Always accumulate some translation (reduce weight, don't block completely)
-            const minWeight = 0.3; // Always apply at least 30%
-            const effectiveWeight = minWeight + (1 - minWeight) * translationWeight;
-
-            const scale = currentScale * 25 * effectiveWeight; // Increased scale
-            smoothedPosition.x += deltaX * scale;
-            smoothedPosition.y += deltaY * scale;
-            smoothedPosition.z += deltaZ * scale * 2.0; // Z even more sensitive
+            // Smooth transition to new position
+            const smoothing = 0.1;
+            smoothedPosition.x += (rawX * scale - smoothedPosition.x) * smoothing;
+            smoothedPosition.y += (rawY * scale - smoothedPosition.y) * smoothing;
+            smoothedPosition.z += (rawZ * scale - smoothedPosition.z) * smoothing;
 
             // Apply translation to camera position
             camera.position.x = smoothedPosition.x;
@@ -901,7 +893,6 @@
       totalDistance = 0;
       lastPosition.set(0, 0, 0);
       smoothedPosition.set(0, 0, 0);
-      lastTranslation.set(0, 0, 0);
       currentGyroRate = 0;
 
       // Reset IMU fusion state
