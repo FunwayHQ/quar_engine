@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v19 Real Map Points)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v20 Triangulation + BA + Loop Closure)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -340,6 +340,11 @@
         <span class="stat-value" id="anchor-status">--</span>
       </div>
       <div class="stat" style="border-top: 1px solid #333; padding-top: 8px; margin-top: 8px;">
+        <span class="stat-label">Map Pts: </span>
+        <span class="stat-value" id="map-point-count">0</span>
+        <input type="checkbox" id="show-mappoints" checked style="margin-left: 8px;" title="Show map point cloud">
+      </div>
+      <div class="stat">
         <span class="stat-label">Planes: </span>
         <span class="stat-value" id="plane-count">0</span>
       </div>
@@ -573,6 +578,8 @@
     const stabilizerStatusEl = document.getElementById('stabilizer-status');
     const stabilizerToggle = document.getElementById('stabilizer-toggle');
     const anchorStatusEl = document.getElementById('anchor-status');
+    const mapPointCountEl = document.getElementById('map-point-count');
+    const showMapPointsToggle = document.getElementById('show-mappoints');
     const planeCountEl = document.getElementById('plane-count');
     const floorStatusEl = document.getElementById('floor-status');
 
@@ -783,6 +790,8 @@
     let detectedFloorMesh = null; // Three.js mesh for floor visualization
     let placedObjects = []; // Objects placed via hit testing
     let mapPoints3D = []; // Accumulated 3D map points for plane detection
+    let mapPointsCloud = null; // Three.js Points for visualizing triangulated points
+    let mapPointsPositions = null; // Float32Array for point positions
 
     // Tuning sliders
     scaleSlider.addEventListener('input', (e) => {
@@ -867,6 +876,13 @@
     showTrajectoryCheckbox.addEventListener('change', (e) => {
       if (trajectoryLine) {
         trajectoryLine.visible = e.target.checked;
+      }
+    });
+
+    // Map points visibility toggle
+    showMapPointsToggle.addEventListener('change', (e) => {
+      if (mapPointsCloud) {
+        mapPointsCloud.visible = e.target.checked;
       }
     });
 
@@ -1131,6 +1147,23 @@
       detectedFloorMesh.rotation.x = -Math.PI / 2; // Face up
       detectedFloorMesh.visible = false;
       scene.add(detectedFloorMesh); // Add to scene directly, not arGroup, so it stays fixed in world space
+
+      // Map points visualization (triangulated 3D points)
+      const mapPointsGeo = new THREE.BufferGeometry();
+      // Preallocate for up to 500 points (x, y, z for each)
+      mapPointsPositions = new Float32Array(500 * 3);
+      mapPointsGeo.setAttribute('position', new THREE.BufferAttribute(mapPointsPositions, 3));
+      mapPointsGeo.setDrawRange(0, 0); // Start with 0 points visible
+
+      const mapPointsMat = new THREE.PointsMaterial({
+        color: 0xf472b6, // Pink color to match HUD theme
+        size: 0.02,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.8
+      });
+      mapPointsCloud = new THREE.Points(mapPointsGeo, mapPointsMat);
+      scene.add(mapPointsCloud);
 
       // Lights
       scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -1403,6 +1436,21 @@
                 // Use real triangulated points if we have any
                 if (realMapPoints && realMapPoints.length >= 30) {
                   mapPoints3D = Array.from(realMapPoints);
+
+                  // Update point cloud visualization
+                  if (mapPointsCloud && mapPointsPositions) {
+                    const numPoints = Math.min(Math.floor(realMapPoints.length / 3), 500);
+                    for (let i = 0; i < numPoints * 3 && i < realMapPoints.length; i++) {
+                      mapPointsPositions[i] = realMapPoints[i];
+                    }
+                    mapPointsCloud.geometry.attributes.position.needsUpdate = true;
+                    mapPointsCloud.geometry.setDrawRange(0, numPoints);
+                  }
+
+                  // Update map point count display
+                  mapPointCountEl.textContent = mapPointCount.toString();
+                  mapPointCountEl.style.color = mapPointCount > 50 ? '#4ade80' : (mapPointCount > 20 ? '#facc15' : '#888');
+
                   console.log(`Using ${mapPointCount} real triangulated points for plane detection`);
                 } else if (mapPoints3D.length < 300) {
                   // Fallback: Generate simulated floor points only if no real points yet

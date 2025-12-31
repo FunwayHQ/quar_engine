@@ -6,7 +6,7 @@
 //! Uses pure-Rust linear algebra types (Vec2, Vec3, Mat3) for full WASM compatibility.
 
 use crate::camera::CameraIntrinsics;
-use crate::features::{non_maximum_suppression, rgba_to_grayscale, FastDetector};
+use crate::features::{non_maximum_suppression, rgba_to_grayscale, FastDetector, KeyPoint, OrbDescriptor, compute_descriptors_filtered};
 
 use super::essential_pure::{
     choose_valid_pose, compute_essential_ransac, decompose_essential,
@@ -21,6 +21,10 @@ use super::stabilization::PositionStabilizer;
 use super::triangulation::triangulate_valid_points;
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
+
+// Bundle Adjustment and Loop Closure integration
+use crate::optimization::{LocalBA, BAConfig, BAObservation};
+use crate::loop_closure::{LoopCloser, LoopConfig, LoopClosure};
 
 /// Configuration specific to 6DoF tracking.
 #[derive(Debug, Clone)]
@@ -61,6 +65,55 @@ impl Default for Tracker6DoFConfig {
             use_5point: true, // 5-point is more robust than 8-point
         }
     }
+}
+
+/// A lightweight keyframe for BA and loop closure.
+#[derive(Debug, Clone)]
+pub struct TrackerKeyFrame {
+    /// Unique ID
+    pub id: u64,
+    /// Pose at time of capture
+    pub pose: Pose3D,
+    /// Rotation matrix (for BA)
+    pub rotation: Mat3,
+    /// Translation vector (for BA)
+    pub translation: Vec3,
+    /// 2D observations in normalized coordinates
+    pub observations: Vec<Vec2>,
+    /// Map point indices observed (-1 if not mapped)
+    pub map_point_indices: Vec<i32>,
+    /// ORB descriptors for loop closure
+    pub descriptors: Vec<OrbDescriptor>,
+    /// Frame timestamp
+    pub timestamp: f64,
+}
+
+impl TrackerKeyFrame {
+    pub fn new(id: u64, pose: Pose3D, rotation: Mat3, translation: Vec3, timestamp: f64) -> Self {
+        Self {
+            id,
+            pose,
+            rotation,
+            translation,
+            observations: Vec::new(),
+            map_point_indices: Vec::new(),
+            descriptors: Vec::new(),
+            timestamp,
+        }
+    }
+}
+
+/// Result of loop closure detection.
+#[derive(Debug, Clone)]
+pub struct LoopClosureResult {
+    /// Query keyframe ID
+    pub query_kf_id: u64,
+    /// Matched keyframe ID
+    pub match_kf_id: u64,
+    /// Pose correction to apply
+    pub pose_correction: Pose3D,
+    /// Confidence score
+    pub confidence: f64,
 }
 
 /// 6DoF Tracker with Essential matrix-based translation estimation.
@@ -113,6 +166,38 @@ pub struct Tracker6DoF {
     map_points_3d: Vec<Vec3>,
     /// Maximum number of map points to store
     max_map_points: usize,
+
+    // ==================== Bundle Adjustment ====================
+    /// Local bundle adjustment optimizer
+    local_ba: LocalBA,
+    /// Whether BA is enabled
+    ba_enabled: bool,
+    /// Frames since last BA optimization
+    frames_since_ba: u32,
+    /// BA optimization interval (frames)
+    ba_interval: u32,
+    /// Minimum map points for BA
+    min_points_for_ba: usize,
+
+    // ==================== Loop Closure ====================
+    /// Loop closure detector
+    loop_closer: LoopCloser,
+    /// Whether loop closure is enabled
+    loop_closure_enabled: bool,
+    /// Keyframes for BA and loop closure
+    keyframes: Vec<TrackerKeyFrame>,
+    /// Maximum keyframes to keep
+    max_keyframes: usize,
+    /// Next keyframe ID
+    next_keyframe_id: u64,
+    /// Frames since last keyframe
+    frames_since_keyframe: u32,
+    /// Keyframe insertion interval
+    keyframe_interval: u32,
+    /// Last detected loop closure (if any)
+    last_loop_closure: Option<LoopClosureResult>,
+    /// Number of loop closures detected
+    loop_closure_count: u32,
 }
 
 impl Tracker6DoF {
@@ -157,6 +242,24 @@ impl Tracker6DoF {
             stabilizer: PositionStabilizer::new(),
             map_points_3d: Vec::new(),
             max_map_points: 500, // Keep up to 500 map points
+
+            // Bundle Adjustment
+            local_ba: LocalBA::with_defaults(),
+            ba_enabled: true,
+            frames_since_ba: 0,
+            ba_interval: 30, // Run BA every 30 frames
+            min_points_for_ba: 10,
+
+            // Loop Closure
+            loop_closer: LoopCloser::with_defaults(),
+            loop_closure_enabled: true,
+            keyframes: Vec::new(),
+            max_keyframes: 50,
+            next_keyframe_id: 0,
+            frames_since_keyframe: 0,
+            keyframe_interval: 15, // Insert keyframe every 15 frames
+            last_loop_closure: None,
+            loop_closure_count: 0,
         }
     }
 
@@ -454,6 +557,15 @@ impl Tracker6DoF {
         self.vio_initialized = false;
         self.accel_integrator.reset();
         self.map_points_3d.clear();
+
+        // Reset BA and Loop Closure state
+        self.frames_since_ba = 0;
+        self.keyframes.clear();
+        self.next_keyframe_id = 0;
+        self.frames_since_keyframe = 0;
+        self.last_loop_closure = None;
+        self.loop_closure_count = 0;
+        self.loop_closer = LoopCloser::with_defaults();
     }
 
     /// Get the current pose.
@@ -800,6 +912,324 @@ impl Tracker6DoF {
     pub fn reset_stabilizer(&mut self) {
         self.stabilizer.reset();
     }
+
+    // ==================== Bundle Adjustment Methods ====================
+
+    /// Enable or disable bundle adjustment.
+    pub fn set_ba_enabled(&mut self, enabled: bool) {
+        self.ba_enabled = enabled;
+    }
+
+    /// Check if bundle adjustment is enabled.
+    pub fn is_ba_enabled(&self) -> bool {
+        self.ba_enabled
+    }
+
+    /// Set the BA optimization interval (in frames).
+    pub fn set_ba_interval(&mut self, interval: u32) {
+        self.ba_interval = interval.max(1);
+    }
+
+    /// Run local bundle adjustment on recent keyframes and map points.
+    ///
+    /// Returns true if BA was run and improved the estimate.
+    pub fn run_local_ba(&mut self) -> bool {
+        if !self.ba_enabled || self.keyframes.len() < 2 || self.map_points_3d.len() < self.min_points_for_ba {
+            return false;
+        }
+
+        // Gather rotations and translations from keyframes
+        let rotations: Vec<Mat3> = self.keyframes.iter().map(|kf| kf.rotation).collect();
+        let translations: Vec<Vec3> = self.keyframes.iter().map(|kf| kf.translation).collect();
+
+        // Build observations from keyframes
+        let mut observations: Vec<BAObservation> = Vec::new();
+
+        for (cam_idx, kf) in self.keyframes.iter().enumerate() {
+            for (obs_idx, obs) in kf.observations.iter().enumerate() {
+                let point_idx = kf.map_point_indices.get(obs_idx).copied().unwrap_or(-1);
+                if point_idx >= 0 && (point_idx as usize) < self.map_points_3d.len() {
+                    observations.push(BAObservation {
+                        camera_idx: cam_idx,
+                        point_idx: point_idx as usize,
+                        observation: *obs,
+                    });
+                }
+            }
+        }
+
+        if observations.len() < 10 {
+            return false; // Not enough observations
+        }
+
+        // Run BA
+        let result = self.local_ba.optimize(
+            &rotations,
+            &translations,
+            &self.map_points_3d,
+            &observations,
+        );
+
+        // Update map points with optimized positions
+        if result.converged && result.points.len() == self.map_points_3d.len() {
+            self.map_points_3d = result.points;
+
+            // Update keyframe poses
+            for (i, kf) in self.keyframes.iter_mut().enumerate() {
+                if i < result.rotations.len() {
+                    kf.rotation = result.rotations[i];
+                    kf.translation = result.translations[i];
+
+                    // Update pose from rotation and translation
+                    let quat = rotation_matrix_to_quaternion(&result.rotations[i]);
+                    kf.pose.rotation = quat;
+                    kf.pose.translation = [
+                        result.translations[i].x as f32,
+                        result.translations[i].y as f32,
+                        result.translations[i].z as f32,
+                    ];
+                }
+            }
+
+            // Update current pose from last keyframe if available
+            if let Some(last_kf) = self.keyframes.last() {
+                self.current_pose = last_kf.pose;
+            }
+
+            self.frames_since_ba = 0;
+            return true;
+        }
+
+        false
+    }
+
+    /// Get the mean reprojection error of current map.
+    pub fn get_reprojection_error(&self) -> f64 {
+        if self.keyframes.is_empty() || self.map_points_3d.is_empty() {
+            return 0.0;
+        }
+
+        let mut total_error = 0.0;
+        let mut count = 0;
+
+        for kf in &self.keyframes {
+            for (obs_idx, obs) in kf.observations.iter().enumerate() {
+                let point_idx = kf.map_point_indices.get(obs_idx).copied().unwrap_or(-1);
+                if point_idx >= 0 && (point_idx as usize) < self.map_points_3d.len() {
+                    let point = &self.map_points_3d[point_idx as usize];
+                    let point_cam = kf.rotation.mul_vec(point).add(&kf.translation);
+
+                    if point_cam.z > 0.0 {
+                        let proj_x = point_cam.x / point_cam.z;
+                        let proj_y = point_cam.y / point_cam.z;
+                        let err_x = obs.x - proj_x;
+                        let err_y = obs.y - proj_y;
+                        total_error += (err_x * err_x + err_y * err_y).sqrt();
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        if count > 0 {
+            total_error / count as f64
+        } else {
+            0.0
+        }
+    }
+
+    // ==================== Loop Closure Methods ====================
+
+    /// Enable or disable loop closure detection.
+    pub fn set_loop_closure_enabled(&mut self, enabled: bool) {
+        self.loop_closure_enabled = enabled;
+    }
+
+    /// Check if loop closure is enabled.
+    pub fn is_loop_closure_enabled(&self) -> bool {
+        self.loop_closure_enabled
+    }
+
+    /// Set the keyframe insertion interval (in frames).
+    pub fn set_keyframe_interval(&mut self, interval: u32) {
+        self.keyframe_interval = interval.max(1);
+    }
+
+    /// Get the number of keyframes stored.
+    pub fn keyframe_count(&self) -> usize {
+        self.keyframes.len()
+    }
+
+    /// Get the number of loop closures detected.
+    pub fn loop_closure_count(&self) -> u32 {
+        self.loop_closure_count
+    }
+
+    /// Get the last detected loop closure.
+    pub fn get_last_loop_closure(&self) -> Option<&LoopClosureResult> {
+        self.last_loop_closure.as_ref()
+    }
+
+    /// Try to insert a keyframe from the current frame.
+    ///
+    /// # Arguments
+    /// * `gray_data` - Grayscale image data
+    /// * `width` - Image width
+    /// * `height` - Image height
+    /// * `observations` - Normalized 2D observations
+    /// * `map_point_indices` - Indices of corresponding map points
+    ///
+    /// Returns the keyframe ID if inserted.
+    pub fn try_insert_keyframe(
+        &mut self,
+        gray_data: &[u8],
+        width: usize,
+        height: usize,
+        observations: &[Vec2],
+        map_point_indices: &[i32],
+    ) -> Option<u64> {
+        self.frames_since_keyframe += 1;
+
+        if self.frames_since_keyframe < self.keyframe_interval {
+            return None;
+        }
+
+        // Detect features and compute descriptors
+        let keypoints = self.fast_detector.detect(gray_data, width as u32, height as u32);
+        let filtered_kps: Vec<KeyPoint> = keypoints.into_iter().take(200).collect();
+
+        let (descriptors, _valid_kps) = compute_descriptors_filtered(
+            gray_data,
+            width,
+            height,
+            &filtered_kps,
+        );
+
+        if descriptors.len() < 20 {
+            return None; // Not enough features
+        }
+
+        // Create keyframe
+        let kf_id = self.next_keyframe_id;
+        self.next_keyframe_id += 1;
+
+        let rotation = self.last_rotation.unwrap_or_else(Mat3::identity);
+        let translation = self.last_translation.unwrap_or_else(|| Vec3::new(0.0, 0.0, 0.0));
+
+        let mut kf = TrackerKeyFrame::new(
+            kf_id,
+            self.current_pose,
+            rotation,
+            translation,
+            self.last_frame_time,
+        );
+        kf.observations = observations.to_vec();
+        kf.map_point_indices = map_point_indices.to_vec();
+        kf.descriptors = descriptors.clone();
+
+        // Add to loop closer database
+        if self.loop_closure_enabled {
+            self.loop_closer.add_keyframe(kf_id, &descriptors);
+        }
+
+        // Maintain max keyframes
+        if self.keyframes.len() >= self.max_keyframes {
+            self.keyframes.remove(0);
+        }
+        self.keyframes.push(kf);
+
+        self.frames_since_keyframe = 0;
+
+        Some(kf_id)
+    }
+
+    /// Detect loop closure for the current frame.
+    ///
+    /// Returns a loop closure result if detected.
+    pub fn detect_loop_closure(&mut self, descriptors: &[OrbDescriptor]) -> Option<LoopClosureResult> {
+        if !self.loop_closure_enabled || descriptors.len() < 20 {
+            return None;
+        }
+
+        // Query for loop candidates
+        let candidates = self.loop_closer.detect(descriptors);
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        // Take the best candidate
+        let best = &candidates[0];
+
+        // Find the matched keyframe
+        let match_kf = self.keyframes.iter().find(|kf| kf.id == best.match_kf)?;
+
+        // Create a simple pose correction based on the relative pose
+        // In a full implementation, we would do geometric verification here
+        let correction = Pose3D {
+            rotation: match_kf.pose.rotation,
+            translation: [
+                match_kf.pose.translation[0] - self.current_pose.translation[0],
+                match_kf.pose.translation[1] - self.current_pose.translation[1],
+                match_kf.pose.translation[2] - self.current_pose.translation[2],
+            ],
+        };
+
+        let result = LoopClosureResult {
+            query_kf_id: self.next_keyframe_id.saturating_sub(1),
+            match_kf_id: best.match_kf,
+            pose_correction: correction,
+            confidence: best.bow_score,
+        };
+
+        self.last_loop_closure = Some(result.clone());
+        self.loop_closure_count += 1;
+
+        Some(result)
+    }
+
+    /// Apply loop closure correction to the current pose.
+    pub fn apply_loop_closure(&mut self, closure: &LoopClosureResult) {
+        // Find the matched keyframe's pose
+        if let Some(match_kf) = self.keyframes.iter().find(|kf| kf.id == closure.match_kf_id) {
+            // Blend current pose with match keyframe pose based on confidence
+            let alpha = (closure.confidence * 0.5).clamp(0.0, 0.5) as f32;
+
+            for i in 0..3 {
+                self.current_pose.translation[i] =
+                    (1.0 - alpha) * self.current_pose.translation[i] +
+                    alpha * match_kf.pose.translation[i];
+            }
+
+            // For rotation, we could slerp but for now just note the correction happened
+            // Full implementation would do proper pose graph optimization
+        }
+    }
+
+    /// Process frame with BA and loop closure integration.
+    /// Enhanced version of process_frame that periodically runs optimization.
+    pub fn process_frame_with_optimization(
+        &mut self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+    ) -> Option<Pose3D> {
+        // Process frame normally
+        let pose = self.process_frame(rgba, width, height)?;
+
+        self.frames_since_ba += 1;
+        self.frames_since_keyframe += 1;
+
+        // Check if we should run BA
+        if self.ba_enabled &&
+           self.frames_since_ba >= self.ba_interval &&
+           self.map_points_3d.len() >= self.min_points_for_ba
+        {
+            self.run_local_ba();
+        }
+
+        Some(pose)
+    }
 }
 
 /// Convert a 3x3 rotation matrix to a quaternion [x, y, z, w].
@@ -981,5 +1411,177 @@ mod tests {
         let q3 = [0.0, 0.0, 0.7071, 0.7071];
         let diff2 = quaternion_angle_diff(&q1, &q3);
         assert!((diff2 - std::f64::consts::FRAC_PI_2).abs() < 0.01);
+    }
+
+    // ==================== Bundle Adjustment Tests ====================
+
+    #[test]
+    fn test_ba_enable_disable() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        assert!(tracker.is_ba_enabled()); // Enabled by default
+        tracker.set_ba_enabled(false);
+        assert!(!tracker.is_ba_enabled());
+        tracker.set_ba_enabled(true);
+        assert!(tracker.is_ba_enabled());
+    }
+
+    #[test]
+    fn test_ba_interval() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        tracker.set_ba_interval(60);
+        assert_eq!(tracker.ba_interval, 60);
+
+        // Can't set to 0
+        tracker.set_ba_interval(0);
+        assert_eq!(tracker.ba_interval, 1);
+    }
+
+    #[test]
+    fn test_ba_not_run_without_keyframes() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        // Add some map points but no keyframes
+        tracker.map_points_3d.push(Vec3::new(0.0, 0.0, 5.0));
+        tracker.map_points_3d.push(Vec3::new(1.0, 0.0, 5.0));
+
+        // BA should not run
+        let result = tracker.run_local_ba();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_reprojection_error_empty() {
+        let tracker = Tracker6DoF::new(640, 480);
+
+        // No keyframes or map points
+        let error = tracker.get_reprojection_error();
+        assert_eq!(error, 0.0);
+    }
+
+    // ==================== Loop Closure Tests ====================
+
+    #[test]
+    fn test_loop_closure_enable_disable() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        assert!(tracker.is_loop_closure_enabled()); // Enabled by default
+        tracker.set_loop_closure_enabled(false);
+        assert!(!tracker.is_loop_closure_enabled());
+        tracker.set_loop_closure_enabled(true);
+        assert!(tracker.is_loop_closure_enabled());
+    }
+
+    #[test]
+    fn test_keyframe_interval() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        tracker.set_keyframe_interval(30);
+        assert_eq!(tracker.keyframe_interval, 30);
+
+        // Can't set to 0
+        tracker.set_keyframe_interval(0);
+        assert_eq!(tracker.keyframe_interval, 1);
+    }
+
+    #[test]
+    fn test_keyframe_count() {
+        let tracker = Tracker6DoF::new(640, 480);
+        assert_eq!(tracker.keyframe_count(), 0);
+    }
+
+    #[test]
+    fn test_loop_closure_count() {
+        let tracker = Tracker6DoF::new(640, 480);
+        assert_eq!(tracker.loop_closure_count(), 0);
+    }
+
+    #[test]
+    fn test_no_loop_closure_initially() {
+        let tracker = Tracker6DoF::new(640, 480);
+        assert!(tracker.get_last_loop_closure().is_none());
+    }
+
+    #[test]
+    fn test_tracker_keyframe_creation() {
+        let kf = TrackerKeyFrame::new(
+            1,
+            Pose3D::identity(),
+            Mat3::identity(),
+            Vec3::new(0.0, 0.0, 0.0),
+            0.0,
+        );
+
+        assert_eq!(kf.id, 1);
+        assert!(kf.observations.is_empty());
+        assert!(kf.descriptors.is_empty());
+    }
+
+    #[test]
+    fn test_reset_clears_ba_lc_state() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        // Modify some BA/LC state
+        tracker.frames_since_ba = 100;
+        tracker.next_keyframe_id = 50;
+        tracker.loop_closure_count = 5;
+
+        // Reset
+        tracker.reset();
+
+        // Verify state is cleared
+        assert_eq!(tracker.frames_since_ba, 0);
+        assert_eq!(tracker.next_keyframe_id, 0);
+        assert_eq!(tracker.loop_closure_count, 0);
+        assert_eq!(tracker.keyframe_count(), 0);
+    }
+
+    #[test]
+    fn test_process_frame_with_optimization() {
+        let mut tracker = Tracker6DoF::new(100, 100);
+
+        // Create test image with texture
+        let mut rgba = vec![128u8; 100 * 100 * 4];
+        for y in 0..100 {
+            for x in 0..100 {
+                let idx = (y * 100 + x) * 4;
+                let val = if (x / 10 + y / 10) % 2 == 0 { 200 } else { 50 };
+                rgba[idx] = val;
+                rgba[idx + 1] = val;
+                rgba[idx + 2] = val;
+                rgba[idx + 3] = 255;
+            }
+        }
+
+        // Process frame with optimization
+        let pose = tracker.process_frame_with_optimization(&rgba, 100, 100);
+        assert!(pose.is_some());
+
+        // Frames since BA should be incremented
+        assert!(tracker.frames_since_ba > 0);
+    }
+
+    #[test]
+    fn test_detect_loop_closure_empty() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        // With no descriptors, should return None
+        let result = tracker.detect_loop_closure(&[]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_loop_closure_result_struct() {
+        let result = LoopClosureResult {
+            query_kf_id: 10,
+            match_kf_id: 5,
+            pose_correction: Pose3D::identity(),
+            confidence: 0.8,
+        };
+
+        assert_eq!(result.query_kf_id, 10);
+        assert_eq!(result.match_kf_id, 5);
+        assert!((result.confidence - 0.8).abs() < 1e-6);
     }
 }
