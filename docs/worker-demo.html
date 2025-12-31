@@ -411,10 +411,12 @@
           reject(e);
         };
 
-        // Send init message
+        // Send init message with absolute path
+        // Relative paths don't work from blob URLs
+        const wasmPath = new URL('./pkg/quar_engine.js', window.location.href).href;
         const initMsg = {
           type: 'init',
-          wasmPath: './pkg/quar_engine.js',
+          wasmPath: wasmPath,
         };
         if (useSharedBuffer) {
           initMsg.buffers = sharedBuffers;
