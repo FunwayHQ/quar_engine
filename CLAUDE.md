@@ -22,20 +22,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 11: 6DoF Tracker** - Full 6DoF pose estimation (rotation + translation)
 - **Sprint 12: Memory & Performance** - Arena allocator, frame pool, adaptive quality
 - **Sprint 13: Pure-Rust Linear Algebra** - Replaced nalgebra with WASM-compatible pure-Rust implementations
-- **Sprint 21: Robust Feature Tracking** - RANSAC flow outlier rejection, feature quality scoring, tracking confidence levels, grid-based distribution
+- **Sprint 14: ORB Descriptors** - 256-bit binary descriptors, patch orientation, Hamming distance matching, cross-check, ratio test
+- **Sprint 15: Keyframe Management** - KeyFrame struct, MapPoint, Map with covisibility graph, keyframe selection criteria
 - **Sprint 20: Gyro-Compensated Flow** - Gyro-based rotation prediction, flow compensation to isolate translation, gyro buffer with interpolation
+- **Sprint 21: Robust Feature Tracking** - RANSAC flow outlier rejection, feature quality scoring, tracking confidence levels, grid-based distribution
 - **Sprint 22: Kalman Filter** - Extended Kalman filter for position/velocity state, Mahalanobis gating, motion model adaptation
+- **Sprint 23: Accelerometer-Aided Translation** - ZUPT detection, gravity removal, accelerometer integration with drift mitigation
+- **Sprint 24: Position Stabilization** - Multi-sensor stationary detection, position anchoring, drift decay, visual anchors
 - **Sprint 8 (VIO): IMU Preintegration** - Full accelerometer+gyro fusion, IMU preintegration (Forster et al.), scale estimation from IMU, gravity estimation, bias correction
 
 ### Current Status
-- **Full 6DoF tracking with VIO support in WASM** (~68KB gzipped)
-- 226 unit tests passing
+- **Full 6DoF tracking with VIO and mapping in WASM** (~99KB gzipped)
+- 298 unit tests passing
 - Pure-Rust linear algebra (no external math dependencies)
 - RANSAC-based outlier rejection for stable tracking
 - Tracking confidence levels (Lost/Low/Medium/High)
 - Gyro-compensated optical flow for rotation/translation separation
 - Visual-Inertial Odometry (VIO) with IMU preintegration
 - Automatic metric scale estimation from accelerometer
+- Position stabilization with drift correction
+- ORB descriptors for feature matching
+- Keyframe management and covisibility graph
 
 ### Known Issues / Debug Notes
 - **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
