@@ -40,6 +40,11 @@ pub struct Tracker {
     config: TrackerConfig,
     /// Frame counter
     frame_count: u32,
+    /// Image dimensions for radial flow calculation
+    image_width: u32,
+    image_height: u32,
+    /// Accumulated forward motion from radial flow
+    forward_motion: f32,
 }
 
 impl Tracker {
@@ -58,6 +63,9 @@ impl Tracker {
             current_pose: Pose3D::identity(),
             config,
             frame_count: 0,
+            image_width: 640,
+            image_height: 480,
+            forward_motion: 0.0,
         }
     }
 
@@ -107,6 +115,17 @@ impl Tracker {
                 {
                     self.current_pose.apply_rotation(&rotation);
                 }
+
+                // Calculate radial flow for forward/backward motion detection
+                let radial_flow = self.calculate_radial_flow(&prev_matched, &curr_points, width, height);
+
+                // Accumulate forward motion (radial flow indicates expansion/contraction)
+                // Positive radial flow = features expanding outward = moving forward
+                self.forward_motion += radial_flow * 0.5; // Scale factor
+
+                // Update translation Z with forward motion
+                self.current_pose.translation[2] = self.forward_motion;
+
                 self.prev_points = curr_points;
             } else {
                 // Lost tracking - re-detect features
@@ -124,6 +143,65 @@ impl Tracker {
 
         self.prev_gray = Some(curr_gray);
         Some(self.current_pose)
+    }
+
+    /// Calculate radial flow to detect forward/backward motion.
+    ///
+    /// When moving forward, features expand outward from the focus of expansion (FOE).
+    /// When moving backward, features contract inward.
+    ///
+    /// Returns positive value for forward motion, negative for backward.
+    fn calculate_radial_flow(
+        &self,
+        prev_points: &[Point2],
+        curr_points: &[Point2],
+        width: u32,
+        height: u32,
+    ) -> f32 {
+        if prev_points.len() < 4 {
+            return 0.0;
+        }
+
+        let cx = width as f32 / 2.0;
+        let cy = height as f32 / 2.0;
+
+        let mut total_radial = 0.0f32;
+        let mut count = 0;
+
+        for (prev, curr) in prev_points.iter().zip(curr_points.iter()) {
+            // Vector from center to previous point
+            let prev_rx = prev.x - cx;
+            let prev_ry = prev.y - cy;
+            let prev_dist = (prev_rx * prev_rx + prev_ry * prev_ry).sqrt();
+
+            if prev_dist < 10.0 {
+                continue; // Skip points too close to center
+            }
+
+            // Flow vector
+            let flow_x = curr.x - prev.x;
+            let flow_y = curr.y - prev.y;
+
+            // Radial unit vector (pointing outward from center)
+            let radial_x = prev_rx / prev_dist;
+            let radial_y = prev_ry / prev_dist;
+
+            // Radial component of flow (dot product)
+            // Positive = outward flow (forward motion)
+            // Negative = inward flow (backward motion)
+            let radial_flow = flow_x * radial_x + flow_y * radial_y;
+
+            // Weight by distance from center (features further out are more reliable)
+            let weight = (prev_dist / (width as f32 * 0.5)).min(1.0);
+            total_radial += radial_flow * weight;
+            count += 1;
+        }
+
+        if count > 0 {
+            total_radial / count as f32
+        } else {
+            0.0
+        }
     }
 
     /// Detect new features in the image.
@@ -169,6 +247,7 @@ impl Tracker {
         self.prev_points.clear();
         self.current_pose = Pose3D::identity();
         self.frame_count = 0;
+        self.forward_motion = 0.0;
     }
 
     /// Get the current pose.

@@ -394,10 +394,6 @@
     // Translation tracking
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
 
-    // Pinch-to-zoom state
-    let baseZoom = 3;  // Base camera distance
-    let pinchZoom = 0; // Zoom from pinch gesture
-    let lastPinchDistance = 0;
 
     // Scale slider - updates the tracker's scale
     scaleSlider.addEventListener('input', (e) => {
@@ -442,14 +438,14 @@
       fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
       fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
 
-      // Apply to camera - axis mapping from device testing:
-      // Phone tilt forward/back (beta) → camera pitch (x)
-      // Phone rotate left/right (alpha) → camera yaw (y)
-      // Phone tilt left/right (gamma) → camera roll (z)
+      // Apply to camera with correct axis mapping (from working advanced-demo.html):
+      // - Alpha (z) = pitch (tilt up/down) → camera.rotation.x
+      // - Beta (x) = yaw (rotate left/right) → camera.rotation.y
+      // - Gamma (y) = roll → camera.rotation.z
       if (isRunning && camera) {
-        camera.rotation.x = -fusedOrientation.x * sensitivity;  // pitch (inverted)
-        camera.rotation.y = -fusedOrientation.z * sensitivity;  // yaw (inverted)
-        camera.rotation.z = fusedOrientation.y * sensitivity;   // roll
+        camera.rotation.x = fusedOrientation.z * sensitivity;   // pitch from alpha
+        camera.rotation.y = fusedOrientation.x * sensitivity;   // yaw from beta
+        camera.rotation.z = fusedOrientation.y * sensitivity;   // roll from gamma
       }
 
       gyroActive = true;
@@ -470,38 +466,6 @@
 
     function setupIMU() {
       window.addEventListener('devicemotion', handleGyro);
-    }
-
-    // Pinch-to-zoom gesture handling
-    function setupPinchZoom() {
-      const container = document.getElementById('container');
-
-      container.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
-          const dx = e.touches[0].clientX - e.touches[1].clientX;
-          const dy = e.touches[0].clientY - e.touches[1].clientY;
-          lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
-        }
-      }, { passive: true });
-
-      container.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 2) {
-          const dx = e.touches[0].clientX - e.touches[1].clientX;
-          const dy = e.touches[0].clientY - e.touches[1].clientY;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (lastPinchDistance > 0) {
-            const delta = (distance - lastPinchDistance) * 0.01;
-            pinchZoom = Math.max(-2.5, Math.min(2, pinchZoom + delta));
-          }
-
-          lastPinchDistance = distance;
-        }
-      }, { passive: true });
-
-      container.addEventListener('touchend', () => {
-        lastPinchDistance = 0;
-      }, { passive: true });
     }
 
     async function loadWasm() {
@@ -797,37 +761,28 @@
             visualOrientation.z += (euler.y - visualOrientation.z) * VISUAL_SMOOTHING;
 
             // If no gyro, use visual-only for camera rotation
+            // (same axis mapping as gyro - from advanced-demo.html)
             if (!gyroActive) {
-              camera.rotation.x = -visualOrientation.x;
-              camera.rotation.y = -visualOrientation.z;
-              camera.rotation.z = visualOrientation.y;
+              camera.rotation.x = visualOrientation.z;
+              camera.rotation.y = visualOrientation.x;
+              camera.rotation.z = -visualOrientation.y;
             }
 
-            // Translation tracking
+            // Translation tracking - Z now comes from radial flow (forward/back detection)
             const t = pose.translation || [0, 0, 0];
 
-            // X/Y translation (strafe)
-            const rawX = (t[0] ?? 0) * currentScale * 30;
-            const rawY = (t[1] ?? 0) * currentScale * 30;
+            // Z translation from radial flow (forward/backward motion)
+            // Positive Z = moving forward = zoom in
+            const rawZ = (t[2] ?? 0) * currentScale * 5;
 
-            // Z translation (forward/back zoom) - more sensitive
-            // Moving phone forward = negative Z in tracker = camera moves closer
-            const rawZ = (t[2] ?? 0) * currentScale * 100;
+            // Smooth the Z translation
+            smoothedPosition.z += (rawZ - smoothedPosition.z) * 0.2;
 
-            smoothedPosition.x += (rawX - smoothedPosition.x) * 0.1;
-            smoothedPosition.y += (rawY - smoothedPosition.y) * 0.1;
-            smoothedPosition.z += (rawZ - smoothedPosition.z) * 0.15; // Faster Z response
+            // Camera Z: base distance minus forward movement
+            // Moving forward → Z increases → camera gets closer
+            const cameraZ = Math.max(0.5, Math.min(10, 3 - smoothedPosition.z));
 
-            // Camera Z: base distance minus forward movement and pinch zoom
-            // Moving forward (rawZ negative) → camera gets closer (Z decreases)
-            // Pinch out → pinchZoom increases → camera gets closer
-            const cameraZ = Math.max(0.5, Math.min(10, baseZoom - smoothedPosition.z - pinchZoom));
-
-            camera.position.set(
-              smoothedPosition.x,
-              smoothedPosition.y,
-              cameraZ
-            );
+            camera.position.z = cameraZ;
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
@@ -910,7 +865,6 @@
       totalDistance = 0;
       lastPosition.set(0, 0, 0);
       smoothedPosition.set(0, 0, 0);
-      pinchZoom = 0;
 
       // Reset IMU fusion state
       gyroOrientation = { x: 0, y: 0, z: 0 };
@@ -962,7 +916,6 @@
         initThreeJS();
         onResize();
         setupIMU();
-        setupPinchZoom();
 
         startOverlay.classList.add('hidden');
         resetBtn.disabled = false;
