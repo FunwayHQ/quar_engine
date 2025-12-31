@@ -173,12 +173,13 @@
     </div>
 
     <div id="controls">
-      <div style="display:flex;align-items:center;gap:10px;background:rgba(0,0,0,0.7);padding:10px 15px;border-radius:6px;">
-        <span style="font-size:12px;color:#888;">Sensitivity:</span>
-        <input type="range" id="sensitivity" min="0.1" max="2" step="0.1" value="1" style="width:100px;">
-        <span id="sens-val" style="font-size:12px;color:#4ade80;width:30px;">1.0</span>
-      </div>
       <button id="reset-btn" disabled>Reset</button>
+    </div>
+
+    <div id="sensitivity-panel" style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:rgba(0,0,0,0.8);padding:12px 20px;border-radius:8px;z-index:100;">
+      <span style="font-size:14px;color:#888;">Sens:</span>
+      <input type="range" id="sensitivity" min="0.1" max="2" step="0.1" value="1" style="width:120px;height:20px;-webkit-appearance:auto;">
+      <span id="sens-val" style="font-size:14px;color:#4ade80;min-width:35px;">1.0</span>
     </div>
 
     <div id="start-overlay">
@@ -316,9 +317,9 @@
       // - Beta (x) = yaw (rotate left/right) → camera.rotation.y
       // - Gamma (y) = roll → camera.rotation.z
       if (isRunning && camera) {
-        camera.rotation.x = -fusedOrientation.z * sensitivity;  // pitch from alpha (inverted for AR)
-        camera.rotation.y = -fusedOrientation.x * sensitivity;  // yaw from beta (inverted for AR)
-        camera.rotation.z = -fusedOrientation.y * sensitivity;  // roll from gamma
+        camera.rotation.x = fusedOrientation.z * sensitivity;   // pitch from alpha
+        camera.rotation.y = fusedOrientation.x * sensitivity;   // yaw from beta
+        camera.rotation.z = fusedOrientation.y * sensitivity;   // roll from gamma
 
         // Debug: show integrated gyro values (in degrees for readability)
         const toDeg = 180 / Math.PI;
