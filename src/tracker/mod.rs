@@ -35,7 +35,6 @@ pub use five_point::{
 };
 
 use wasm_bindgen::prelude::*;
-use web_sys::console;
 
 use crate::features::{non_maximum_suppression, rgba_to_grayscale, FastDetector};
 
@@ -216,9 +215,19 @@ impl Tracker {
                             (inlier_prev.clone(), inlier_curr.clone())
                         };
 
-                        // DEBUG v8: Force ALL translation to ZERO (skip flow calculation)
-                        self.accumulated_translation = [0.0, 0.0, 0.0];
-                        self.current_pose.translation = [0.0, 0.0, 0.0];
+                        // Calculate optical flow components for 6DoF translation
+                        let (flow_x, flow_y, radial_z) =
+                            self.calculate_flow_components(&comp_prev, &comp_curr, width, height);
+
+                        // Scale translation by confidence
+                        let confidence_scale = confidence.translation_scale();
+                        let translation_scale = 0.003 * confidence_scale;
+                        self.accumulated_translation[0] += flow_x * translation_scale;
+                        self.accumulated_translation[1] += flow_y * translation_scale;
+                        self.accumulated_translation[2] += radial_z * translation_scale;
+
+                        // Update pose translation
+                        self.current_pose.translation = self.accumulated_translation;
                     }
 
                     // Update tracked points with inliers only for better stability
@@ -246,10 +255,6 @@ impl Tracker {
         }
 
         self.prev_gray = Some(curr_gray);
-
-        // DEBUG v9: Force translation to ZERO at the very end, unconditionally
-        self.current_pose.translation = [0.0, 0.0, 0.0];
-
         Some(self.current_pose)
     }
 
