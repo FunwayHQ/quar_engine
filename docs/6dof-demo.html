@@ -798,8 +798,8 @@
               console.log('Raw translation from Rust:', rawX.toFixed(3), rawY.toFixed(3), rawZ.toFixed(3));
             }
 
-            // Scale - much larger for visibility
-            const scale = currentScale * 5.0;
+            // Scale - very large for debugging visibility
+            const scale = currentScale * 50.0;  // 50x multiplier for testing
 
             // Direct mapping - no swap, just scale
             const targetX = rawX * scale;
