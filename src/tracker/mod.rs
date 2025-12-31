@@ -40,11 +40,8 @@ pub struct Tracker {
     config: TrackerConfig,
     /// Frame counter
     frame_count: u32,
-    /// Image dimensions for radial flow calculation
-    image_width: u32,
-    image_height: u32,
-    /// Accumulated forward motion from radial flow
-    forward_motion: f32,
+    /// Accumulated translation from optical flow
+    accumulated_translation: [f32; 3],
 }
 
 impl Tracker {
@@ -63,9 +60,7 @@ impl Tracker {
             current_pose: Pose3D::identity(),
             config,
             frame_count: 0,
-            image_width: 640,
-            image_height: 480,
-            forward_motion: 0.0,
+            accumulated_translation: [0.0, 0.0, 0.0],
         }
     }
 
@@ -116,15 +111,20 @@ impl Tracker {
                     self.current_pose.apply_rotation(&rotation);
                 }
 
-                // Calculate radial flow for forward/backward motion detection
-                let radial_flow = self.calculate_radial_flow(&prev_matched, &curr_points, width, height);
+                // Calculate 6DoF translation from optical flow
+                let (lateral_x, lateral_y, radial_z) =
+                    self.calculate_flow_translation(&prev_matched, &curr_points, width, height);
 
-                // Accumulate forward motion (radial flow indicates expansion/contraction)
-                // Positive radial flow = features expanding outward = moving forward
-                self.forward_motion += radial_flow * 0.5; // Scale factor
+                // Accumulate translation with scale factors
+                // Lateral movement: features move opposite to camera movement
+                // Radial movement: expansion = forward, contraction = backward
+                let translation_scale = 0.002; // Scale pixels to world units
+                self.accumulated_translation[0] += lateral_x * translation_scale;
+                self.accumulated_translation[1] += lateral_y * translation_scale;
+                self.accumulated_translation[2] += radial_z * translation_scale * 2.0; // Z is more sensitive
 
-                // Update translation Z with forward motion
-                self.current_pose.translation[2] = self.forward_motion;
+                // Update pose translation
+                self.current_pose.translation = self.accumulated_translation;
 
                 self.prev_points = curr_points;
             } else {
@@ -145,63 +145,89 @@ impl Tracker {
         Some(self.current_pose)
     }
 
-    /// Calculate radial flow to detect forward/backward motion.
+    /// Calculate 6DoF translation from optical flow.
     ///
-    /// When moving forward, features expand outward from the focus of expansion (FOE).
-    /// When moving backward, features contract inward.
-    ///
-    /// Returns positive value for forward motion, negative for backward.
-    fn calculate_radial_flow(
+    /// Returns (lateral_x, lateral_y, radial_z):
+    /// - lateral_x: Average horizontal flow (camera moves opposite direction)
+    /// - lateral_y: Average vertical flow (camera moves opposite direction)
+    /// - radial_z: Radial expansion/contraction (forward/backward motion)
+    fn calculate_flow_translation(
         &self,
         prev_points: &[Point2],
         curr_points: &[Point2],
         width: u32,
         height: u32,
-    ) -> f32 {
+    ) -> (f32, f32, f32) {
         if prev_points.len() < 4 {
-            return 0.0;
+            return (0.0, 0.0, 0.0);
         }
 
         let cx = width as f32 / 2.0;
         let cy = height as f32 / 2.0;
 
+        let mut total_flow_x = 0.0f32;
+        let mut total_flow_y = 0.0f32;
         let mut total_radial = 0.0f32;
-        let mut count = 0;
+        let mut lateral_count = 0;
+        let mut radial_count = 0;
 
         for (prev, curr) in prev_points.iter().zip(curr_points.iter()) {
-            // Vector from center to previous point
+            // Flow vector
+            let flow_x = curr.x - prev.x;
+            let flow_y = curr.y - prev.y;
+            let flow_mag = (flow_x * flow_x + flow_y * flow_y).sqrt();
+
+            // Skip very small or very large flows (noise or outliers)
+            if flow_mag < 0.5 || flow_mag > 50.0 {
+                continue;
+            }
+
+            // Accumulate lateral flow (all points contribute)
+            total_flow_x += flow_x;
+            total_flow_y += flow_y;
+            lateral_count += 1;
+
+            // For radial flow, use distance from center
             let prev_rx = prev.x - cx;
             let prev_ry = prev.y - cy;
             let prev_dist = (prev_rx * prev_rx + prev_ry * prev_ry).sqrt();
 
-            if prev_dist < 10.0 {
-                continue; // Skip points too close to center
+            if prev_dist > 20.0 {
+                // Radial unit vector (pointing outward from center)
+                let radial_x = prev_rx / prev_dist;
+                let radial_y = prev_ry / prev_dist;
+
+                // Radial component of flow (dot product)
+                // Positive = outward flow (forward motion)
+                // Negative = inward flow (backward motion)
+                let radial_flow = flow_x * radial_x + flow_y * radial_y;
+
+                // Weight by distance from center (features further out are more reliable)
+                let weight = (prev_dist / (width as f32 * 0.4)).min(1.0);
+                total_radial += radial_flow * weight;
+                radial_count += 1;
             }
-
-            // Flow vector
-            let flow_x = curr.x - prev.x;
-            let flow_y = curr.y - prev.y;
-
-            // Radial unit vector (pointing outward from center)
-            let radial_x = prev_rx / prev_dist;
-            let radial_y = prev_ry / prev_dist;
-
-            // Radial component of flow (dot product)
-            // Positive = outward flow (forward motion)
-            // Negative = inward flow (backward motion)
-            let radial_flow = flow_x * radial_x + flow_y * radial_y;
-
-            // Weight by distance from center (features further out are more reliable)
-            let weight = (prev_dist / (width as f32 * 0.5)).min(1.0);
-            total_radial += radial_flow * weight;
-            count += 1;
         }
 
-        if count > 0 {
-            total_radial / count as f32
+        let lateral_x = if lateral_count > 0 {
+            -total_flow_x / lateral_count as f32 // Negate: features move left → camera moved right
         } else {
             0.0
-        }
+        };
+
+        let lateral_y = if lateral_count > 0 {
+            -total_flow_y / lateral_count as f32 // Negate: features move up → camera moved down
+        } else {
+            0.0
+        };
+
+        let radial_z = if radial_count > 0 {
+            total_radial / radial_count as f32 // Positive = expansion = forward
+        } else {
+            0.0
+        };
+
+        (lateral_x, lateral_y, radial_z)
     }
 
     /// Detect new features in the image.
@@ -247,7 +273,7 @@ impl Tracker {
         self.prev_points.clear();
         self.current_pose = Pose3D::identity();
         self.frame_count = 0;
-        self.forward_motion = 0.0;
+        self.accumulated_translation = [0.0, 0.0, 0.0];
     }
 
     /// Get the current pose.
