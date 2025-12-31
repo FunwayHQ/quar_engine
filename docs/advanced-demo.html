@@ -418,28 +418,23 @@
             stateEl.textContent = 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Get quaternion directly from tracker
-            // Remap: tracker [x,y,z,w] -> Three.js uses y for pitch
+            // Get quaternion from tracker and extract euler angles
             const q = pose.rotation;
+            const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+            const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
+
             const sensitivity = 0.7;
-            const targetQuat = new THREE.Quaternion(
-              -q[1] * sensitivity,   // pitch from tracker Y
-              -q[2] * sensitivity,   // yaw from tracker Z
-              q[0] * sensitivity,    // roll from tracker X
-              q[3]
-            );
 
-            // Debug output - raw tracker quaternion
-            quatDebug.textContent = `x:${q[0].toFixed(2)} y:${q[1].toFixed(2)} z:${q[2].toFixed(2)} w:${q[3].toFixed(2)}`;
+            // Debug output - raw values
+            quatDebug.textContent = `x:${euler.x.toFixed(2)} y:${euler.y.toFixed(2)} z:${euler.z.toFixed(2)}`;
 
-            // Smooth the quaternion using SLERP
-            smoothedQuat.slerp(targetQuat, smoothingFactor);
+            // Apply euler angles directly to camera with smoothing
+            camera.rotation.x += (-euler.y * sensitivity - camera.rotation.x) * smoothingFactor;
+            camera.rotation.y += (-euler.z * sensitivity - camera.rotation.y) * smoothingFactor;
+            camera.rotation.z += (euler.x * sensitivity - camera.rotation.z) * smoothingFactor;
 
             // Debug output - camera rotation
-            camDebug.textContent = `x:${smoothedQuat.x.toFixed(2)} y:${smoothedQuat.y.toFixed(2)} z:${smoothedQuat.z.toFixed(2)}`;
-
-            // Apply to camera (the quaternion represents camera rotation)
-            camera.quaternion.copy(smoothedQuat);
+            camDebug.textContent = `x:${camera.rotation.x.toFixed(2)} y:${camera.rotation.y.toFixed(2)} z:${camera.rotation.z.toFixed(2)}`;
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';

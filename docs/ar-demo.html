@@ -346,28 +346,22 @@
             stateEl.textContent = 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Get quaternion directly from tracker
-            // Remap: tracker [x,y,z,w] -> Three.js uses y for pitch
+            // Get quaternion from tracker and extract euler angles
             const q = pose.rotation;
+            const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+            const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
+
             const sensitivity = 0.7;
-            const targetQuat = new THREE.Quaternion(
-              -q[1] * sensitivity,   // pitch from tracker Y
-              -q[2] * sensitivity,   // yaw from tracker Z
-              q[0] * sensitivity,    // roll from tracker X
-              q[3]
-            );
 
-            // Smooth the quaternion using SLERP
-            smoothedQuat.slerp(targetQuat, smoothingFactor);
+            // Apply euler angles directly to camera with smoothing
+            camera.rotation.x += (-euler.y * sensitivity - camera.rotation.x) * smoothingFactor;
+            camera.rotation.y += (-euler.z * sensitivity - camera.rotation.y) * smoothingFactor;
+            camera.rotation.z += (euler.x * sensitivity - camera.rotation.z) * smoothingFactor;
 
-            // Update HUD with euler angles for display
-            const euler = new THREE.Euler().setFromQuaternion(smoothedQuat);
-            rollEl.textContent = (euler.z * 180 / Math.PI).toFixed(1) + '°';
-            pitchEl.textContent = (euler.x * 180 / Math.PI).toFixed(1) + '°';
-            yawEl.textContent = (euler.y * 180 / Math.PI).toFixed(1) + '°';
-
-            // Apply quaternion directly to camera
-            camera.quaternion.copy(smoothedQuat);
+            // Update HUD
+            rollEl.textContent = (camera.rotation.z * 180 / Math.PI).toFixed(1) + '°';
+            pitchEl.textContent = (camera.rotation.x * 180 / Math.PI).toFixed(1) + '°';
+            yawEl.textContent = (camera.rotation.y * 180 / Math.PI).toFixed(1) + '°';
 
           } else {
             stateEl.textContent = trackedPoints > 0 ? 'initializing' : 'lost';
