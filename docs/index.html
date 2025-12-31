@@ -115,6 +115,35 @@
       color: #4ade80;
     }
 
+    .demo-card .qr-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .demo-card .qr-code {
+      width: 80px;
+      height: 80px;
+      background: white;
+      border-radius: 8px;
+      padding: 4px;
+      flex-shrink: 0;
+    }
+
+    .demo-card .qr-code img {
+      width: 100%;
+      height: 100%;
+    }
+
+    .demo-card .qr-text {
+      font-size: 11px;
+      opacity: 0.6;
+      line-height: 1.4;
+    }
+
     .demo-tag {
       font-size: 10px;
       padding: 3px 8px;
@@ -251,6 +280,12 @@
           <li>Camera trajectory visualization</li>
           <li>Real translation from epipolar geometry</li>
         </ul>
+        <div class="qr-section">
+          <div class="qr-code">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://funwayhq.github.io/quar_engine/6dof-demo.html" alt="QR Code">
+          </div>
+          <div class="qr-text">Scan to open on your phone.<br>Requires camera & motion sensors.</div>
+        </div>
       </a>
 
       <a href="ar-demo.html" class="demo-card">
@@ -265,6 +300,12 @@
           <li>Three.js integration</li>
           <li>Camera feed background</li>
         </ul>
+        <div class="qr-section">
+          <div class="qr-code">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://funwayhq.github.io/quar_engine/ar-demo.html" alt="QR Code">
+          </div>
+          <div class="qr-text">Scan to open on your phone.<br>Requires camera access.</div>
+        </div>
       </a>
 
       <a href="advanced-demo.html" class="demo-card">
@@ -280,6 +321,12 @@
           <li>Feature point visualization</li>
           <li>Gyroscope waveform display</li>
         </ul>
+        <div class="qr-section">
+          <div class="qr-code">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://funwayhq.github.io/quar_engine/advanced-demo.html" alt="QR Code">
+          </div>
+          <div class="qr-text">Scan to open on your phone.<br>Best with gyroscope support.</div>
+        </div>
       </a>
 
       <a href="feature-demo.html" class="demo-card">
@@ -294,6 +341,12 @@
           <li>Detection timing display</li>
           <li>Camera switching support</li>
         </ul>
+        <div class="qr-section">
+          <div class="qr-code">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://funwayhq.github.io/quar_engine/feature-demo.html" alt="QR Code">
+          </div>
+          <div class="qr-text">Scan to open on your phone.<br>Debug view for feature detection.</div>
+        </div>
       </a>
     </div>
 
