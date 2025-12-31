@@ -195,12 +195,13 @@ impl Tracker {
             let prev_ry = prev.y - cy;
             let prev_dist = (prev_rx * prev_rx + prev_ry * prev_ry).sqrt();
 
-            // Use points that are at least 20px from center for radial
-            if prev_dist > 20.0 {
+            // Use points that are at least 10px from center for radial (lowered threshold)
+            if prev_dist > 10.0 {
                 let radial_x = prev_rx / prev_dist;
                 let radial_y = prev_ry / prev_dist;
                 let radial_component = flow_x * radial_x + flow_y * radial_y;
-                let weight = (prev_dist / (width as f32 * 0.3)).min(1.5);
+                // Weight by distance - points further from center give better signal
+                let weight = (prev_dist / (width as f32 * 0.2)).min(2.0);
                 total_radial += radial_component * weight;
                 radial_count += 1;
             }
@@ -219,8 +220,9 @@ impl Tracker {
             0.0
         };
 
+        // Negate radial for correct direction (expansion = moving forward = negative Z motion)
         let radial_z = if radial_count >= 2 {
-            total_radial / radial_count as f32
+            -total_radial / radial_count as f32
         } else {
             0.0
         };
