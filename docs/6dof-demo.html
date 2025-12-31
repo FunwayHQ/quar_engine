@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>QUAR Engine - 6DoF Tracking Demo</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>QUAR Engine - 6DoF Tracking Demo (v2)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -442,11 +445,12 @@
     // Use simpler TrackerHandle with optical flow-based rotation (much more stable)
     let init, TrackerHandle, version;
     try {
-      const wasm = await import('./pkg/quar_engine.js');
+      // Cache bust: v2 with flow decoupling fix
+      const wasm = await import('./pkg/quar_engine.js?v=2');
       init = wasm.default;
       TrackerHandle = wasm.TrackerHandle;
       version = wasm.version;
-      console.log('6DoF Demo: WASM module loaded (optical flow tracker)');
+      console.log('6DoF Demo: WASM module loaded (optical flow tracker) v2 with flow decoupling');
     } catch (e) {
       console.error('Failed to load WASM module:', e);
       document.getElementById('start-btn').textContent = 'WASM Load Failed';
