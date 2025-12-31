@@ -23,6 +23,9 @@ pub mod mapping;
 // Sprint 19: Plane detection module
 pub mod plane;
 
+// Sprint 16: Bundle Adjustment optimization
+pub mod optimization;
+
 /// Initialize the WASM module with panic hook for better error messages.
 /// This function is automatically called when the WASM module is loaded.
 #[wasm_bindgen(start)]
