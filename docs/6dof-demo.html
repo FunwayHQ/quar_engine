@@ -675,16 +675,40 @@
           const pose = trackerHandle.process_frame(imgData.data, 640, 480);
           const tracked = trackerHandle.tracked_points();
 
+          // Debug: log pose every 60 frames
+          if (frameCount % 60 === 0) {
+            console.log('Pose:', pose, 'Tracked:', tracked);
+            if (pose) {
+              console.log('  rotation:', pose.rotation);
+              console.log('  translation:', pose.translation);
+            }
+          }
+
           featuresEl.textContent = tracked;
 
           if (pose && tracked > 15) {
-            // Get rotation (quaternion)
-            const q = pose.rotation;
-            const rawQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+            // Get rotation (quaternion) - handle both object and array access
+            const q = pose.rotation || [0, 0, 0, 1];
+            const rawQuat = new THREE.Quaternion(
+              q[0] ?? q.x ?? 0,
+              q[1] ?? q.y ?? 0,
+              q[2] ?? q.z ?? 0,
+              q[3] ?? q.w ?? 1
+            );
 
             // Get translation (from Essential matrix decomposition)
-            const t = pose.translation;
-            const rawPosition = new THREE.Vector3(t[0], t[1], t[2]);
+            const t = pose.translation || [0, 0, 0];
+            const rawPosition = new THREE.Vector3(
+              t[0] ?? t.x ?? 0,
+              t[1] ?? t.y ?? 0,
+              t[2] ?? t.z ?? 0
+            );
+
+            // Debug: log actual values being used
+            if (frameCount % 60 === 0) {
+              console.log('Using quat:', rawQuat.x, rawQuat.y, rawQuat.z, rawQuat.w);
+              console.log('Using pos:', rawPosition.x, rawPosition.y, rawPosition.z);
+            }
 
             // Outlier rejection: check if pose change is reasonable
             let isValidPose = true;
