@@ -16,6 +16,7 @@ pub mod linalg;
 pub mod robust;
 pub mod flow_compensation;
 pub mod five_point;
+pub mod kalman;
 
 pub use optical_flow::{LucasKanadeTracker, FBTrackResult};
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -33,6 +34,7 @@ pub use flow_compensation::{
 pub use five_point::{
     compute_essential_5pt, compute_essential_5pt_ransac, FivePointResult,
 };
+pub use kalman::{MotionState, MotionModel};
 
 use wasm_bindgen::prelude::*;
 
@@ -54,7 +56,7 @@ pub struct Tracker {
     config: TrackerConfig,
     /// Frame counter
     frame_count: u32,
-    /// Accumulated translation from optical flow
+    /// Accumulated translation from optical flow (legacy, kept for compatibility)
     accumulated_translation: [f32; 3],
     /// Robust tracker for RANSAC filtering
     robust_tracker: RobustTracker,
@@ -66,6 +68,12 @@ pub struct Tracker {
     flow_compensator: FlowCompensator,
     /// Whether gyro compensation is enabled
     gyro_compensation_enabled: bool,
+    /// Kalman filter for smooth state estimation
+    motion_state: MotionState,
+    /// Whether Kalman filtering is enabled
+    kalman_enabled: bool,
+    /// Last frame timestamp for dt calculation
+    last_frame_time: f64,
 }
 
 impl Tracker {
@@ -90,6 +98,9 @@ impl Tracker {
             last_inlier_count: 0,
             flow_compensator: FlowCompensator::new(FlowCameraParams::from_fov(640, 480, 60.0)),
             gyro_compensation_enabled: false,
+            motion_state: MotionState::new(),
+            kalman_enabled: true,  // Enable by default
+            last_frame_time: 0.0,
         }
     }
 
@@ -109,6 +120,9 @@ impl Tracker {
             last_inlier_count: 0,
             flow_compensator: FlowCompensator::new(FlowCameraParams::from_fov(width, height, 60.0)),
             gyro_compensation_enabled: false,
+            motion_state: MotionState::new(),
+            kalman_enabled: true,
+            last_frame_time: 0.0,
         }
     }
 
@@ -222,12 +236,64 @@ impl Tracker {
                         // Scale translation by confidence
                         let confidence_scale = confidence.translation_scale();
                         let translation_scale = 0.003 * confidence_scale;
-                        self.accumulated_translation[0] += flow_x * translation_scale;
-                        self.accumulated_translation[1] += flow_y * translation_scale;
-                        self.accumulated_translation[2] += radial_z * translation_scale;
+
+                        // Compute raw measurement
+                        let measured_delta = [
+                            flow_x * translation_scale,
+                            flow_y * translation_scale,
+                            radial_z * translation_scale,
+                        ];
+
+                        if self.kalman_enabled {
+                            // Calculate dt from timestamp
+                            let dt = if timestamp_ms > 0.0 && self.last_frame_time > 0.0 {
+                                ((timestamp_ms - self.last_frame_time) / 1000.0).clamp(0.001, 0.1)
+                            } else {
+                                0.016 // Default ~60fps
+                            };
+
+                            // Kalman prediction step
+                            self.motion_state.predict(dt);
+
+                            // Adapt motion model based on flow magnitude
+                            let flow_mag = (flow_x * flow_x + flow_y * flow_y + radial_z * radial_z).sqrt();
+                            let gyro_mag = self.flow_compensator.current_rotation_rate() as f64;
+                            self.motion_state.adapt_to_motion(gyro_mag, flow_mag as f64);
+
+                            // Compute new position (accumulated + delta)
+                            let new_position = [
+                                self.accumulated_translation[0] as f64 + measured_delta[0] as f64,
+                                self.accumulated_translation[1] as f64 + measured_delta[1] as f64,
+                                self.accumulated_translation[2] as f64 + measured_delta[2] as f64,
+                            ];
+
+                            // Kalman update with gating (confidence affects measurement noise)
+                            let kalman_confidence = confidence_scale as f64;
+                            let gate_threshold = 11.34; // Chi-squared 99% for 3 DoF
+
+                            if self.motion_state.update_gated(new_position, kalman_confidence, gate_threshold) {
+                                // Use Kalman-filtered position
+                                let filtered = self.motion_state.position_f32();
+                                self.accumulated_translation = filtered;
+                            } else {
+                                // Measurement rejected - use prediction only
+                                let predicted = self.motion_state.position_f32();
+                                self.accumulated_translation = predicted;
+                            }
+                        } else {
+                            // Legacy: direct accumulation without Kalman filtering
+                            self.accumulated_translation[0] += measured_delta[0];
+                            self.accumulated_translation[1] += measured_delta[1];
+                            self.accumulated_translation[2] += measured_delta[2];
+                        }
 
                         // Update pose translation
                         self.current_pose.translation = self.accumulated_translation;
+
+                        // Update timestamp for next frame
+                        if timestamp_ms > 0.0 {
+                            self.last_frame_time = timestamp_ms;
+                        }
                     }
 
                     // Update tracked points with inliers only for better stability
@@ -431,6 +497,33 @@ impl Tracker {
         self.tracking_confidence = TrackingConfidence::Lost;
         self.last_inlier_count = 0;
         self.flow_compensator.reset();
+        self.motion_state.reset();
+        self.last_frame_time = 0.0;
+    }
+
+    /// Enable or disable Kalman filtering for translation smoothing.
+    pub fn set_kalman_enabled(&mut self, enabled: bool) {
+        self.kalman_enabled = enabled;
+    }
+
+    /// Check if Kalman filtering is enabled.
+    pub fn is_kalman_enabled(&self) -> bool {
+        self.kalman_enabled
+    }
+
+    /// Get the current motion model used by the Kalman filter.
+    pub fn get_motion_model(&self) -> MotionModel {
+        self.motion_state.motion_model()
+    }
+
+    /// Get the current velocity estimate from the Kalman filter.
+    pub fn get_velocity(&self) -> [f32; 3] {
+        self.motion_state.velocity_f32()
+    }
+
+    /// Get position uncertainty from the Kalman filter.
+    pub fn get_position_uncertainty(&self) -> [f64; 3] {
+        self.motion_state.position_uncertainty()
     }
 
     /// Push a gyroscope reading for flow compensation.
@@ -605,6 +698,35 @@ impl TrackerHandle {
     #[wasm_bindgen]
     pub fn current_rotation_rate(&self) -> f32 {
         self.tracker.current_rotation_rate()
+    }
+
+    /// Enable or disable Kalman filtering for translation smoothing.
+    #[wasm_bindgen]
+    pub fn set_kalman_enabled(&mut self, enabled: bool) {
+        self.tracker.set_kalman_enabled(enabled);
+    }
+
+    /// Check if Kalman filtering is enabled.
+    #[wasm_bindgen]
+    pub fn is_kalman_enabled(&self) -> bool {
+        self.tracker.is_kalman_enabled()
+    }
+
+    /// Get the current velocity estimate from Kalman filter as [vx, vy, vz].
+    #[wasm_bindgen]
+    pub fn get_velocity(&self) -> Vec<f32> {
+        let v = self.tracker.get_velocity();
+        vec![v[0], v[1], v[2]]
+    }
+
+    /// Get the current motion model (0=Stationary, 1=Walking, 2=Running).
+    #[wasm_bindgen]
+    pub fn get_motion_model(&self) -> u8 {
+        match self.tracker.get_motion_model() {
+            MotionModel::Stationary => 0,
+            MotionModel::Walking => 1,
+            MotionModel::Running => 2,
+        }
     }
 }
 

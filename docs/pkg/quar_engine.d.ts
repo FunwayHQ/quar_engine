@@ -372,6 +372,10 @@ export class TrackerHandle {
    */
   static with_config(window_size: number, pyramid_levels: number, fast_threshold: number, max_features: number): TrackerHandle;
   /**
+   * Get the current velocity estimate from Kalman filter as [vx, vy, vz].
+   */
+  get_velocity(): Float32Array;
+  /**
    * Get the number of inlier points after RANSAC filtering.
    */
   inlier_points(): number;
@@ -387,6 +391,18 @@ export class TrackerHandle {
    * Get the current tracking confidence level (0=Lost, 1=Low, 2=Medium, 3=High).
    */
   confidence_level(): number;
+  /**
+   * Get the current motion model (0=Stationary, 1=Walking, 2=Running).
+   */
+  get_motion_model(): number;
+  /**
+   * Check if Kalman filtering is enabled.
+   */
+  is_kalman_enabled(): boolean;
+  /**
+   * Enable or disable Kalman filtering for translation smoothing.
+   */
+  set_kalman_enabled(enabled: boolean): void;
   /**
    * Get current rotation rate from gyro (rad/s).
    */
@@ -617,15 +633,19 @@ export interface InitOutput {
   readonly tracker6dofhandle_tracked_points: (a: number) => number;
   readonly trackerhandle_confidence_level: (a: number) => number;
   readonly trackerhandle_current_rotation_rate: (a: number) => number;
+  readonly trackerhandle_get_motion_model: (a: number) => number;
   readonly trackerhandle_get_pose: (a: number) => any;
+  readonly trackerhandle_get_velocity: (a: number) => [number, number];
   readonly trackerhandle_inlier_points: (a: number) => number;
   readonly trackerhandle_is_gyro_compensation_enabled: (a: number) => number;
+  readonly trackerhandle_is_kalman_enabled: (a: number) => number;
   readonly trackerhandle_new: () => number;
   readonly trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly trackerhandle_process_frame_with_time: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
   readonly trackerhandle_push_gyro: (a: number, b: number, c: number, d: number, e: number) => void;
   readonly trackerhandle_reset: (a: number) => void;
   readonly trackerhandle_set_gyro_compensation: (a: number, b: number) => void;
+  readonly trackerhandle_set_kalman_enabled: (a: number, b: number) => void;
   readonly trackerhandle_tracked_points: (a: number) => number;
   readonly trackerhandle_with_config: (a: number, b: number, c: number, d: number) => number;
   readonly version: () => [number, number];

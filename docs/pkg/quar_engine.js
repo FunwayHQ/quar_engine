@@ -1333,6 +1333,16 @@ export class TrackerHandle {
         return TrackerHandle.__wrap(ret);
     }
     /**
+     * Get the current velocity estimate from Kalman filter as [vx, vy, vz].
+     * @returns {Float32Array}
+     */
+    get_velocity() {
+        const ret = wasm.trackerhandle_get_velocity(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * Get the number of inlier points after RANSAC filtering.
      * @returns {number}
      */
@@ -1368,6 +1378,29 @@ export class TrackerHandle {
     confidence_level() {
         const ret = wasm.trackerhandle_confidence_level(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Get the current motion model (0=Stationary, 1=Walking, 2=Running).
+     * @returns {number}
+     */
+    get_motion_model() {
+        const ret = wasm.trackerhandle_get_motion_model(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Check if Kalman filtering is enabled.
+     * @returns {boolean}
+     */
+    is_kalman_enabled() {
+        const ret = wasm.trackerhandle_is_kalman_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Enable or disable Kalman filtering for translation smoothing.
+     * @param {boolean} enabled
+     */
+    set_kalman_enabled(enabled) {
+        wasm.trackerhandle_set_kalman_enabled(this.__wbg_ptr, enabled);
     }
     /**
      * Get current rotation rate from gyro (rad/s).

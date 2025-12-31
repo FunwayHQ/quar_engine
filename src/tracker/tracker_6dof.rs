@@ -12,6 +12,7 @@ use super::essential_pure::{
     choose_valid_pose, compute_essential_ransac, decompose_essential,
 };
 use super::five_point::compute_essential_5pt_ransac;
+use super::kalman::MotionState;
 use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
@@ -81,6 +82,12 @@ pub struct Tracker6DoF {
     last_translation: Option<Vec3>,
     /// Accumulated scale factor
     scale: f32,
+    /// Kalman filter for smooth state estimation
+    motion_state: MotionState,
+    /// Whether Kalman filtering is enabled
+    kalman_enabled: bool,
+    /// Last frame timestamp
+    last_frame_time: f64,
 }
 
 impl Tracker6DoF {
@@ -112,6 +119,9 @@ impl Tracker6DoF {
             last_rotation: None,
             last_translation: None,
             scale,
+            motion_state: MotionState::new(),
+            kalman_enabled: true,
+            last_frame_time: 0.0,
         }
     }
 
@@ -250,7 +260,7 @@ impl Tracker6DoF {
             let rotation_quat = rotation_matrix_to_quaternion(&best.rotation);
             self.current_pose.apply_rotation(&rotation_quat);
 
-            // Apply translation (scaled)
+            // Apply translation (scaled) with optional Kalman filtering
             if use_translation {
                 let t = &best.translation;
                 let scaled_t = [
@@ -258,7 +268,40 @@ impl Tracker6DoF {
                     (t.y * self.scale as f64) as f32,
                     (t.z * self.scale as f64) as f32,
                 ];
-                self.current_pose.apply_translation_local(&scaled_t);
+
+                if self.kalman_enabled {
+                    // Compute new position
+                    let new_position = [
+                        self.current_pose.translation[0] as f64 + scaled_t[0] as f64,
+                        self.current_pose.translation[1] as f64 + scaled_t[1] as f64,
+                        self.current_pose.translation[2] as f64 + scaled_t[2] as f64,
+                    ];
+
+                    // Predict and update
+                    self.motion_state.predict(0.016); // Assume ~60fps
+
+                    // Higher parallax = more confident measurement
+                    let confidence = (max_parallax / 5.0).clamp(0.3, 1.0);
+                    let gate_threshold = 11.34; // Chi-squared 99% for 3 DoF
+
+                    if self.motion_state.update_gated(new_position, confidence, gate_threshold) {
+                        // Use Kalman-filtered position
+                        let filtered = self.motion_state.position_f32();
+                        self.current_pose.translation = filtered;
+                    } else {
+                        // Measurement rejected as outlier
+                        let predicted = self.motion_state.position_f32();
+                        self.current_pose.translation = predicted;
+                    }
+                } else {
+                    // Direct translation without Kalman filtering
+                    self.current_pose.apply_translation_local(&scaled_t);
+                }
+            } else if self.kalman_enabled {
+                // No translation update - just run prediction
+                self.motion_state.predict(0.016);
+                let predicted = self.motion_state.position_f32();
+                self.current_pose.translation = predicted;
             }
 
             // Store for potential scale refinement
@@ -333,6 +376,8 @@ impl Tracker6DoF {
             ScaleMethod::Fixed(s) => s,
             _ => 0.01,
         };
+        self.motion_state.reset();
+        self.last_frame_time = 0.0;
     }
 
     /// Get the current pose.
@@ -353,6 +398,21 @@ impl Tracker6DoF {
     /// Set the scale manually (useful for known scene dimensions).
     pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale;
+    }
+
+    /// Enable or disable Kalman filtering.
+    pub fn set_kalman_enabled(&mut self, enabled: bool) {
+        self.kalman_enabled = enabled;
+    }
+
+    /// Check if Kalman filtering is enabled.
+    pub fn is_kalman_enabled(&self) -> bool {
+        self.kalman_enabled
+    }
+
+    /// Get the current velocity estimate from Kalman filter.
+    pub fn get_velocity(&self) -> [f32; 3] {
+        self.motion_state.velocity_f32()
     }
 }
 
