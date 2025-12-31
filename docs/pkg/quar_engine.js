@@ -143,6 +143,13 @@ function passArray8ToWasm0(arg, malloc) {
     return ptr;
 }
 
+function passArrayF64ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 8, 8) >>> 0;
+    getFloat64ArrayMemory0().set(arg, ptr / 8);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
 function passStringToWasm0(arg, malloc, realloc) {
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
@@ -228,6 +235,18 @@ const EngineConfigFinalization = (typeof FinalizationRegistry === 'undefined')
 const FrameTimingFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_frametiming_free(ptr >>> 0, 1));
+
+const JsHitResultFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_jshitresult_free(ptr >>> 0, 1));
+
+const JsPlaneInfoFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_jsplaneinfo_free(ptr >>> 0, 1));
+
+const PlaneDetectorHandleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_planedetectorhandle_free(ptr >>> 0, 1));
 
 const Pose3DFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -777,6 +796,574 @@ export class FrameTiming {
 if (Symbol.dispose) FrameTiming.prototype[Symbol.dispose] = FrameTiming.prototype.free;
 
 /**
+ * JavaScript-friendly hit test result.
+ */
+export class JsHitResult {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(JsHitResult.prototype);
+        obj.__wbg_ptr = ptr;
+        JsHitResultFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        JsHitResultFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_jshitresult_free(ptr, 0);
+    }
+    /**
+     * Get normal as [x, y, z] array.
+     * @returns {Float64Array}
+     */
+    normal() {
+        const ret = wasm.jshitresult_normal(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * Get position as [x, y, z] array.
+     * @returns {Float64Array}
+     */
+    position() {
+        const ret = wasm.jshitresult_position(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * X position of hit
+     * @returns {number}
+     */
+    get x() {
+        const ret = wasm.__wbg_get_breakdownreport_grayscale_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * X position of hit
+     * @param {number} arg0
+     */
+    set x(arg0) {
+        wasm.__wbg_set_breakdownreport_grayscale_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Y position of hit
+     * @returns {number}
+     */
+    get y() {
+        const ret = wasm.__wbg_get_breakdownreport_detection_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Y position of hit
+     * @param {number} arg0
+     */
+    set y(arg0) {
+        wasm.__wbg_set_breakdownreport_detection_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Z position of hit
+     * @returns {number}
+     */
+    get z() {
+        const ret = wasm.__wbg_get_breakdownreport_tracking_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Z position of hit
+     * @param {number} arg0
+     */
+    set z(arg0) {
+        wasm.__wbg_set_breakdownreport_tracking_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Normal X component
+     * @returns {number}
+     */
+    get normal_x() {
+        const ret = wasm.__wbg_get_breakdownreport_pose_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Normal X component
+     * @param {number} arg0
+     */
+    set normal_x(arg0) {
+        wasm.__wbg_set_breakdownreport_pose_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Normal Y component
+     * @returns {number}
+     */
+    get normal_y() {
+        const ret = wasm.__wbg_get_breakdownreport_other_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Normal Y component
+     * @param {number} arg0
+     */
+    set normal_y(arg0) {
+        wasm.__wbg_set_breakdownreport_other_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Normal Z component
+     * @returns {number}
+     */
+    get normal_z() {
+        const ret = wasm.__wbg_get_jshitresult_normal_z(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Normal Z component
+     * @param {number} arg0
+     */
+    set normal_z(arg0) {
+        wasm.__wbg_set_jshitresult_normal_z(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Distance from ray origin
+     * @returns {number}
+     */
+    get distance() {
+        const ret = wasm.__wbg_get_jshitresult_distance(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Distance from ray origin
+     * @param {number} arg0
+     */
+    set distance(arg0) {
+        wasm.__wbg_set_jshitresult_distance(this.__wbg_ptr, arg0);
+    }
+    /**
+     * ID of the plane hit
+     * @returns {bigint}
+     */
+    get plane_id() {
+        const ret = wasm.__wbg_get_jshitresult_plane_id(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * ID of the plane hit
+     * @param {bigint} arg0
+     */
+    set plane_id(arg0) {
+        wasm.__wbg_set_jshitresult_plane_id(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) JsHitResult.prototype[Symbol.dispose] = JsHitResult.prototype.free;
+
+/**
+ * JavaScript-friendly plane info.
+ */
+export class JsPlaneInfo {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(JsPlaneInfo.prototype);
+        obj.__wbg_ptr = ptr;
+        JsPlaneInfoFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        JsPlaneInfoFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_jsplaneinfo_free(ptr, 0);
+    }
+    /**
+     * Get normal as [x, y, z] array.
+     * @returns {Float64Array}
+     */
+    get_normal() {
+        const ret = wasm.jsplaneinfo_get_normal(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * Check if this is a vertical plane (wall).
+     * @returns {boolean}
+     */
+    is_vertical() {
+        const ret = wasm.jsplaneinfo_is_vertical(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Check if this is a horizontal plane.
+     * @returns {boolean}
+     */
+    is_horizontal() {
+        const ret = wasm.jsplaneinfo_is_horizontal(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Get center as [x, y, z] array.
+     * @returns {Float64Array}
+     */
+    center() {
+        const ret = wasm.jsplaneinfo_center(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * Check if this is a floor plane.
+     * @returns {boolean}
+     */
+    is_floor() {
+        const ret = wasm.jsplaneinfo_is_floor(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Plane ID
+     * @returns {bigint}
+     */
+    get id() {
+        const ret = wasm.__wbg_get_jsplaneinfo_id(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Plane ID
+     * @param {bigint} arg0
+     */
+    set id(arg0) {
+        wasm.__wbg_set_jsplaneinfo_id(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Center X
+     * @returns {number}
+     */
+    get center_x() {
+        const ret = wasm.__wbg_get_breakdownreport_detection_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Center X
+     * @param {number} arg0
+     */
+    set center_x(arg0) {
+        wasm.__wbg_set_breakdownreport_detection_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Center Y
+     * @returns {number}
+     */
+    get center_y() {
+        const ret = wasm.__wbg_get_breakdownreport_tracking_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Center Y
+     * @param {number} arg0
+     */
+    set center_y(arg0) {
+        wasm.__wbg_set_breakdownreport_tracking_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Center Z
+     * @returns {number}
+     */
+    get center_z() {
+        const ret = wasm.__wbg_get_breakdownreport_pose_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Center Z
+     * @param {number} arg0
+     */
+    set center_z(arg0) {
+        wasm.__wbg_set_breakdownreport_pose_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Normal X
+     * @returns {number}
+     */
+    get normal_x() {
+        const ret = wasm.__wbg_get_breakdownreport_other_pct(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Normal X
+     * @param {number} arg0
+     */
+    set normal_x(arg0) {
+        wasm.__wbg_set_breakdownreport_other_pct(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Normal Y
+     * @returns {number}
+     */
+    get normal_y() {
+        const ret = wasm.__wbg_get_jshitresult_normal_z(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Normal Y
+     * @param {number} arg0
+     */
+    set normal_y(arg0) {
+        wasm.__wbg_set_jshitresult_normal_z(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Normal Z
+     * @returns {number}
+     */
+    get normal_z() {
+        const ret = wasm.__wbg_get_jshitresult_distance(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Normal Z
+     * @param {number} arg0
+     */
+    set normal_z(arg0) {
+        wasm.__wbg_set_jshitresult_distance(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Width extent
+     * @returns {number}
+     */
+    get width() {
+        const ret = wasm.__wbg_get_jsplaneinfo_width(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Width extent
+     * @param {number} arg0
+     */
+    set width(arg0) {
+        wasm.__wbg_set_jsplaneinfo_width(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Height extent
+     * @returns {number}
+     */
+    get height() {
+        const ret = wasm.__wbg_get_jsplaneinfo_height(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Height extent
+     * @param {number} arg0
+     */
+    set height(arg0) {
+        wasm.__wbg_set_jsplaneinfo_height(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Number of inlier points
+     * @returns {number}
+     */
+    get inlier_count() {
+        const ret = wasm.__wbg_get_jsplaneinfo_inlier_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Number of inlier points
+     * @param {number} arg0
+     */
+    set inlier_count(arg0) {
+        wasm.__wbg_set_jsplaneinfo_inlier_count(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Confidence (0.0 to 1.0)
+     * @returns {number}
+     */
+    get confidence() {
+        const ret = wasm.__wbg_get_jsplaneinfo_confidence(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Confidence (0.0 to 1.0)
+     * @param {number} arg0
+     */
+    set confidence(arg0) {
+        wasm.__wbg_set_jsplaneinfo_confidence(this.__wbg_ptr, arg0);
+    }
+    /**
+     * Plane type: 0=HorizontalUp, 1=HorizontalDown, 2=Vertical, 3=Arbitrary
+     * @returns {number}
+     */
+    get plane_type() {
+        const ret = wasm.__wbg_get_jsplaneinfo_plane_type(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Plane type: 0=HorizontalUp, 1=HorizontalDown, 2=Vertical, 3=Arbitrary
+     * @param {number} arg0
+     */
+    set plane_type(arg0) {
+        wasm.__wbg_set_jsplaneinfo_plane_type(this.__wbg_ptr, arg0);
+    }
+}
+if (Symbol.dispose) JsPlaneInfo.prototype[Symbol.dispose] = JsPlaneInfo.prototype.free;
+
+/**
+ * WASM-exposed plane detector handle.
+ */
+export class PlaneDetectorHandle {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(PlaneDetectorHandle.prototype);
+        obj.__wbg_ptr = ptr;
+        PlaneDetectorHandleFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PlaneDetectorHandleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_planedetectorhandle_free(ptr, 0);
+    }
+    /**
+     * Get the number of detected planes.
+     * @returns {number}
+     */
+    num_planes() {
+        const ret = wasm.planedetectorhandle_num_planes(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Detect planes from a flat array of 3D points [x1,y1,z1, x2,y2,z2, ...].
+     * @param {Float64Array} points
+     * @returns {number}
+     */
+    detect_planes(points) {
+        const ptr0 = passArrayF64ToWasm0(points, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.planedetectorhandle_detect_planes(this.__wbg_ptr, ptr0, len0);
+        return ret >>> 0;
+    }
+    /**
+     * Get the floor plane (largest horizontal-up plane), if any.
+     * @returns {JsPlaneInfo | undefined}
+     */
+    get_floor_plane() {
+        const ret = wasm.planedetectorhandle_get_floor_plane(this.__wbg_ptr);
+        return ret === 0 ? undefined : JsPlaneInfo.__wrap(ret);
+    }
+    /**
+     * Set the minimum number of inliers required to accept a plane.
+     * @param {number} min_inliers
+     */
+    set_min_inliers(min_inliers) {
+        wasm.planedetectorhandle_set_min_inliers(this.__wbg_ptr, min_inliers);
+    }
+    /**
+     * Perform a hit test on vertical planes only (walls).
+     * @param {number} origin_x
+     * @param {number} origin_y
+     * @param {number} origin_z
+     * @param {number} direction_x
+     * @param {number} direction_y
+     * @param {number} direction_z
+     * @param {number} max_distance
+     * @returns {JsHitResult | undefined}
+     */
+    hit_test_vertical(origin_x, origin_y, origin_z, direction_x, direction_y, direction_z, max_distance) {
+        const ret = wasm.planedetectorhandle_hit_test_vertical(this.__wbg_ptr, origin_x, origin_y, origin_z, direction_x, direction_y, direction_z, max_distance);
+        return ret === 0 ? undefined : JsHitResult.__wrap(ret);
+    }
+    /**
+     * Create a plane detector optimized for floor detection.
+     * @returns {PlaneDetectorHandle}
+     */
+    static for_floor_detection() {
+        const ret = wasm.planedetectorhandle_for_floor_detection();
+        return PlaneDetectorHandle.__wrap(ret);
+    }
+    /**
+     * Perform a hit test on horizontal planes only (floors/tables).
+     * @param {number} origin_x
+     * @param {number} origin_y
+     * @param {number} origin_z
+     * @param {number} direction_x
+     * @param {number} direction_y
+     * @param {number} direction_z
+     * @param {number} max_distance
+     * @returns {JsHitResult | undefined}
+     */
+    hit_test_horizontal(origin_x, origin_y, origin_z, direction_x, direction_y, direction_z, max_distance) {
+        const ret = wasm.planedetectorhandle_hit_test_horizontal(this.__wbg_ptr, origin_x, origin_y, origin_z, direction_x, direction_y, direction_z, max_distance);
+        return ret === 0 ? undefined : JsHitResult.__wrap(ret);
+    }
+    /**
+     * Set the inlier threshold (distance from plane to be considered an inlier).
+     * @param {number} threshold
+     */
+    set_inlier_threshold(threshold) {
+        wasm.planedetectorhandle_set_inlier_threshold(this.__wbg_ptr, threshold);
+    }
+    /**
+     * Create a new plane detector with default settings.
+     */
+    constructor() {
+        const ret = wasm.planedetectorhandle_new();
+        this.__wbg_ptr = ret >>> 0;
+        PlaneDetectorHandleFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Clear all detected planes.
+     */
+    clear() {
+        wasm.planedetectorhandle_clear(this.__wbg_ptr);
+    }
+    /**
+     * Reset the detector (clears planes and resets plane ID counter).
+     */
+    reset() {
+        wasm.planedetectorhandle_reset(this.__wbg_ptr);
+    }
+    /**
+     * Perform a hit test with a ray.
+     *
+     * # Arguments
+     * * `origin_x, origin_y, origin_z` - Ray origin
+     * * `direction_x, direction_y, direction_z` - Ray direction (should be normalized)
+     * * `max_distance` - Maximum distance to check
+     *
+     * # Returns
+     * The closest hit result, or None if no hit.
+     * @param {number} origin_x
+     * @param {number} origin_y
+     * @param {number} origin_z
+     * @param {number} direction_x
+     * @param {number} direction_y
+     * @param {number} direction_z
+     * @param {number} max_distance
+     * @returns {JsHitResult | undefined}
+     */
+    hit_test(origin_x, origin_y, origin_z, direction_x, direction_y, direction_z, max_distance) {
+        const ret = wasm.planedetectorhandle_hit_test(this.__wbg_ptr, origin_x, origin_y, origin_z, direction_x, direction_y, direction_z, max_distance);
+        return ret === 0 ? undefined : JsHitResult.__wrap(ret);
+    }
+    /**
+     * Get info about a detected plane by index.
+     * @param {number} index
+     * @returns {JsPlaneInfo | undefined}
+     */
+    get_plane(index) {
+        const ret = wasm.planedetectorhandle_get_plane(this.__wbg_ptr, index);
+        return ret === 0 ? undefined : JsPlaneInfo.__wrap(ret);
+    }
+}
+if (Symbol.dispose) PlaneDetectorHandle.prototype[Symbol.dispose] = PlaneDetectorHandle.prototype.free;
+
+/**
  * Pose3D represents a 6DoF pose (position + rotation).
  * Used to communicate tracking results back to JavaScript.
  */
@@ -1263,7 +1850,7 @@ export class TimingReport {
      * @returns {number}
      */
     get max_total_ms() {
-        const ret = wasm.__wbg_get_timingreport_max_total_ms(this.__wbg_ptr);
+        const ret = wasm.__wbg_get_jshitresult_normal_z(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -1271,14 +1858,14 @@ export class TimingReport {
      * @param {number} arg0
      */
     set max_total_ms(arg0) {
-        wasm.__wbg_set_timingreport_max_total_ms(this.__wbg_ptr, arg0);
+        wasm.__wbg_set_jshitresult_normal_z(this.__wbg_ptr, arg0);
     }
     /**
      * Minimum frame time
      * @returns {number}
      */
     get min_total_ms() {
-        const ret = wasm.__wbg_get_timingreport_min_total_ms(this.__wbg_ptr);
+        const ret = wasm.__wbg_get_jshitresult_distance(this.__wbg_ptr);
         return ret;
     }
     /**
@@ -1286,7 +1873,7 @@ export class TimingReport {
      * @param {number} arg0
      */
     set min_total_ms(arg0) {
-        wasm.__wbg_set_timingreport_min_total_ms(this.__wbg_ptr, arg0);
+        wasm.__wbg_set_jshitresult_distance(this.__wbg_ptr, arg0);
     }
 }
 if (Symbol.dispose) TimingReport.prototype[Symbol.dispose] = TimingReport.prototype.free;

@@ -160,6 +160,191 @@ export class FrameTiming {
   tracked_count: number;
 }
 
+export class JsHitResult {
+  private constructor();
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get normal as [x, y, z] array.
+   */
+  normal(): Float64Array;
+  /**
+   * Get position as [x, y, z] array.
+   */
+  position(): Float64Array;
+  /**
+   * X position of hit
+   */
+  x: number;
+  /**
+   * Y position of hit
+   */
+  y: number;
+  /**
+   * Z position of hit
+   */
+  z: number;
+  /**
+   * Normal X component
+   */
+  normal_x: number;
+  /**
+   * Normal Y component
+   */
+  normal_y: number;
+  /**
+   * Normal Z component
+   */
+  normal_z: number;
+  /**
+   * Distance from ray origin
+   */
+  distance: number;
+  /**
+   * ID of the plane hit
+   */
+  plane_id: bigint;
+}
+
+export class JsPlaneInfo {
+  private constructor();
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get normal as [x, y, z] array.
+   */
+  get_normal(): Float64Array;
+  /**
+   * Check if this is a vertical plane (wall).
+   */
+  is_vertical(): boolean;
+  /**
+   * Check if this is a horizontal plane.
+   */
+  is_horizontal(): boolean;
+  /**
+   * Get center as [x, y, z] array.
+   */
+  center(): Float64Array;
+  /**
+   * Check if this is a floor plane.
+   */
+  is_floor(): boolean;
+  /**
+   * Plane ID
+   */
+  id: bigint;
+  /**
+   * Center X
+   */
+  center_x: number;
+  /**
+   * Center Y
+   */
+  center_y: number;
+  /**
+   * Center Z
+   */
+  center_z: number;
+  /**
+   * Normal X
+   */
+  normal_x: number;
+  /**
+   * Normal Y
+   */
+  normal_y: number;
+  /**
+   * Normal Z
+   */
+  normal_z: number;
+  /**
+   * Width extent
+   */
+  width: number;
+  /**
+   * Height extent
+   */
+  height: number;
+  /**
+   * Number of inlier points
+   */
+  inlier_count: number;
+  /**
+   * Confidence (0.0 to 1.0)
+   */
+  confidence: number;
+  /**
+   * Plane type: 0=HorizontalUp, 1=HorizontalDown, 2=Vertical, 3=Arbitrary
+   */
+  plane_type: number;
+}
+
+export class PlaneDetectorHandle {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get the number of detected planes.
+   */
+  num_planes(): number;
+  /**
+   * Detect planes from a flat array of 3D points [x1,y1,z1, x2,y2,z2, ...].
+   */
+  detect_planes(points: Float64Array): number;
+  /**
+   * Get the floor plane (largest horizontal-up plane), if any.
+   */
+  get_floor_plane(): JsPlaneInfo | undefined;
+  /**
+   * Set the minimum number of inliers required to accept a plane.
+   */
+  set_min_inliers(min_inliers: number): void;
+  /**
+   * Perform a hit test on vertical planes only (walls).
+   */
+  hit_test_vertical(origin_x: number, origin_y: number, origin_z: number, direction_x: number, direction_y: number, direction_z: number, max_distance: number): JsHitResult | undefined;
+  /**
+   * Create a plane detector optimized for floor detection.
+   */
+  static for_floor_detection(): PlaneDetectorHandle;
+  /**
+   * Perform a hit test on horizontal planes only (floors/tables).
+   */
+  hit_test_horizontal(origin_x: number, origin_y: number, origin_z: number, direction_x: number, direction_y: number, direction_z: number, max_distance: number): JsHitResult | undefined;
+  /**
+   * Set the inlier threshold (distance from plane to be considered an inlier).
+   */
+  set_inlier_threshold(threshold: number): void;
+  /**
+   * Create a new plane detector with default settings.
+   */
+  constructor();
+  /**
+   * Clear all detected planes.
+   */
+  clear(): void;
+  /**
+   * Reset the detector (clears planes and resets plane ID counter).
+   */
+  reset(): void;
+  /**
+   * Perform a hit test with a ray.
+   *
+   * # Arguments
+   * * `origin_x, origin_y, origin_z` - Ray origin
+   * * `direction_x, direction_y, direction_z` - Ray direction (should be normalized)
+   * * `max_distance` - Maximum distance to check
+   *
+   * # Returns
+   * The closest hit result, or None if no hit.
+   */
+  hit_test(origin_x: number, origin_y: number, origin_z: number, direction_x: number, direction_y: number, direction_z: number, max_distance: number): JsHitResult | undefined;
+  /**
+   * Get info about a detected plane by index.
+   */
+  get_plane(index: number): JsPlaneInfo | undefined;
+}
+
 export class Pose3D {
   free(): void;
   [Symbol.dispose](): void;
@@ -650,6 +835,15 @@ export interface InitOutput {
   readonly __wbg_get_breakdownreport_tracking_pct: (a: number) => number;
   readonly __wbg_get_frametiming_feature_count: (a: number) => number;
   readonly __wbg_get_frametiming_tracked_count: (a: number) => number;
+  readonly __wbg_get_jshitresult_distance: (a: number) => number;
+  readonly __wbg_get_jshitresult_normal_z: (a: number) => number;
+  readonly __wbg_get_jshitresult_plane_id: (a: number) => bigint;
+  readonly __wbg_get_jsplaneinfo_confidence: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_height: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_id: (a: number) => bigint;
+  readonly __wbg_get_jsplaneinfo_inlier_count: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_plane_type: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_width: (a: number) => number;
   readonly __wbg_get_pose3d_qw: (a: number) => number;
   readonly __wbg_get_pose3d_qx: (a: number) => number;
   readonly __wbg_get_pose3d_qy: (a: number) => number;
@@ -660,8 +854,9 @@ export interface InitOutput {
   readonly __wbg_get_qualitysettings_pose_smoothing: (a: number) => number;
   readonly __wbg_get_qualitysettings_window_size: (a: number) => number;
   readonly __wbg_get_timingreport_frame_count: (a: number) => number;
-  readonly __wbg_get_timingreport_max_total_ms: (a: number) => number;
-  readonly __wbg_get_timingreport_min_total_ms: (a: number) => number;
+  readonly __wbg_jshitresult_free: (a: number, b: number) => void;
+  readonly __wbg_jsplaneinfo_free: (a: number, b: number) => void;
+  readonly __wbg_planedetectorhandle_free: (a: number, b: number) => void;
   readonly __wbg_pose3d_free: (a: number, b: number) => void;
   readonly __wbg_set_adaptiveconfig_adjustment_delay: (a: number, b: number) => void;
   readonly __wbg_set_adaptiveconfig_enabled: (a: number, b: number) => void;
@@ -675,6 +870,15 @@ export interface InitOutput {
   readonly __wbg_set_breakdownreport_tracking_pct: (a: number, b: number) => void;
   readonly __wbg_set_frametiming_feature_count: (a: number, b: number) => void;
   readonly __wbg_set_frametiming_tracked_count: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_distance: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_normal_z: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_plane_id: (a: number, b: bigint) => void;
+  readonly __wbg_set_jsplaneinfo_confidence: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_height: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_id: (a: number, b: bigint) => void;
+  readonly __wbg_set_jsplaneinfo_inlier_count: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_plane_type: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_width: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_qw: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_qx: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_qy: (a: number, b: number) => void;
@@ -685,9 +889,6 @@ export interface InitOutput {
   readonly __wbg_set_qualitysettings_pose_smoothing: (a: number, b: number) => void;
   readonly __wbg_set_qualitysettings_window_size: (a: number, b: number) => void;
   readonly __wbg_set_timingreport_frame_count: (a: number, b: number) => void;
-  readonly __wbg_set_timingreport_max_total_ms: (a: number, b: number) => void;
-  readonly __wbg_set_timingreport_min_total_ms: (a: number, b: number) => void;
-  readonly __wbg_timingreport_free: (a: number, b: number) => void;
   readonly __wbg_tracker6dofhandle_free: (a: number, b: number) => void;
   readonly __wbg_trackerhandle_free: (a: number, b: number) => void;
   readonly adaptiveconfig_new: () => number;
@@ -722,8 +923,28 @@ export interface InitOutput {
   readonly get_performance_now: () => number;
   readonly greet: (a: number, b: number) => [number, number];
   readonly init: () => void;
+  readonly jshitresult_normal: (a: number) => [number, number];
+  readonly jshitresult_position: (a: number) => [number, number];
+  readonly jsplaneinfo_center: (a: number) => [number, number];
+  readonly jsplaneinfo_get_normal: (a: number) => [number, number];
+  readonly jsplaneinfo_is_floor: (a: number) => number;
+  readonly jsplaneinfo_is_horizontal: (a: number) => number;
+  readonly jsplaneinfo_is_vertical: (a: number) => number;
   readonly log: (a: number, b: number) => void;
   readonly match_features: (a: any, b: any, c: number) => any;
+  readonly planedetectorhandle_clear: (a: number) => void;
+  readonly planedetectorhandle_detect_planes: (a: number, b: number, c: number) => number;
+  readonly planedetectorhandle_for_floor_detection: () => number;
+  readonly planedetectorhandle_get_floor_plane: (a: number) => number;
+  readonly planedetectorhandle_get_plane: (a: number, b: number) => number;
+  readonly planedetectorhandle_hit_test: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+  readonly planedetectorhandle_hit_test_horizontal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+  readonly planedetectorhandle_hit_test_vertical: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+  readonly planedetectorhandle_new: () => number;
+  readonly planedetectorhandle_num_planes: (a: number) => number;
+  readonly planedetectorhandle_reset: (a: number) => void;
+  readonly planedetectorhandle_set_inlier_threshold: (a: number, b: number) => void;
+  readonly planedetectorhandle_set_min_inliers: (a: number, b: number) => void;
   readonly pose3d_from_components: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
   readonly pose3d_new: () => number;
   readonly pose3d_position: (a: number) => [number, number];
@@ -789,6 +1010,17 @@ export interface InitOutput {
   readonly __wbg_set_frametiming_pose_ms: (a: number, b: number) => void;
   readonly __wbg_set_frametiming_total_ms: (a: number, b: number) => void;
   readonly __wbg_set_frametiming_tracking_ms: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_normal_x: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_normal_y: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_x: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_y: (a: number, b: number) => void;
+  readonly __wbg_set_jshitresult_z: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_center_x: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_center_y: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_center_z: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_normal_x: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_normal_y: (a: number, b: number) => void;
+  readonly __wbg_set_jsplaneinfo_normal_z: (a: number, b: number) => void;
   readonly __wbg_set_pose3d_z: (a: number, b: number) => void;
   readonly __wbg_set_qualitysettings_frame_skip: (a: number, b: number) => void;
   readonly __wbg_set_qualitysettings_max_features: (a: number, b: number) => void;
@@ -798,6 +1030,8 @@ export interface InitOutput {
   readonly __wbg_set_timingreport_avg_pose_ms: (a: number, b: number) => void;
   readonly __wbg_set_timingreport_avg_total_ms: (a: number, b: number) => void;
   readonly __wbg_set_timingreport_avg_tracking_ms: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_max_total_ms: (a: number, b: number) => void;
+  readonly __wbg_set_timingreport_min_total_ms: (a: number, b: number) => void;
   readonly __wbg_get_qualitysettings_frame_skip: (a: number) => number;
   readonly __wbg_get_qualitysettings_max_features: (a: number) => number;
   readonly __wbg_get_qualitysettings_pyramid_levels: (a: number) => number;
@@ -806,12 +1040,26 @@ export interface InitOutput {
   readonly __wbg_get_frametiming_pose_ms: (a: number) => number;
   readonly __wbg_get_frametiming_total_ms: (a: number) => number;
   readonly __wbg_get_frametiming_tracking_ms: (a: number) => number;
+  readonly __wbg_get_jshitresult_normal_x: (a: number) => number;
+  readonly __wbg_get_jshitresult_normal_y: (a: number) => number;
+  readonly __wbg_get_jshitresult_x: (a: number) => number;
+  readonly __wbg_get_jshitresult_y: (a: number) => number;
+  readonly __wbg_get_jshitresult_z: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_center_x: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_center_y: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_center_z: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_normal_x: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_normal_y: (a: number) => number;
+  readonly __wbg_get_jsplaneinfo_normal_z: (a: number) => number;
   readonly __wbg_get_pose3d_z: (a: number) => number;
   readonly __wbg_get_timingreport_avg_detection_ms: (a: number) => number;
   readonly __wbg_get_timingreport_avg_grayscale_ms: (a: number) => number;
   readonly __wbg_get_timingreport_avg_pose_ms: (a: number) => number;
   readonly __wbg_get_timingreport_avg_total_ms: (a: number) => number;
   readonly __wbg_get_timingreport_avg_tracking_ms: (a: number) => number;
+  readonly __wbg_get_timingreport_max_total_ms: (a: number) => number;
+  readonly __wbg_get_timingreport_min_total_ms: (a: number) => number;
+  readonly __wbg_timingreport_free: (a: number, b: number) => void;
   readonly __wbg_qualitysettings_free: (a: number, b: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
