@@ -16,7 +16,8 @@ use super::imu_preintegration::{ImuBuffer, ImuMeasurement, PreintegratedImu, Imu
 use super::kalman::MotionState;
 use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
 use super::scale_estimator::{ScaleEstimator, GravityEstimator};
-use super::accelerometer::{AccelIntegrator, ZuptDetector};
+use super::accelerometer::{AccelIntegrator};
+use super::stabilization::PositionStabilizer;
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
 
@@ -105,6 +106,8 @@ pub struct Tracker6DoF {
     vio_initialized: bool,
     /// Accelerometer integrator for ZUPT and velocity
     accel_integrator: AccelIntegrator,
+    /// Position stabilizer for drift correction
+    stabilizer: PositionStabilizer,
 }
 
 impl Tracker6DoF {
@@ -146,6 +149,7 @@ impl Tracker6DoF {
             last_preintegration: None,
             vio_initialized: false,
             accel_integrator: AccelIntegrator::new(),
+            stabilizer: PositionStabilizer::new(),
         }
     }
 
@@ -660,6 +664,75 @@ impl Tracker6DoF {
     /// Reset accelerometer position (keep velocity).
     pub fn reset_accel_position(&mut self) {
         self.accel_integrator.reset_position();
+    }
+
+    // ==================== Stabilization Methods ====================
+
+    /// Enable or disable position stabilization.
+    pub fn set_stabilization_enabled(&mut self, enabled: bool) {
+        self.stabilizer.set_enabled(enabled);
+    }
+
+    /// Check if stabilization is enabled.
+    pub fn is_stabilization_enabled(&self) -> bool {
+        self.stabilizer.is_enabled()
+    }
+
+    /// Get stabilized stationary state (combines accel and visual).
+    pub fn is_stabilized_stationary(&self) -> bool {
+        self.stabilizer.is_stationary()
+    }
+
+    /// Get stationary duration from stabilizer (seconds).
+    pub fn stabilizer_stationary_duration(&self) -> f64 {
+        self.stabilizer.stationary_duration()
+    }
+
+    /// Update stabilizer with sensor data.
+    /// Call this each frame with optical flow magnitude.
+    pub fn update_stabilizer(&mut self, flow_magnitude: f64, time: f64) {
+        // Use accelerometer's ZUPT detector for gyro info (simplified)
+        // The ZUPT already combines gyro + accel
+        let gyro_mag = if self.accel_integrator.is_stationary() { 0.01 } else { 0.5 };
+
+        // Get accel variance (simplified)
+        let accel_variance = if self.accel_integrator.is_stationary() { 0.0 } else { 0.2 };
+
+        self.stabilizer.update_sensors(gyro_mag, accel_variance, flow_magnitude, time);
+
+        // Set anchor when becoming stationary
+        if self.stabilizer.is_stationary() && !self.stabilizer.anchor.has_anchor() {
+            let pos = self.current_pose.translation;
+            self.stabilizer.set_anchor([pos[0] as f64, pos[1] as f64, pos[2] as f64], time);
+        }
+    }
+
+    /// Apply stabilization to current translation.
+    /// Call after computing translation each frame.
+    pub fn apply_stabilization(&mut self) {
+        if !self.stabilizer.is_enabled() {
+            return;
+        }
+
+        let mut position = [
+            self.current_pose.translation[0] as f64,
+            self.current_pose.translation[1] as f64,
+            self.current_pose.translation[2] as f64,
+        ];
+        let mut velocity = [0.0, 0.0, 0.0]; // Could track velocity if needed
+
+        self.stabilizer.stabilize(&mut position, &mut velocity);
+
+        self.current_pose.translation = [
+            position[0] as f32,
+            position[1] as f32,
+            position[2] as f32,
+        ];
+    }
+
+    /// Reset the stabilizer.
+    pub fn reset_stabilizer(&mut self) {
+        self.stabilizer.reset();
     }
 }
 

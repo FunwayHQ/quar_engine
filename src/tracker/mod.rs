@@ -20,6 +20,7 @@ pub mod kalman;
 pub mod imu_preintegration;
 pub mod scale_estimator;
 pub mod accelerometer;
+pub mod stabilization;
 
 pub use optical_flow::{LucasKanadeTracker, FBTrackResult};
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -46,6 +47,10 @@ pub use scale_estimator::{ScaleEstimate, ScaleEstimator, GravityEstimator};
 pub use accelerometer::{
     AccelerometerProcessor, ZuptDetector, AccelIntegrator,
     TranslationFusion, FusedTranslation,
+};
+pub use stabilization::{
+    StationaryDetector, PositionAnchor, DriftDecay, VisualAnchor,
+    AnchorManager, PositionStabilizer,
 };
 
 use wasm_bindgen::prelude::*;
@@ -964,6 +969,52 @@ impl Tracker6DoFHandle {
     #[wasm_bindgen]
     pub fn reset_accel_position(&mut self) {
         self.tracker.reset_accel_position();
+    }
+
+    // ==================== Stabilization Methods ====================
+
+    /// Enable or disable position stabilization.
+    #[wasm_bindgen]
+    pub fn set_stabilization_enabled(&mut self, enabled: bool) {
+        self.tracker.set_stabilization_enabled(enabled);
+    }
+
+    /// Check if stabilization is enabled.
+    #[wasm_bindgen]
+    pub fn is_stabilization_enabled(&self) -> bool {
+        self.tracker.is_stabilization_enabled()
+    }
+
+    /// Get stabilized stationary state.
+    #[wasm_bindgen]
+    pub fn is_stabilized_stationary(&self) -> bool {
+        self.tracker.is_stabilized_stationary()
+    }
+
+    /// Get stationary duration from stabilizer (seconds).
+    #[wasm_bindgen]
+    pub fn stabilizer_stationary_duration(&self) -> f64 {
+        self.tracker.stabilizer_stationary_duration()
+    }
+
+    /// Update stabilizer with optical flow magnitude.
+    /// Call this each frame after processing.
+    #[wasm_bindgen]
+    pub fn update_stabilizer(&mut self, flow_magnitude: f64, time: f64) {
+        self.tracker.update_stabilizer(flow_magnitude, time);
+    }
+
+    /// Apply position stabilization.
+    /// Call after computing translation each frame.
+    #[wasm_bindgen]
+    pub fn apply_stabilization(&mut self) {
+        self.tracker.apply_stabilization();
+    }
+
+    /// Reset the stabilizer.
+    #[wasm_bindgen]
+    pub fn reset_stabilizer(&mut self) {
+        self.tracker.reset_stabilizer();
     }
 }
 

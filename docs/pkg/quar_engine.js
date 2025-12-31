@@ -1398,6 +1398,12 @@ export class Tracker6DoFHandle {
         wasm.tracker6dofhandle_clear_imu_buffer(this.__wbg_ptr);
     }
     /**
+     * Reset the stabilizer.
+     */
+    reset_stabilizer() {
+        wasm.tracker6dofhandle_reset_stabilizer(this.__wbg_ptr);
+    }
+    /**
      * Process a frame with VIO fusion.
      * Returns the pose as JSON.
      * @param {Uint8Array} rgba
@@ -1411,6 +1417,15 @@ export class Tracker6DoFHandle {
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.tracker6dofhandle_process_frame_vio(this.__wbg_ptr, ptr0, len0, width, height, timestamp);
         return ret;
+    }
+    /**
+     * Update stabilizer with optical flow magnitude.
+     * Call this each frame after processing.
+     * @param {number} flow_magnitude
+     * @param {number} time
+     */
+    update_stabilizer(flow_magnitude, time) {
+        wasm.tracker6dofhandle_update_stabilizer(this.__wbg_ptr, flow_magnitude, time);
     }
     /**
      * Get accelerometer-derived position as [x, y, z] in meters.
@@ -1441,6 +1456,13 @@ export class Tracker6DoFHandle {
         return ret !== 0;
     }
     /**
+     * Apply position stabilization.
+     * Call after computing translation each frame.
+     */
+    apply_stabilization() {
+        wasm.tracker6dofhandle_apply_stabilization(this.__wbg_ptr);
+    }
+    /**
      * Get scale estimation confidence (0.0-1.0).
      * @returns {number}
      */
@@ -1453,6 +1475,37 @@ export class Tracker6DoFHandle {
      */
     reset_accel_position() {
         wasm.tracker6dofhandle_reset_accel_position(this.__wbg_ptr);
+    }
+    /**
+     * Check if stabilization is enabled.
+     * @returns {boolean}
+     */
+    is_stabilization_enabled() {
+        const ret = wasm.tracker6dofhandle_is_stabilization_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Get stabilized stationary state.
+     * @returns {boolean}
+     */
+    is_stabilized_stationary() {
+        const ret = wasm.tracker6dofhandle_is_stabilized_stationary(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Enable or disable position stabilization.
+     * @param {boolean} enabled
+     */
+    set_stabilization_enabled(enabled) {
+        wasm.tracker6dofhandle_set_stabilization_enabled(this.__wbg_ptr, enabled);
+    }
+    /**
+     * Get stationary duration from stabilizer (seconds).
+     * @returns {number}
+     */
+    stabilizer_stationary_duration() {
+        const ret = wasm.tracker6dofhandle_stabilizer_stationary_duration(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Create a new 6DoF tracker.
