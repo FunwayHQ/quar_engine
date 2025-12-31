@@ -320,7 +320,7 @@
     // Full 6DoF tracking using Tracker6DoFHandle with Essential matrix decomposition
     let init, Tracker6DoFHandle, version;
     try {
-      const wasm = await import('../pkg/quar_engine.js');
+      const wasm = await import('./pkg/quar_engine.js');
       init = wasm.default;
       Tracker6DoFHandle = wasm.Tracker6DoFHandle;
       version = wasm.version;

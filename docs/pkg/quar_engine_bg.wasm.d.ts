@@ -1,7 +1,6 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const log: (a: number, b: number) => void;
 export const __wbg_adaptiveconfig_free: (a: number, b: number) => void;
 export const __wbg_adaptivehandle_free: (a: number, b: number) => void;
 export const __wbg_breakdownreport_free: (a: number, b: number) => void;
@@ -57,6 +56,7 @@ export const __wbg_set_timingreport_frame_count: (a: number, b: number) => void;
 export const __wbg_set_timingreport_max_total_ms: (a: number, b: number) => void;
 export const __wbg_set_timingreport_min_total_ms: (a: number, b: number) => void;
 export const __wbg_timingreport_free: (a: number, b: number) => void;
+export const __wbg_tracker6dofhandle_free: (a: number, b: number) => void;
 export const __wbg_trackerhandle_free: (a: number, b: number) => void;
 export const adaptiveconfig_new: () => number;
 export const adaptiveconfig_target_30fps: () => number;
@@ -89,6 +89,7 @@ export const get_grayscale: (a: number, b: number) => [number, number];
 export const get_performance_now: () => number;
 export const greet: (a: number, b: number) => [number, number];
 export const init: () => void;
+export const log: (a: number, b: number) => void;
 export const pose3d_from_components: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const pose3d_new: () => number;
 export const pose3d_position: (a: number) => [number, number];
@@ -100,6 +101,14 @@ export const timingreport_estimated_fps: (a: number) => number;
 export const timingreport_meets_30fps: (a: number) => number;
 export const timingreport_meets_60fps: (a: number) => number;
 export const timingreport_to_json: (a: number) => [number, number];
+export const tracker6dofhandle_get_pose: (a: number) => any;
+export const tracker6dofhandle_get_scale: (a: number) => number;
+export const tracker6dofhandle_new: (a: number, b: number) => number;
+export const tracker6dofhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
+export const tracker6dofhandle_reset: (a: number) => void;
+export const tracker6dofhandle_set_scale: (a: number, b: number) => void;
+export const tracker6dofhandle_test_essential: () => number;
+export const tracker6dofhandle_tracked_points: (a: number) => number;
 export const trackerhandle_get_pose: (a: number) => any;
 export const trackerhandle_new: () => number;
 export const trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;

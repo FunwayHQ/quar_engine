@@ -163,6 +163,10 @@ const TimingReportFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_timingreport_free(ptr >>> 0, 1));
 
+const Tracker6DoFHandleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_tracker6dofhandle_free(ptr >>> 0, 1));
+
 const TrackerHandleFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_trackerhandle_free(ptr >>> 0, 1));
@@ -1208,6 +1212,92 @@ export class TimingReport {
     }
 }
 if (Symbol.dispose) TimingReport.prototype[Symbol.dispose] = TimingReport.prototype.free;
+
+/**
+ * Opaque handle to a 6DoF tracker instance.
+ */
+export class Tracker6DoFHandle {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        Tracker6DoFHandleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_tracker6dofhandle_free(ptr, 0);
+    }
+    /**
+     * Process a frame and return the 6DoF pose as JSON.
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @returns {any}
+     */
+    process_frame(rgba, width, height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.tracker6dofhandle_process_frame(this.__wbg_ptr, ptr0, len0, width, height);
+        return ret;
+    }
+    /**
+     * Test Essential matrix computation (for WASM debugging).
+     * @returns {boolean}
+     */
+    static test_essential() {
+        const ret = wasm.tracker6dofhandle_test_essential();
+        return ret !== 0;
+    }
+    /**
+     * Get the number of tracked points.
+     * @returns {number}
+     */
+    tracked_points() {
+        const ret = wasm.tracker6dofhandle_tracked_points(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Create a new 6DoF tracker.
+     * @param {number} width
+     * @param {number} height
+     */
+    constructor(width, height) {
+        const ret = wasm.tracker6dofhandle_new(width, height);
+        this.__wbg_ptr = ret >>> 0;
+        Tracker6DoFHandleFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Reset the tracker.
+     */
+    reset() {
+        wasm.tracker6dofhandle_reset(this.__wbg_ptr);
+    }
+    /**
+     * Get the current pose as JSON.
+     * @returns {any}
+     */
+    get_pose() {
+        const ret = wasm.tracker6dofhandle_get_pose(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get the current scale estimate.
+     * @returns {number}
+     */
+    get_scale() {
+        const ret = wasm.tracker6dofhandle_get_scale(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Set the scale manually.
+     * @param {number} scale
+     */
+    set_scale(scale) {
+        wasm.tracker6dofhandle_set_scale(this.__wbg_ptr, scale);
+    }
+}
+if (Symbol.dispose) Tracker6DoFHandle.prototype[Symbol.dispose] = Tracker6DoFHandle.prototype.free;
 
 /**
  * Opaque handle to a tracker instance.

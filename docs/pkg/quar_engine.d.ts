@@ -327,6 +327,43 @@ export class TimingReport {
   min_total_ms: number;
 }
 
+export class Tracker6DoFHandle {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Process a frame and return the 6DoF pose as JSON.
+   */
+  process_frame(rgba: Uint8Array, width: number, height: number): any;
+  /**
+   * Test Essential matrix computation (for WASM debugging).
+   */
+  static test_essential(): boolean;
+  /**
+   * Get the number of tracked points.
+   */
+  tracked_points(): number;
+  /**
+   * Create a new 6DoF tracker.
+   */
+  constructor(width: number, height: number);
+  /**
+   * Reset the tracker.
+   */
+  reset(): void;
+  /**
+   * Get the current pose as JSON.
+   */
+  get_pose(): any;
+  /**
+   * Get the current scale estimate.
+   */
+  get_scale(): number;
+  /**
+   * Set the scale manually.
+   */
+  set_scale(scale: number): void;
+}
+
 export class TrackerHandle {
   free(): void;
   [Symbol.dispose](): void;
@@ -439,7 +476,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly log: (a: number, b: number) => void;
   readonly __wbg_adaptiveconfig_free: (a: number, b: number) => void;
   readonly __wbg_adaptivehandle_free: (a: number, b: number) => void;
   readonly __wbg_breakdownreport_free: (a: number, b: number) => void;
@@ -495,6 +531,7 @@ export interface InitOutput {
   readonly __wbg_set_timingreport_max_total_ms: (a: number, b: number) => void;
   readonly __wbg_set_timingreport_min_total_ms: (a: number, b: number) => void;
   readonly __wbg_timingreport_free: (a: number, b: number) => void;
+  readonly __wbg_tracker6dofhandle_free: (a: number, b: number) => void;
   readonly __wbg_trackerhandle_free: (a: number, b: number) => void;
   readonly adaptiveconfig_new: () => number;
   readonly adaptiveconfig_target_30fps: () => number;
@@ -527,6 +564,7 @@ export interface InitOutput {
   readonly get_performance_now: () => number;
   readonly greet: (a: number, b: number) => [number, number];
   readonly init: () => void;
+  readonly log: (a: number, b: number) => void;
   readonly pose3d_from_components: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
   readonly pose3d_new: () => number;
   readonly pose3d_position: (a: number) => [number, number];
@@ -538,6 +576,14 @@ export interface InitOutput {
   readonly timingreport_meets_30fps: (a: number) => number;
   readonly timingreport_meets_60fps: (a: number) => number;
   readonly timingreport_to_json: (a: number) => [number, number];
+  readonly tracker6dofhandle_get_pose: (a: number) => any;
+  readonly tracker6dofhandle_get_scale: (a: number) => number;
+  readonly tracker6dofhandle_new: (a: number, b: number) => number;
+  readonly tracker6dofhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly tracker6dofhandle_reset: (a: number) => void;
+  readonly tracker6dofhandle_set_scale: (a: number, b: number) => void;
+  readonly tracker6dofhandle_test_essential: () => number;
+  readonly tracker6dofhandle_tracked_points: (a: number) => number;
   readonly trackerhandle_get_pose: (a: number) => any;
   readonly trackerhandle_new: () => number;
   readonly trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
