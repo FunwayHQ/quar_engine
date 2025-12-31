@@ -312,9 +312,25 @@
   </script>
 
   <script type="module">
+    console.log('6DoF Demo: Script loading...');
+
     import * as THREE from 'three';
+    console.log('6DoF Demo: Three.js loaded');
+
     // Full 6DoF tracking using Tracker6DoFHandle with Essential matrix decomposition
-    import init, { Tracker6DoFHandle, version } from '../pkg/quar_engine.js';
+    let init, Tracker6DoFHandle, version;
+    try {
+      const wasm = await import('../pkg/quar_engine.js');
+      init = wasm.default;
+      Tracker6DoFHandle = wasm.Tracker6DoFHandle;
+      version = wasm.version;
+      console.log('6DoF Demo: WASM module loaded');
+    } catch (e) {
+      console.error('Failed to load WASM module:', e);
+      document.getElementById('start-btn').textContent = 'WASM Load Failed';
+      document.getElementById('start-btn').style.background = '#f87171';
+      throw e;
+    }
 
     // DOM elements
     const videoCanvas = document.getElementById('video-canvas');
@@ -650,7 +666,9 @@
     }
 
     // Start button
+    console.log('6DoF Demo: Attaching click handler');
     startBtn.addEventListener('click', async () => {
+      console.log('6DoF Demo: Start button clicked');
       try {
         startBtn.disabled = true;
         startBtn.textContent = 'Loading...';
