@@ -4,6 +4,27 @@ This document outlines the comprehensive sprint plan for building the Aether Web
 
 ---
 
+## Sprint Status Summary
+
+| Sprint | Name | Status |
+|--------|------|--------|
+| 1 | Project Foundation | ✅ COMPLETED |
+| 2 | Camera Access | ✅ COMPLETED |
+| 3 | Feature Detection (FAST) | ✅ COMPLETED |
+| 4 | Basic Optical Flow & 3DoF | ✅ COMPLETED |
+| 5 | Web Worker Architecture | ⏭️ SKIPPED (not needed for MVP) |
+| 6 | Pipeline Optimization | ✅ COMPLETED (as Sprint 12: Memory & Performance) |
+| 7 | IMU Data Capture | ✅ COMPLETED |
+| 8 | IMU Preintegration & VIO | ✅ COMPLETED |
+| 9 | Three.js SDK | ⏸️ DEFERRED |
+| 10 | Keyframe Management | ✅ COMPLETED (Sprint 15) |
+| 11 | Lighting Estimation | ⏸️ DEFERRED |
+| 12 | Production Hardening | ⏸️ PARTIAL |
+
+**Note:** Actual implementation diverged from original plan. See ADDITIONAL_SPRINTS.md for 6DoF-specific sprints and CLAUDE.md for current status.
+
+---
+
 ## Phase 1: Monocular MVP (Sprints 1-4)
 
 **Goal:** 3DoF (Rotation) + Basic Translation - A red cube that stays roughly in place when you move the phone.
