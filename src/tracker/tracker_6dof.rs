@@ -2,16 +2,16 @@
 //!
 //! This module extends the basic optical flow tracker with Essential matrix
 //! estimation to recover both rotation AND translation (up to scale).
-
-use nalgebra::{Matrix3, Vector2, Vector3};
+//!
+//! Uses pure-Rust linear algebra types (Vec2, Vec3, Mat3) for full WASM compatibility.
 
 use crate::camera::CameraIntrinsics;
 use crate::features::{non_maximum_suppression, rgba_to_grayscale, FastDetector};
 
-use super::essential::{
-    choose_valid_pose, compute_essential_ransac, decompose_essential, EssentialDecomposition,
+use super::essential_pure::{
+    choose_valid_pose, compute_essential_ransac, decompose_essential,
 };
-use super::triangulation::triangulate_valid_points;
+use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
 
@@ -72,9 +72,9 @@ pub struct Tracker6DoF {
     /// Frame counter
     frame_count: u32,
     /// Last valid rotation from Essential matrix
-    last_rotation: Option<Matrix3<f64>>,
+    last_rotation: Option<Mat3>,
     /// Last valid translation direction
-    last_translation: Option<Vector3<f64>>,
+    last_translation: Option<Vec3>,
     /// Accumulated scale factor
     scale: f32,
 }
@@ -172,18 +172,17 @@ impl Tracker6DoF {
 
     /// Estimate pose from point correspondences using Essential matrix.
     fn estimate_pose(&mut self, prev_points: &[Point2], curr_points: &[Point2]) {
-        // Convert to normalized camera coordinates
-        let prev_norm: Vec<Vector2<f64>> = prev_points
+        let prev_norm: Vec<Vec2> = prev_points
             .iter()
             .map(|p| self.camera.normalize_point(p.x as f64, p.y as f64))
             .collect();
 
-        let curr_norm: Vec<Vector2<f64>> = curr_points
+        let curr_norm: Vec<Vec2> = curr_points
             .iter()
             .map(|p| self.camera.normalize_point(p.x as f64, p.y as f64))
             .collect();
 
-        // Compute Essential matrix with RANSAC
+        // Try RANSAC for robust Essential matrix estimation
         let result = compute_essential_ransac(
             &prev_norm,
             &curr_norm,
@@ -193,46 +192,62 @@ impl Tracker6DoF {
         );
 
         if let Some((e, inliers)) = result {
-            // Filter to inliers only
-            let prev_inliers: Vec<_> = prev_norm
+            // Filter to only use inliers for decomposition
+            let inlier_prev: Vec<Vec2> = prev_norm
                 .iter()
-                .zip(&inliers)
-                .filter(|(_, &is_inlier)| is_inlier)
-                .map(|(p, _)| *p)
+                .zip(inliers.iter())
+                .filter_map(|(p, &is_inlier)| if is_inlier { Some(*p) } else { None })
                 .collect();
-            let curr_inliers: Vec<_> = curr_norm
+            let inlier_curr: Vec<Vec2> = curr_norm
                 .iter()
-                .zip(&inliers)
-                .filter(|(_, &is_inlier)| is_inlier)
-                .map(|(p, _)| *p)
+                .zip(inliers.iter())
+                .filter_map(|(p, &is_inlier)| if is_inlier { Some(*p) } else { None })
                 .collect();
 
-            if prev_inliers.len() >= 8 {
-                // Decompose E into R and t
-                let solutions = decompose_essential(&e);
-                let best = choose_valid_pose(&solutions, &prev_inliers, &curr_inliers);
+            if inlier_prev.len() < 8 {
+                return; // Not enough inliers
+            }
 
-                // Apply rotation
-                let rotation_quat = rotation_matrix_to_quaternion(&best.rotation);
-                self.current_pose.apply_rotation(&rotation_quat);
+            // Decompose Essential matrix into 4 possible (R, t) solutions
+            let solutions = decompose_essential(&e);
 
-                // Apply translation (scaled)
-                let t = best.translation;
-                let translation = [
+            // Choose the solution with positive depth for most points
+            let best = choose_valid_pose(&solutions, &inlier_prev, &inlier_curr);
+
+            // Check minimum parallax for reliable translation
+            let mut max_parallax: f64 = 0.0;
+            for (p1, p2) in inlier_prev.iter().zip(inlier_curr.iter()).take(10) {
+                let parallax = super::essential_pure::compute_parallax(p1, p2, &best.rotation);
+                if parallax > max_parallax {
+                    max_parallax = parallax;
+                }
+            }
+
+            // Only use translation if parallax is sufficient
+            let use_translation = max_parallax > self.config.min_parallax;
+
+            // Convert rotation matrix to quaternion and apply
+            let rotation_quat = rotation_matrix_to_quaternion(&best.rotation);
+            self.current_pose.apply_rotation(&rotation_quat);
+
+            // Apply translation (scaled)
+            if use_translation {
+                let t = &best.translation;
+                let scaled_t = [
                     (t.x * self.scale as f64) as f32,
                     (t.y * self.scale as f64) as f32,
                     (t.z * self.scale as f64) as f32,
                 ];
-                self.current_pose.apply_translation_local(&translation);
+                self.current_pose.apply_translation_local(&scaled_t);
+            }
 
-                // Store for potential scale refinement
-                self.last_rotation = Some(best.rotation);
-                self.last_translation = Some(best.translation);
+            // Store for potential scale refinement
+            self.last_rotation = Some(best.rotation);
+            self.last_translation = Some(best.translation);
 
-                // Try to refine scale using triangulation
-                if self.config.scale_method == ScaleMethod::Triangulation {
-                    self.refine_scale(&prev_inliers, &curr_inliers, &best);
-                }
+            // Refine scale if using triangulation method
+            if self.config.scale_method == ScaleMethod::Triangulation {
+                self.refine_scale(&inlier_prev, &inlier_curr, &best);
             }
         }
     }
@@ -240,28 +255,12 @@ impl Tracker6DoF {
     /// Refine scale estimate using triangulated points.
     fn refine_scale(
         &mut self,
-        prev_points: &[Vector2<f64>],
-        curr_points: &[Vector2<f64>],
-        pose: &EssentialDecomposition,
+        _prev_points: &[Vec2],
+        _curr_points: &[Vec2],
+        _pose: &EssentialSolution,
     ) {
-        let valid_points =
-            triangulate_valid_points(prev_points, curr_points, &pose.rotation, &pose.translation);
-
-        if valid_points.len() >= 5 {
-            // Compute median depth to estimate scale
-            let mut depths: Vec<f64> = valid_points.iter().map(|(_, p)| p.z).collect();
-            depths.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let median_depth = depths[depths.len() / 2];
-
-            // Assume scene is roughly 1-3 meters away on average
-            // Adjust scale to match expected depth
-            let expected_depth = 2.0; // meters
-            let scale_correction = (expected_depth / median_depth) as f32;
-
-            // Apply smooth scale update
-            self.scale = self.scale * 0.9 + (self.scale * scale_correction) * 0.1;
-            self.scale = self.scale.clamp(0.001, 1.0);
-        }
+        // TODO: Implement scale refinement using triangulated point depths
+        // For now, scale stays constant
     }
 
     /// Detect new features in the image.
@@ -338,36 +337,36 @@ impl Tracker6DoF {
 }
 
 /// Convert a 3x3 rotation matrix to a quaternion [x, y, z, w].
-fn rotation_matrix_to_quaternion(r: &Matrix3<f64>) -> [f32; 4] {
+fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
     // Using Shepperd's method for numerical stability
-    let trace = r[(0, 0)] + r[(1, 1)] + r[(2, 2)];
+    let trace = r.data[0][0] + r.data[1][1] + r.data[2][2];
 
     let (x, y, z, w) = if trace > 0.0 {
         let s = 0.5 / (trace + 1.0).sqrt();
         let w = 0.25 / s;
-        let x = (r[(2, 1)] - r[(1, 2)]) * s;
-        let y = (r[(0, 2)] - r[(2, 0)]) * s;
-        let z = (r[(1, 0)] - r[(0, 1)]) * s;
+        let x = (r.data[2][1] - r.data[1][2]) * s;
+        let y = (r.data[0][2] - r.data[2][0]) * s;
+        let z = (r.data[1][0] - r.data[0][1]) * s;
         (x, y, z, w)
-    } else if r[(0, 0)] > r[(1, 1)] && r[(0, 0)] > r[(2, 2)] {
-        let s = 2.0 * (1.0 + r[(0, 0)] - r[(1, 1)] - r[(2, 2)]).sqrt();
-        let w = (r[(2, 1)] - r[(1, 2)]) / s;
+    } else if r.data[0][0] > r.data[1][1] && r.data[0][0] > r.data[2][2] {
+        let s = 2.0 * (1.0 + r.data[0][0] - r.data[1][1] - r.data[2][2]).sqrt();
+        let w = (r.data[2][1] - r.data[1][2]) / s;
         let x = 0.25 * s;
-        let y = (r[(0, 1)] + r[(1, 0)]) / s;
-        let z = (r[(0, 2)] + r[(2, 0)]) / s;
+        let y = (r.data[0][1] + r.data[1][0]) / s;
+        let z = (r.data[0][2] + r.data[2][0]) / s;
         (x, y, z, w)
-    } else if r[(1, 1)] > r[(2, 2)] {
-        let s = 2.0 * (1.0 + r[(1, 1)] - r[(0, 0)] - r[(2, 2)]).sqrt();
-        let w = (r[(0, 2)] - r[(2, 0)]) / s;
-        let x = (r[(0, 1)] + r[(1, 0)]) / s;
+    } else if r.data[1][1] > r.data[2][2] {
+        let s = 2.0 * (1.0 + r.data[1][1] - r.data[0][0] - r.data[2][2]).sqrt();
+        let w = (r.data[0][2] - r.data[2][0]) / s;
+        let x = (r.data[0][1] + r.data[1][0]) / s;
         let y = 0.25 * s;
-        let z = (r[(1, 2)] + r[(2, 1)]) / s;
+        let z = (r.data[1][2] + r.data[2][1]) / s;
         (x, y, z, w)
     } else {
-        let s = 2.0 * (1.0 + r[(2, 2)] - r[(0, 0)] - r[(1, 1)]).sqrt();
-        let w = (r[(1, 0)] - r[(0, 1)]) / s;
-        let x = (r[(0, 2)] + r[(2, 0)]) / s;
-        let y = (r[(1, 2)] + r[(2, 1)]) / s;
+        let s = 2.0 * (1.0 + r.data[2][2] - r.data[0][0] - r.data[1][1]).sqrt();
+        let w = (r.data[1][0] - r.data[0][1]) / s;
+        let x = (r.data[0][2] + r.data[2][0]) / s;
+        let y = (r.data[1][2] + r.data[2][1]) / s;
         let z = 0.25 * s;
         (x, y, z, w)
     };
@@ -394,7 +393,7 @@ mod tests {
 
     #[test]
     fn test_rotation_matrix_to_quaternion_identity() {
-        let identity = Matrix3::identity();
+        let identity = Mat3::identity();
         let q = rotation_matrix_to_quaternion(&identity);
 
         // Identity quaternion: [0, 0, 0, 1]
@@ -407,7 +406,11 @@ mod tests {
     #[test]
     fn test_rotation_matrix_to_quaternion_90_y() {
         // 90 degree rotation around Y axis
-        let r = Matrix3::new(0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0);
+        let r = Mat3::new(
+            0.0, 0.0, 1.0,
+            0.0, 1.0, 0.0,
+            -1.0, 0.0, 0.0,
+        );
 
         let q = rotation_matrix_to_quaternion(&r);
 

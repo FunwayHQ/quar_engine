@@ -4,8 +4,10 @@
 //! - Focal length (fx, fy)
 //! - Principal point (cx, cy)
 //! - Point normalization and projection
+//!
+//! Uses pure-Rust types for full WASM compatibility.
 
-use nalgebra::{Matrix3, Vector2, Vector3};
+use crate::tracker::linalg::{Mat3, Vec2, Vec3};
 
 /// Camera intrinsic parameters.
 ///
@@ -82,8 +84,8 @@ impl CameraIntrinsics {
     /// y_norm = (y - cy) / fy
     /// ```
     #[inline]
-    pub fn normalize(&self, pixel: &Vector2<f64>) -> Vector2<f64> {
-        Vector2::new(
+    pub fn normalize(&self, pixel: &Vec2) -> Vec2 {
+        Vec2::new(
             (pixel.x - self.cx) / self.fx,
             (pixel.y - self.cy) / self.fy,
         )
@@ -91,19 +93,19 @@ impl CameraIntrinsics {
 
     /// Normalize a point given as (x, y) tuple.
     #[inline]
-    pub fn normalize_point(&self, x: f64, y: f64) -> Vector2<f64> {
-        Vector2::new((x - self.cx) / self.fx, (y - self.cy) / self.fy)
+    pub fn normalize_point(&self, x: f64, y: f64) -> Vec2 {
+        Vec2::new((x - self.cx) / self.fx, (y - self.cy) / self.fy)
     }
 
     /// Project a 3D point (in camera frame) to pixel coordinates.
     ///
     /// Returns None if the point is behind the camera (z <= 0).
     #[inline]
-    pub fn project(&self, point: &Vector3<f64>) -> Option<Vector2<f64>> {
+    pub fn project(&self, point: &Vec3) -> Option<Vec2> {
         if point.z <= 0.0 {
             return None;
         }
-        Some(Vector2::new(
+        Some(Vec2::new(
             self.fx * point.x / point.z + self.cx,
             self.fy * point.y / point.z + self.cy,
         ))
@@ -113,16 +115,16 @@ impl CameraIntrinsics {
     ///
     /// Returns None if the point is behind the camera (z <= 0).
     #[inline]
-    pub fn project_normalized(&self, point: &Vector3<f64>) -> Option<Vector2<f64>> {
+    pub fn project_normalized(&self, point: &Vec3) -> Option<Vec2> {
         if point.z <= 0.0 {
             return None;
         }
-        Some(Vector2::new(point.x / point.z, point.y / point.z))
+        Some(Vec2::new(point.x / point.z, point.y / point.z))
     }
 
     /// Get the 3x3 intrinsic matrix K.
-    pub fn matrix(&self) -> Matrix3<f64> {
-        Matrix3::new(
+    pub fn matrix(&self) -> Mat3 {
+        Mat3::new(
             self.fx, 0.0, self.cx,
             0.0, self.fy, self.cy,
             0.0, 0.0, 1.0,
@@ -130,8 +132,8 @@ impl CameraIntrinsics {
     }
 
     /// Get the inverse intrinsic matrix K^(-1).
-    pub fn matrix_inverse(&self) -> Matrix3<f64> {
-        Matrix3::new(
+    pub fn matrix_inverse(&self) -> Mat3 {
+        Mat3::new(
             1.0 / self.fx, 0.0, -self.cx / self.fx,
             0.0, 1.0 / self.fy, -self.cy / self.fy,
             0.0, 0.0, 1.0,
@@ -184,7 +186,7 @@ mod tests {
         let cam = CameraIntrinsics::from_fov(640, 480, 60.0);
 
         // Center pixel should normalize to (0, 0)
-        let normalized = cam.normalize(&Vector2::new(320.0, 240.0));
+        let normalized = cam.normalize(&Vec2::new(320.0, 240.0));
         assert!(normalized.x.abs() < 1e-10);
         assert!(normalized.y.abs() < 1e-10);
     }
@@ -194,12 +196,12 @@ mod tests {
         let cam = CameraIntrinsics::from_fov(640, 480, 60.0);
 
         // Top-left corner
-        let normalized = cam.normalize(&Vector2::new(0.0, 0.0));
+        let normalized = cam.normalize(&Vec2::new(0.0, 0.0));
         assert!(normalized.x < 0.0);
         assert!(normalized.y < 0.0);
 
         // Bottom-right corner
-        let normalized = cam.normalize(&Vector2::new(640.0, 480.0));
+        let normalized = cam.normalize(&Vec2::new(640.0, 480.0));
         assert!(normalized.x > 0.0);
         assert!(normalized.y > 0.0);
     }
@@ -209,7 +211,7 @@ mod tests {
         let cam = CameraIntrinsics::from_fov(640, 480, 60.0);
 
         // A 3D point in front of camera
-        let point_3d = Vector3::new(0.5, -0.3, 2.0);
+        let point_3d = Vec3::new(0.5, -0.3, 2.0);
 
         // Project to pixels
         let pixel = cam.project(&point_3d).unwrap();
@@ -221,7 +223,7 @@ mod tests {
         let normalized = cam.normalize(&pixel);
 
         // Should match the original normalized coordinates
-        let expected_norm = Vector2::new(point_3d.x / point_3d.z, point_3d.y / point_3d.z);
+        let expected_norm = Vec2::new(point_3d.x / point_3d.z, point_3d.y / point_3d.z);
         assert!((normalized.x - expected_norm.x).abs() < 1e-10);
         assert!((normalized.y - expected_norm.y).abs() < 1e-10);
     }
@@ -231,11 +233,11 @@ mod tests {
         let cam = CameraIntrinsics::default();
 
         // Point behind camera (negative z)
-        let behind = Vector3::new(0.0, 0.0, -1.0);
+        let behind = Vec3::new(0.0, 0.0, -1.0);
         assert!(cam.project(&behind).is_none());
 
         // Point at camera (z = 0)
-        let at_cam = Vector3::new(0.0, 0.0, 0.0);
+        let at_cam = Vec3::new(0.0, 0.0, 0.0);
         assert!(cam.project(&at_cam).is_none());
     }
 
@@ -244,11 +246,11 @@ mod tests {
         let cam = CameraIntrinsics::new(500.0, 500.0, 320.0, 240.0, 640, 480);
 
         let k = cam.matrix();
-        assert!((k[(0, 0)] - 500.0).abs() < 1e-10);
-        assert!((k[(1, 1)] - 500.0).abs() < 1e-10);
-        assert!((k[(0, 2)] - 320.0).abs() < 1e-10);
-        assert!((k[(1, 2)] - 240.0).abs() < 1e-10);
-        assert!((k[(2, 2)] - 1.0).abs() < 1e-10);
+        assert!((k.data[0][0] - 500.0).abs() < 1e-10);
+        assert!((k.data[1][1] - 500.0).abs() < 1e-10);
+        assert!((k.data[0][2] - 320.0).abs() < 1e-10);
+        assert!((k.data[1][2] - 240.0).abs() < 1e-10);
+        assert!((k.data[2][2] - 1.0).abs() < 1e-10);
     }
 
     #[test]
@@ -259,12 +261,12 @@ mod tests {
         let k_inv = cam.matrix_inverse();
 
         // K * K^(-1) should be identity
-        let product = k * k_inv;
+        let product = k.mul(&k_inv);
         for i in 0..3 {
             for j in 0..3 {
                 let expected = if i == j { 1.0 } else { 0.0 };
                 assert!(
-                    (product[(i, j)] - expected).abs() < 1e-10,
+                    (product.data[i][j] - expected).abs() < 1e-10,
                     "Matrix product not identity at ({}, {})",
                     i,
                     j

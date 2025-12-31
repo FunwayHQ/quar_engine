@@ -9,8 +9,10 @@ mod pyramid;
 mod rotation;
 mod types;
 pub mod essential;
+pub mod essential_pure;
 pub mod triangulation;
 mod tracker_6dof;
+pub mod linalg;
 
 pub use optical_flow::LucasKanadeTracker;
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -258,13 +260,113 @@ impl Default for TrackerHandle {
     }
 }
 
-// 6DoF Tracker WASM bindings temporarily disabled.
-// The issue is that nalgebra's matrix operations (try_inverse, LU, SVD)
-// have WASM compatibility issues with the type system.
-// The Tracker6DoF struct is fully functional for native Rust usage.
-//
-// TODO: Fix by implementing pure-Rust matrix operations without nalgebra's
-// generic implementations that cause WASM type mismatches.
+// 6DoF Tracker WASM bindings
+// Uses pure-Rust linear algebra implementations for WASM compatibility.
+
+/// Opaque handle to a 6DoF tracker instance.
+#[wasm_bindgen]
+pub struct Tracker6DoFHandle {
+    tracker: Tracker6DoF,
+}
+
+#[wasm_bindgen]
+impl Tracker6DoFHandle {
+    /// Create a new 6DoF tracker.
+    #[wasm_bindgen(constructor)]
+    pub fn new(width: u32, height: u32) -> Tracker6DoFHandle {
+        Tracker6DoFHandle {
+            tracker: Tracker6DoF::new(width, height),
+        }
+    }
+
+    /// Process a frame and return the 6DoF pose as JSON.
+    #[wasm_bindgen]
+    pub fn process_frame(&mut self, rgba: &[u8], width: u32, height: u32) -> JsValue {
+        match self.tracker.process_frame(rgba, width, height) {
+            Some(pose) => serde_wasm_bindgen::to_value(&pose).unwrap_or(JsValue::NULL),
+            None => JsValue::NULL,
+        }
+    }
+
+    /// Test Essential matrix computation (for WASM debugging).
+    #[wasm_bindgen]
+    pub fn test_essential() -> bool {
+        use crate::tracker::linalg::{Mat3, Vec2, Vec3};
+        use crate::tracker::essential_pure;
+
+        // Create synthetic test data
+        let r = Mat3::identity();
+        let t = Vec3::new(1.0, 0.0, 0.0);
+        let t_norm = t.normalize();
+
+        // Create a few 3D points
+        let p1 = Vec3::new(0.0, 0.0, 5.0);
+        let p2 = Vec3::new(1.0, 0.0, 4.0);
+        let p3 = Vec3::new(-1.0, 0.0, 6.0);
+        let p4 = Vec3::new(0.0, 1.0, 5.0);
+        let p5 = Vec3::new(0.0, -1.0, 5.0);
+        let p6 = Vec3::new(1.0, 1.0, 4.5);
+        let p7 = Vec3::new(-1.0, -1.0, 5.5);
+        let p8 = Vec3::new(0.5, 0.5, 4.0);
+
+        let points_3d = [p1, p2, p3, p4, p5, p6, p7, p8];
+
+        // Project to first camera (identity)
+        let points1: Vec<Vec2> = points_3d
+            .iter()
+            .map(|p| Vec2::new(p.x / p.z, p.y / p.z))
+            .collect();
+
+        // Project to second camera (R, t)
+        let points2: Vec<Vec2> = points_3d
+            .iter()
+            .map(|p| {
+                let p2 = r.mul_vec(p).add(&t_norm);
+                Vec2::new(p2.x / p2.z, p2.y / p2.z)
+            })
+            .collect();
+
+        // Compute Essential matrix
+        let e_opt = essential_pure::compute_essential_matrix(&points1, &points2);
+        e_opt.is_some()
+    }
+
+    /// Reset the tracker.
+    #[wasm_bindgen]
+    pub fn reset(&mut self) {
+        self.tracker.reset();
+    }
+
+    /// Get the number of tracked points.
+    #[wasm_bindgen]
+    pub fn tracked_points(&self) -> usize {
+        self.tracker.tracked_point_count()
+    }
+
+    /// Get the current pose as JSON.
+    #[wasm_bindgen]
+    pub fn get_pose(&self) -> JsValue {
+        serde_wasm_bindgen::to_value(&self.tracker.get_pose()).unwrap_or(JsValue::NULL)
+    }
+
+    /// Get the current scale estimate.
+    #[wasm_bindgen]
+    pub fn get_scale(&self) -> f32 {
+        self.tracker.get_scale()
+    }
+
+    /// Set the scale manually.
+    #[wasm_bindgen]
+    pub fn set_scale(&mut self, scale: f32) {
+        self.tracker.set_scale(scale);
+    }
+}
+
+impl Default for Tracker6DoFHandle {
+    fn default() -> Self {
+        Self::new(640, 480)
+    }
+}
 
 #[cfg(test)]
 mod tests {

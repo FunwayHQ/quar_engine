@@ -289,16 +289,15 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF Visual Tracking Preview</p>
+      <p>6DoF Visual Tracking Demo</p>
       <div class="features">
         <span>Essential Matrix</span>
         <span>RANSAC</span>
-        <span>Triangulation</span>
-        <span>Translation (Simulated*)</span>
+        <span>Pure-Rust SVD</span>
+        <span>Real 6DoF</span>
       </div>
-      <p style="font-size: 11px; color: #666; margin-top: 15px; max-width: 300px;">
-        *Full 6DoF with Essential matrix translation is implemented in Rust.
-        WASM bindings coming soon.
+      <p style="font-size: 11px; color: #4ade80; margin-top: 15px; max-width: 300px;">
+        Full 6DoF tracking with Essential matrix decomposition running in WebAssembly!
       </p>
       <button id="start-btn">Start Tracking</button>
     </div>
@@ -314,10 +313,8 @@
 
   <script type="module">
     import * as THREE from 'three';
-    // Note: Full 6DoF tracking (Tracker6DoFHandle) is available in native Rust
-    // but has WASM compatibility issues with DMatrix/SVD. Using 3DoF tracker
-    // with simulated translation for demo purposes.
-    import init, { TrackerHandle, version } from './pkg/quar_engine.js';
+    // Full 6DoF tracking using Tracker6DoFHandle with Essential matrix decomposition
+    import init, { Tracker6DoFHandle, version } from '../pkg/quar_engine.js';
 
     // DOM elements
     const videoCanvas = document.getElementById('video-canvas');
@@ -366,15 +363,14 @@
     let lastPosition = new THREE.Vector3();
     let currentScale = 0.01;
 
-    // Simulated translation from optical flow
-    let simulatedTranslation = new THREE.Vector3(0, 0, 0);
-    let lastEuler = new THREE.Euler();
-
-    // Scale slider
+    // Scale slider - updates the tracker's scale
     scaleSlider.addEventListener('input', (e) => {
       currentScale = parseFloat(e.target.value);
       scaleVal.textContent = currentScale.toFixed(3);
       scaleDisplay.textContent = currentScale.toFixed(3);
+      if (trackerHandle) {
+        trackerHandle.set_scale(currentScale);
+      }
     });
 
     // Trajectory toggle
@@ -550,7 +546,7 @@
           pCtx.drawImage(video, 0, 0, 640, 480);
           const imgData = pCtx.getImageData(0, 0, 640, 480);
 
-          // Get 6DoF pose
+          // Get 6DoF pose from Essential matrix decomposition
           const pose = trackerHandle.process_frame(imgData.data, 640, 480);
           const tracked = trackerHandle.tracked_points();
 
@@ -560,22 +556,16 @@
             stateEl.textContent = 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Extract rotation (quaternion to euler)
+            // Get rotation (quaternion)
             const q = pose.rotation;
             const quat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
             const euler = new THREE.Euler().setFromQuaternion(quat);
 
-            // Simulate translation from rotation changes
-            // This approximates forward/sideways motion from camera rotation
-            const deltaX = (euler.y - lastEuler.y) * currentScale * 10;
-            const deltaZ = (euler.x - lastEuler.x) * currentScale * 10;
-            simulatedTranslation.x += deltaX;
-            simulatedTranslation.z -= deltaZ;
-            lastEuler.copy(euler);
-
-            const tx = simulatedTranslation.x;
-            const ty = simulatedTranslation.y;
-            const tz = simulatedTranslation.z;
+            // Get translation (from Essential matrix decomposition)
+            const t = pose.translation;
+            const tx = t[0];
+            const ty = t[1];
+            const tz = t[2];
 
             // Update pose display
             txEl.textContent = tx.toFixed(3);
@@ -617,8 +607,9 @@
             stateEl.style.color = '#f87171';
           }
 
-          // Update scale display
-          scaleDisplay.textContent = currentScale.toFixed(3);
+          // Update scale display from tracker
+          const trackerScale = trackerHandle.get_scale();
+          scaleDisplay.textContent = trackerScale.toFixed(3);
         }
       }
 
@@ -631,13 +622,12 @@
     function reset() {
       if (trackerHandle) {
         trackerHandle.reset();
+        trackerHandle.set_scale(currentScale);
       }
 
       // Reset tracking state
       totalDistance = 0;
       lastPosition.set(0, 0, 0);
-      simulatedTranslation.set(0, 0, 0);
-      lastEuler.set(0, 0, 0);
 
       // Reset camera
       camera.position.set(0, 1, 3);
@@ -668,9 +658,10 @@
         await loadWasm();
         await startCamera();
 
-        // Create tracker (using 3DoF with simulated translation)
-        trackerHandle = new TrackerHandle();
-        console.log('Tracker created (3DoF with simulated translation)');
+        // Create 6DoF tracker with Essential matrix decomposition
+        trackerHandle = new Tracker6DoFHandle(640, 480);
+        trackerHandle.set_scale(currentScale);
+        console.log('6DoF Tracker created (Essential matrix + RANSAC)');
 
         initThreeJS();
         onResize();
@@ -686,7 +677,7 @@
         console.error(err);
         alert('Error: ' + err.message);
         startBtn.disabled = false;
-        startBtn.textContent = 'Start 6DoF Tracking';
+        startBtn.textContent = 'Start Tracking';
       }
     });
 
