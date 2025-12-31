@@ -380,15 +380,19 @@
     let lastPosition = new THREE.Vector3();
     let currentScale = 0.01;
 
-    // Smoothing for stable tracking
+    // IMU Fusion state (from advanced-demo.html)
+    let gyroOrientation = { x: 0, y: 0, z: 0 };
+    let visualOrientation = { x: 0, y: 0, z: 0 };
+    let fusedOrientation = { x: 0, y: 0, z: 0 };
+    let lastGyroTime = 0;
+    let gyroInitialized = false;
+    let gyroActive = false;
+    const GYRO_ALPHA = 0.98;  // 98% gyro, 2% visual
+    const VISUAL_SMOOTHING = 0.15;
+    let sensitivity = 1.0;
+
+    // Translation tracking
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
-    let smoothedQuaternion = new THREE.Quaternion(0, 0, 0, 1);
-    let lastRawQuaternion = new THREE.Quaternion(0, 0, 0, 1);
-    const positionSmoothing = 0.03; // Much lower = much smoother
-    const rotationSmoothing = 0.02; // Much lower = much smoother rotations
-    let lastValidPose = null;
-    let poseConfidence = 0;
-    let framesSinceGoodPose = 0;
 
     // Scale slider - updates the tracker's scale
     scaleSlider.addEventListener('input', (e) => {
@@ -403,6 +407,62 @@
         trajectoryLine.visible = e.target.checked;
       }
     });
+
+    // Gyroscope handler - integrates rotation for stable AR
+    function handleGyro(event) {
+      if (!event.rotationRate) return;
+
+      const now = performance.now();
+      if (!gyroInitialized) {
+        lastGyroTime = now;
+        gyroInitialized = true;
+        return;
+      }
+
+      const dt = (now - lastGyroTime) / 1000;
+      lastGyroTime = now;
+
+      const degToRad = Math.PI / 180;
+      const betaRate = (event.rotationRate.beta || 0) * degToRad;
+      const gammaRate = (event.rotationRate.gamma || 0) * degToRad;
+      const alphaRate = (event.rotationRate.alpha || 0) * degToRad;
+
+      // Integrate gyro
+      gyroOrientation.x += betaRate * dt;
+      gyroOrientation.y += gammaRate * dt;
+      gyroOrientation.z += alphaRate * dt;
+
+      // Complementary filter
+      fusedOrientation.x = GYRO_ALPHA * gyroOrientation.x + (1 - GYRO_ALPHA) * visualOrientation.x;
+      fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
+      fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
+
+      // Apply to camera - this makes objects appear fixed in real world
+      if (isRunning && camera) {
+        camera.rotation.x = fusedOrientation.z * sensitivity;
+        camera.rotation.y = fusedOrientation.x * sensitivity;
+        camera.rotation.z = fusedOrientation.y * sensitivity;
+      }
+
+      gyroActive = true;
+    }
+
+    async function requestIMUPermission() {
+      if (typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function') {
+        try {
+          const response = await DeviceMotionEvent.requestPermission();
+          return response === 'granted';
+        } catch (e) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function setupIMU() {
+      window.addEventListener('devicemotion', handleGyro);
+    }
 
     async function loadWasm() {
       await init();
@@ -686,50 +746,52 @@
           featuresEl.textContent = tracked;
 
           if (pose && tracked >= 8) {
-            // Get rotation (quaternion) from optical flow
+            // Get rotation from optical flow and update visual orientation
             const q = pose.rotation || [0, 0, 0, 1];
-            let rawQuat = new THREE.Quaternion(
-              q[0] ?? q.x ?? 0,
-              q[1] ?? q.y ?? 0,
-              q[2] ?? q.z ?? 0,
-              q[3] ?? q.w ?? 1
-            );
+            const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+            const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
-            // CRITICAL: Fix quaternion sign flip (q and -q are the same rotation)
-            if (rawQuat.dot(lastRawQuaternion) < 0) {
-              rawQuat.set(-rawQuat.x, -rawQuat.y, -rawQuat.z, -rawQuat.w);
+            // Update visual orientation with smoothing
+            visualOrientation.x += (euler.x - visualOrientation.x) * VISUAL_SMOOTHING;
+            visualOrientation.y += (euler.z - visualOrientation.y) * VISUAL_SMOOTHING;
+            visualOrientation.z += (euler.y - visualOrientation.z) * VISUAL_SMOOTHING;
+
+            // If no gyro, use visual-only for camera rotation
+            if (!gyroActive) {
+              camera.rotation.x = visualOrientation.x;
+              camera.rotation.y = visualOrientation.z;
+              camera.rotation.z = -visualOrientation.y;
             }
-            lastRawQuaternion.copy(rawQuat);
 
-            // Optical flow tracker: translation is from accumulated pose
-            // but it's less reliable, so we scale it down
+            // Translation tracking
             const t = pose.translation || [0, 0, 0];
             const rawPosition = new THREE.Vector3(
-              (t[0] ?? 0) * currentScale,
-              (t[1] ?? 0) * currentScale,
-              (t[2] ?? 0) * currentScale
+              (t[0] ?? 0) * currentScale * 50,
+              (t[1] ?? 0) * currentScale * 50,
+              (t[2] ?? 0) * currentScale * 50
+            );
+            smoothedPosition.lerp(rawPosition, 0.1);
+
+            // Move camera position based on translation
+            camera.position.set(
+              smoothedPosition.x,
+              smoothedPosition.y,
+              3 + smoothedPosition.z
             );
 
-            // Moderate smoothing - optical flow is more stable than Essential matrix
-            smoothedQuaternion.slerp(rawQuat, 0.15); // 15% per frame
-            smoothedPosition.lerp(rawPosition, 0.1);  // 10% per frame
-
             // Update state
-            stateEl.textContent = 'tracking';
+            stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Get euler from smoothed quaternion for display
-            const euler = new THREE.Euler().setFromQuaternion(smoothedQuaternion);
-
-            // Update pose display (show smoothed values)
+            // Update pose display
             txEl.textContent = smoothedPosition.x.toFixed(3);
             tyEl.textContent = smoothedPosition.y.toFixed(3);
             tzEl.textContent = smoothedPosition.z.toFixed(3);
 
             const toDeg = 180 / Math.PI;
-            rxEl.textContent = (euler.x * toDeg).toFixed(1);
-            ryEl.textContent = (euler.y * toDeg).toFixed(1);
-            rzEl.textContent = (euler.z * toDeg).toFixed(1);
+            rxEl.textContent = (camera.rotation.x * toDeg).toFixed(1);
+            ryEl.textContent = (camera.rotation.y * toDeg).toFixed(1);
+            rzEl.textContent = (camera.rotation.z * toDeg).toFixed(1);
 
             // Calculate distance traveled (using smoothed position)
             if (lastPosition.lengthSq() > 0) {
@@ -741,23 +803,11 @@
             lastPosition.copy(smoothedPosition);
             distanceEl.textContent = totalDistance.toFixed(3);
 
-            // AR anchoring: rotate scene OPPOSITE to camera rotation
-            // When phone rotates RIGHT, scene rotates LEFT relative to camera
-            // This makes objects appear anchored in real world
+            // arGroup stays at world origin - camera moves around it
+            // This is handled by camera.rotation and camera.position above
 
-            // Get inverse of tracked rotation
-            const inverseRot = smoothedQuaternion.clone().invert();
-            arGroup.quaternion.copy(inverseRot);
-
-            // Translation: move scene opposite to camera movement
-            arGroup.position.set(
-              -smoothedPosition.x * 50,  // Amplify translation
-              -smoothedPosition.y * 50,
-              -smoothedPosition.z * 50
-            );
-
-            // Add to trajectory (less frequently, using smoothed position)
-            if (showTrajectoryCheckbox.checked && poseConfidence > 0.3) {
+            // Add to trajectory
+            if (showTrajectoryCheckbox.checked) {
               if (frameCount % 5 === 0) {
                 updateTrajectory(smoothedPosition.clone());
               }
@@ -810,18 +860,18 @@
       totalDistance = 0;
       lastPosition.set(0, 0, 0);
       smoothedPosition.set(0, 0, 0);
-      smoothedQuaternion.set(0, 0, 0, 1);
-      lastRawQuaternion.set(0, 0, 0, 1);
-      lastValidPose = null;
-      poseConfidence = 0;
-      framesSinceGoodPose = 0;
+
+      // Reset IMU fusion state
+      gyroOrientation = { x: 0, y: 0, z: 0 };
+      visualOrientation = { x: 0, y: 0, z: 0 };
+      fusedOrientation = { x: 0, y: 0, z: 0 };
+      gyroInitialized = false;
 
       // Reset camera
-      camera.position.set(0, 1, 3);
-      camera.quaternion.set(0, 0, 0, 1);
-      camera.lookAt(0, 0, 0);
+      camera.position.set(0, 0, 3);
+      camera.rotation.set(0, 0, 0);
 
-      // Ensure arGroup is at origin (scene stays fixed)
+      // arGroup stays at world origin
       arGroup.position.set(0, 0, 0);
       arGroup.quaternion.set(0, 0, 0, 1);
 
@@ -848,15 +898,19 @@
         startBtn.disabled = true;
         startBtn.textContent = 'Loading...';
 
+        // Request IMU permission first (must be in user gesture)
+        await requestIMUPermission();
+
         await loadWasm();
         await startCamera();
 
-        // Create optical flow tracker (simpler, more stable than Essential matrix)
+        // Create optical flow tracker
         trackerHandle = new TrackerHandle();
         console.log('Optical flow tracker created');
 
         initThreeJS();
         onResize();
+        setupIMU();
 
         startOverlay.classList.add('hidden');
         resetBtn.disabled = false;
