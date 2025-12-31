@@ -712,27 +712,28 @@
               t[2] ?? t.z ?? 0
             );
 
-            // Strict outlier rejection - Essential matrix is very noisy
+            // Relaxed outlier rejection - Essential matrix is very noisy
+            // We rely more on smoothing than rejection
             let isValidPose = true;
             const rotationDelta = rawQuat.angleTo(lastRawQuaternion);
 
-            // Reject if rotation changed too much (> 15 degrees per frame is unrealistic)
-            if (rotationDelta > 0.26) { // ~15 degrees in radians
+            // Only reject extreme jumps (> 60 degrees per frame)
+            if (rotationDelta > 1.05) { // ~60 degrees in radians
               isValidPose = false;
               framesSinceGoodPose++;
             }
 
-            // Also reject wild position jumps
+            // Only reject extreme position jumps (> 20cm per frame)
             if (lastValidPose) {
               const positionDelta = rawPosition.distanceTo(lastValidPose.position);
-              if (positionDelta > 0.05) { // 5cm per frame max
+              if (positionDelta > 0.2) {
                 isValidPose = false;
               }
             }
 
             if (isValidPose) {
               framesSinceGoodPose = 0;
-              poseConfidence = Math.min(1, poseConfidence + 0.02);
+              poseConfidence = Math.min(1, poseConfidence + 0.05); // Faster confidence gain
 
               lastValidPose = {
                 position: rawPosition.clone(),
