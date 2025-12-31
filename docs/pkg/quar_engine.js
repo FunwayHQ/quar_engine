@@ -1932,6 +1932,17 @@ export class Tracker6DoFHandle {
         return ret;
     }
     /**
+     * Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
+     * Points are in camera/world coordinates (scaled by current scale factor).
+     * @returns {Float64Array}
+     */
+    get_map_points() {
+        const ret = wasm.tracker6dofhandle_get_map_points(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
      * Get IMU buffer length (number of IMU samples stored).
      * @returns {number}
      */
@@ -1972,6 +1983,14 @@ export class Tracker6DoFHandle {
         return ret;
     }
     /**
+     * Get the number of triangulated 3D map points.
+     * @returns {number}
+     */
+    map_point_count() {
+        const ret = wasm.tracker6dofhandle_map_point_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Enable or disable VIO (Visual-Inertial Odometry) mode.
      * @param {boolean} enabled
      */
@@ -1983,6 +2002,12 @@ export class Tracker6DoFHandle {
      */
     clear_imu_buffer() {
         wasm.tracker6dofhandle_clear_imu_buffer(this.__wbg_ptr);
+    }
+    /**
+     * Clear all map points.
+     */
+    clear_map_points() {
+        wasm.tracker6dofhandle_clear_map_points(this.__wbg_ptr);
     }
     /**
      * Reset the stabilizer.

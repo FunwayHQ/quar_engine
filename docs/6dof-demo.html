@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v18 Plane Fix)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v19 Real Map Points)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -1395,15 +1395,22 @@
 
               // Plane detection - run every 30 frames (~0.5 sec at 60fps)
               if (planeDetector && totalFrames % 30 === 0) {
-                // Generate floor points in WORLD SPACE (fixed grid)
-                // In production, these come from triangulated map points
-                // Only generate initial points once, then keep them fixed
-                if (mapPoints3D.length < 300) {
-                  // Create a fixed 3m x 3m grid of floor points at y = -0.5m (world space)
+                // Get REAL triangulated map points from tracker
+                // These are 3D points triangulated from feature correspondences
+                const realMapPoints = tracker6dof.get_map_points();
+                const mapPointCount = tracker6dof.map_point_count();
+
+                // Use real triangulated points if we have any
+                if (realMapPoints && realMapPoints.length >= 30) {
+                  mapPoints3D = Array.from(realMapPoints);
+                  console.log(`Using ${mapPointCount} real triangulated points for plane detection`);
+                } else if (mapPoints3D.length < 300) {
+                  // Fallback: Generate simulated floor points only if no real points yet
+                  // This ensures the demo works while waiting for enough triangulation
                   for (let i = 0; i < 10; i++) {
-                    const px = (Math.random() - 0.5) * 3.0;  // -1.5m to +1.5m in world X
-                    const py = -0.5 + (Math.random() - 0.5) * 0.02; // Floor at y=-0.5m with small noise
-                    const pz = (Math.random() - 0.5) * 3.0;  // -1.5m to +1.5m in world Z
+                    const px = (Math.random() - 0.5) * 3.0;
+                    const py = -0.5 + (Math.random() - 0.5) * 0.02;
+                    const pz = (Math.random() - 0.5) * 3.0;
                     mapPoints3D.push(px, py, pz);
                   }
                 }
@@ -1411,7 +1418,7 @@
                 // Run plane detection if we have enough points
                 if (mapPoints3D.length >= 30) {
                   const numPlanes = planeDetector.detect_planes(new Float64Array(mapPoints3D));
-                  planeCountEl.textContent = numPlanes;
+                  planeCountEl.textContent = `${numPlanes} (${mapPointCount} pts)`;
 
                   const floor = planeDetector.get_floor_plane();
                   if (floor) {
@@ -1445,6 +1452,7 @@
               console.log(`Accumulated: [${accumulatedPosition.x.toFixed(4)}, ${accumulatedPosition.y.toFixed(4)}, ${accumulatedPosition.z.toFixed(4)}]`);
               console.log(`Smoothed: [${smoothedPosition.x.toFixed(4)}, ${smoothedPosition.y.toFixed(4)}, ${smoothedPosition.z.toFixed(4)}]`);
               console.log(`arGroup.position: [${arGroup.position.x.toFixed(4)}, ${arGroup.position.y.toFixed(4)}, ${arGroup.position.z.toFixed(4)}]`);
+              console.log(`Map Points: ${tracker6dof.map_point_count()} triangulated 3D points`);
             }
 
             // Update state

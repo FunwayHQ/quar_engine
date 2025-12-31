@@ -1016,6 +1016,27 @@ impl Tracker6DoFHandle {
     pub fn reset_stabilizer(&mut self) {
         self.tracker.reset_stabilizer();
     }
+
+    // ==================== Map Points Methods ====================
+
+    /// Get the number of triangulated 3D map points.
+    #[wasm_bindgen]
+    pub fn map_point_count(&self) -> usize {
+        self.tracker.map_point_count()
+    }
+
+    /// Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
+    /// Points are in camera/world coordinates (scaled by current scale factor).
+    #[wasm_bindgen]
+    pub fn get_map_points(&self) -> Vec<f64> {
+        self.tracker.get_map_points()
+    }
+
+    /// Clear all map points.
+    #[wasm_bindgen]
+    pub fn clear_map_points(&mut self) {
+        self.tracker.clear_map_points();
+    }
 }
 
 impl Default for Tracker6DoFHandle {

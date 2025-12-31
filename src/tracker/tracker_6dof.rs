@@ -18,6 +18,7 @@ use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
 use super::scale_estimator::{ScaleEstimator, GravityEstimator};
 use super::accelerometer::{AccelIntegrator};
 use super::stabilization::PositionStabilizer;
+use super::triangulation::triangulate_valid_points;
 use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
 
@@ -108,6 +109,10 @@ pub struct Tracker6DoF {
     accel_integrator: AccelIntegrator,
     /// Position stabilizer for drift correction
     stabilizer: PositionStabilizer,
+    /// Triangulated 3D map points (in world/first-camera frame)
+    map_points_3d: Vec<Vec3>,
+    /// Maximum number of map points to store
+    max_map_points: usize,
 }
 
 impl Tracker6DoF {
@@ -150,6 +155,8 @@ impl Tracker6DoF {
             vio_initialized: false,
             accel_integrator: AccelIntegrator::new(),
             stabilizer: PositionStabilizer::new(),
+            map_points_3d: Vec::new(),
+            max_map_points: 500, // Keep up to 500 map points
         }
     }
 
@@ -336,6 +343,40 @@ impl Tracker6DoF {
             self.last_rotation = Some(best.rotation);
             self.last_translation = Some(best.translation);
 
+            // Triangulate 3D points and store as map points
+            // Only triangulate when we have good parallax for reliable depth
+            if max_parallax > self.config.min_parallax * 2.0 {
+                let valid_points = triangulate_valid_points(
+                    &inlier_prev,
+                    &inlier_curr,
+                    &best.rotation,
+                    &best.translation,
+                );
+
+                // Transform triangulated points to world coordinates and add to map
+                // Note: triangulated points are in camera 1's frame (previous frame)
+                // We need to transform them using accumulated pose
+                for (_idx, point_cam) in valid_points.iter() {
+                    // Scale the point by our scale factor
+                    let scaled_point = Vec3::new(
+                        point_cam.x * self.scale as f64,
+                        point_cam.y * self.scale as f64,
+                        point_cam.z * self.scale as f64,
+                    );
+
+                    // Only add if point is in reasonable depth range (0.1m to 20m)
+                    let depth = scaled_point.z;
+                    if depth > 0.1 && depth < 20.0 {
+                        // Add to map points, maintaining max size
+                        if self.map_points_3d.len() >= self.max_map_points {
+                            // Remove oldest point (FIFO)
+                            self.map_points_3d.remove(0);
+                        }
+                        self.map_points_3d.push(scaled_point);
+                    }
+                }
+            }
+
             // Refine scale if using triangulation method
             if self.config.scale_method == ScaleMethod::Triangulation {
                 self.refine_scale(&inlier_prev, &inlier_curr, &best);
@@ -412,6 +453,7 @@ impl Tracker6DoF {
         self.last_preintegration = None;
         self.vio_initialized = false;
         self.accel_integrator.reset();
+        self.map_points_3d.clear();
     }
 
     /// Get the current pose.
@@ -447,6 +489,30 @@ impl Tracker6DoF {
     /// Get the current velocity estimate from Kalman filter.
     pub fn get_velocity(&self) -> [f32; 3] {
         self.motion_state.velocity_f32()
+    }
+
+    // ==================== Map Points Methods ====================
+
+    /// Get the number of triangulated map points.
+    pub fn map_point_count(&self) -> usize {
+        self.map_points_3d.len()
+    }
+
+    /// Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
+    /// Points are in camera/world coordinates (scaled by current scale factor).
+    pub fn get_map_points(&self) -> Vec<f64> {
+        let mut result = Vec::with_capacity(self.map_points_3d.len() * 3);
+        for p in &self.map_points_3d {
+            result.push(p.x);
+            result.push(p.y);
+            result.push(p.z);
+        }
+        result
+    }
+
+    /// Clear all map points (e.g., when relocalization is needed).
+    pub fn clear_map_points(&mut self) {
+        self.map_points_3d.clear();
     }
 
     // ==================== VIO Methods ====================

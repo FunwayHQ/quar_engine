@@ -532,6 +532,11 @@ export class Tracker6DoFHandle {
    */
   process_frame(rgba: Uint8Array, width: number, height: number): any;
   /**
+   * Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
+   * Points are in camera/world coordinates (scaled by current scale factor).
+   */
+  get_map_points(): Float64Array;
+  /**
    * Get IMU buffer length (number of IMU samples stored).
    */
   imu_buffer_len(): number;
@@ -552,6 +557,10 @@ export class Tracker6DoFHandle {
    */
   get_accel_speed(): number;
   /**
+   * Get the number of triangulated 3D map points.
+   */
+  map_point_count(): number;
+  /**
    * Enable or disable VIO (Visual-Inertial Odometry) mode.
    */
   set_vio_enabled(enabled: boolean): void;
@@ -559,6 +568,10 @@ export class Tracker6DoFHandle {
    * Clear the IMU buffer.
    */
   clear_imu_buffer(): void;
+  /**
+   * Clear all map points.
+   */
+  clear_map_points(): void;
   /**
    * Reset the stabilizer.
    */
@@ -958,10 +971,12 @@ export interface InitOutput {
   readonly timingreport_to_json: (a: number) => [number, number];
   readonly tracker6dofhandle_apply_stabilization: (a: number) => void;
   readonly tracker6dofhandle_clear_imu_buffer: (a: number) => void;
+  readonly tracker6dofhandle_clear_map_points: (a: number) => void;
   readonly tracker6dofhandle_get_accel_position: (a: number) => [number, number];
   readonly tracker6dofhandle_get_accel_speed: (a: number) => number;
   readonly tracker6dofhandle_get_accel_velocity: (a: number) => [number, number];
   readonly tracker6dofhandle_get_gravity: (a: number) => [number, number];
+  readonly tracker6dofhandle_get_map_points: (a: number) => [number, number];
   readonly tracker6dofhandle_get_pose: (a: number) => any;
   readonly tracker6dofhandle_get_scale: (a: number) => number;
   readonly tracker6dofhandle_get_scale_confidence: (a: number) => number;
@@ -972,6 +987,7 @@ export interface InitOutput {
   readonly tracker6dofhandle_is_stationary: (a: number) => number;
   readonly tracker6dofhandle_is_vio_enabled: (a: number) => number;
   readonly tracker6dofhandle_is_vio_initialized: (a: number) => number;
+  readonly tracker6dofhandle_map_point_count: (a: number) => number;
   readonly tracker6dofhandle_new: (a: number, b: number) => number;
   readonly tracker6dofhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly tracker6dofhandle_process_frame_vio: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
