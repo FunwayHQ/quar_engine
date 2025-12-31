@@ -33,6 +33,9 @@ export * from './performance';
 // Re-export IMU module
 export * from './imu';
 
+// Re-export AR module
+export * from './ar';
+
 // WASM module type definitions
 interface WasmModule {
   default: () => Promise<void>;
