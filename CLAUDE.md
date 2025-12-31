@@ -30,10 +30,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 23: Accelerometer-Aided Translation** - ZUPT detection, gravity removal, accelerometer integration with drift mitigation
 - **Sprint 24: Position Stabilization** - Multi-sensor stationary detection, position anchoring, drift decay, visual anchors
 - **Sprint 8 (VIO): IMU Preintegration** - Full accelerometer+gyro fusion, IMU preintegration (Forster et al.), scale estimation from IMU, gravity estimation, bias correction
+- **Sprint 19: Plane Detection & Hit Testing** - RANSAC plane fitting, plane classification (horizontal/vertical), ray-plane intersection, hit testing API
 
 ### Current Status
-- **Full 6DoF tracking with VIO and mapping in WASM** (~99KB gzipped)
-- 298 unit tests passing
+- **Full 6DoF tracking with VIO, mapping, and plane detection in WASM** (~111KB gzipped)
+- 333 unit tests passing
 - Pure-Rust linear algebra (no external math dependencies)
 - RANSAC-based outlier rejection for stable tracking
 - Tracking confidence levels (Lost/Low/Medium/High)
@@ -43,6 +44,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Position stabilization with drift correction
 - ORB descriptors for feature matching
 - Keyframe management and covisibility graph
+- Plane detection with hit testing
 
 ### Known Issues / Debug Notes
 - **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
