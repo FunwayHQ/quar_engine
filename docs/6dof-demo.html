@@ -275,7 +275,7 @@
       </div>
       <div class="stat">
         <span class="stat-label">Scale: </span>
-        <span class="stat-value" id="scale-display">0.50</span>
+        <span class="stat-value" id="scale-display">2.00</span>
       </div>
       <div class="stat">
         <span class="stat-label">Gyro: </span>
@@ -351,8 +351,8 @@
         <div class="slider-group">
           <div class="slider-row">
             <label>Master:</label>
-            <input type="range" id="scale-slider" min="0.1" max="5" step="0.1" value="0.5">
-            <span class="value" id="scale-val">0.50</span>
+            <input type="range" id="scale-slider" min="0.1" max="10" step="0.1" value="2.0">
+            <span class="value" id="scale-val">2.00</span>
           </div>
         </div>
 
@@ -369,8 +369,8 @@
           </div>
           <div class="slider-row">
             <label style="color:#60a5fa">Z (F/B):</label>
-            <input type="range" id="z-scale-slider" min="0" max="3" step="0.1" value="1.0">
-            <span class="value" id="z-scale-val">1.0</span>
+            <input type="range" id="z-scale-slider" min="0" max="10" step="0.1" value="3.0">
+            <span class="value" id="z-scale-val">3.0</span>
           </div>
         </div>
 
@@ -382,13 +382,13 @@
           </div>
           <div class="slider-row">
             <label>Dead Zone:</label>
-            <input type="range" id="deadzone-slider" min="0" max="0.5" step="0.01" value="0.05">
-            <span class="value" id="deadzone-val">0.05</span>
+            <input type="range" id="deadzone-slider" min="0" max="0.1" step="0.001" value="0.001">
+            <span class="value" id="deadzone-val">0.001</span>
           </div>
           <div class="slider-row">
             <label>Rot Filter:</label>
-            <input type="range" id="rot-filter-slider" min="0" max="5" step="0.5" value="2">
-            <span class="value" id="rot-filter-val">2.0</span>
+            <input type="range" id="rot-filter-slider" min="0" max="5" step="0.1" value="0.5">
+            <span class="value" id="rot-filter-val">0.5</span>
           </div>
           <div class="slider-row">
             <label>Invert Z:</label>
@@ -507,17 +507,18 @@
     // FPS counter
     let frameCount = 0;
     let lastFpsTime = 0;
+    let totalFrames = 0;  // Never resets, for debug logging
 
     // Tracking state
     let totalDistance = 0;
     let lastPosition = new THREE.Vector3();
-    let currentScale = 0.5;  // Master scale
+    let currentScale = 2.0;  // Master scale (increased from 0.5 - raw values are small)
     let xScale = 1.0;        // X axis multiplier
     let yScale = 1.0;        // Y axis multiplier
-    let zScale = 1.0;        // Z axis multiplier
+    let zScale = 3.0;        // Z axis multiplier (default 3x to compensate for smaller radial signal)
     let smoothing = 0.3;     // Smoothing factor (0-1, lower = smoother)
-    let deadzone = 0.05;     // Dead zone threshold
-    let rotFilter = 2.0;     // Rotation suppression multiplier
+    let deadzone = 0.001;    // Dead zone threshold (was 0.05 - too high for small deltas)
+    let rotFilter = 0.5;     // Rotation suppression multiplier (lowered from 2.0)
     let invertZ = false;     // Invert Z direction
 
     // IMU Fusion state (from advanced-demo.html)
@@ -566,7 +567,7 @@
     });
     deadzoneSlider.addEventListener('input', (e) => {
       deadzone = parseFloat(e.target.value);
-      deadzoneVal.textContent = deadzone.toFixed(2);
+      deadzoneVal.textContent = deadzone.toFixed(3);
     });
     const rotFilterSlider = document.getElementById('rot-filter-slider');
     const rotFilterVal = document.getElementById('rot-filter-val');
@@ -906,6 +907,7 @@
       if (!isRunning) return;
 
       frameCount++;
+      totalFrames++;
       const now = performance.now();
       if (now - lastFpsTime >= 1000) {
         fpsEl.textContent = frameCount;
@@ -953,10 +955,10 @@
           const confidenceNames = ['LOST', 'LOW', 'MEDIUM', 'HIGH'];
           const confidenceColors = ['#f87171', '#facc15', '#60a5fa', '#4ade80'];
 
-          // Debug: log pose every 30 frames
-          if (frameCount % 30 === 0 && pose) {
+          // Debug: log pose every 60 frames (about 1 second)
+          if (totalFrames % 60 === 0 && pose) {
             const t = pose.translation;
-            console.log(`Frame ${frameCount}: trans=[${t[0].toFixed(3)}, ${t[1].toFixed(3)}, ${t[2].toFixed(3)}] pts=${tracked} inliers=${inliers} conf=${confidenceNames[confidenceLevel]}`);
+            console.log(`Frame ${totalFrames}: trans=[${t[0].toFixed(3)}, ${t[1].toFixed(3)}, ${t[2].toFixed(3)}] pts=${tracked} inliers=${inliers} conf=${confidenceNames[confidenceLevel]}`);
           }
 
           featuresEl.textContent = tracked;
@@ -1011,7 +1013,9 @@
             const scaledZ = dzZ * currentScale * zScale * rotationSuppress;
 
             // Accumulate position ourselves (with optional decay for stability)
-            const decay = 0.995;  // Slight decay to prevent runaway drift
+            // Note: decay of 0.995 loses 0.5% per frame = ~25% per second at 60fps
+            // Set to 1.0 (no decay) to preserve position, or 0.999 for very slow drift
+            const decay = 1.0;  // No decay - position should persist
             accumulatedPosition.x = accumulatedPosition.x * decay + scaledX;
             accumulatedPosition.y = accumulatedPosition.y * decay + scaledY;
             accumulatedPosition.z = accumulatedPosition.z * decay + scaledZ;
@@ -1028,18 +1032,31 @@
             // Scene moves opposite to camera movement
             arGroup.position.x = -smoothedPosition.x;
             arGroup.position.y = smoothedPosition.y;  // Y was already inverted
-            arGroup.position.z = zVal * 3.0;  // Positive Z = scene moves away = looks like moving forward
+            arGroup.position.z = zVal;  // Removed extra 3x multiplier - use Z scale slider instead
 
             // Keep camera at default position (rotation is handled by gyro)
             camera.position.set(0, 1, 3);
 
-            // Debug: show raw translation from Rust and gyro status
+            // Debug: show scene position being applied
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
             const gyroCompEnabled = trackerHandle.is_gyro_compensation_enabled();
             gyroCompEl.textContent = gyroCompEnabled ? 'ON' : 'OFF';
             gyroCompEl.style.color = gyroCompEnabled ? '#4ade80' : '#888';
-            // Show raw X,Y,Z from Rust to debug what's actually being computed
-            flowDebugEl.textContent = `raw: ${rawX.toFixed(1)},${rawY.toFixed(1)},${rawZ.toFixed(1)}`;
+            // Show delta and accumulated values for debugging
+            flowDebugEl.textContent = `d:[${dzX.toFixed(3)},${dzY.toFixed(3)},${dzZ.toFixed(3)}] a:[${accumulatedPosition.x.toFixed(2)},${accumulatedPosition.y.toFixed(2)},${accumulatedPosition.z.toFixed(2)}]`;
+
+            // Debug every 120 frames (~2 seconds): full chain trace
+            if (totalFrames % 120 === 0) {
+              console.log('=== Translation Debug ===');
+              console.log(`Raw: [${rawX.toFixed(4)}, ${rawY.toFixed(4)}, ${rawZ.toFixed(4)}]`);
+              console.log(`Delta: [${deltaX.toFixed(4)}, ${deltaY.toFixed(4)}, ${deltaZ.toFixed(4)}]`);
+              console.log(`DeadZone: [${dzX.toFixed(4)}, ${dzY.toFixed(4)}, ${dzZ.toFixed(4)}]`);
+              console.log(`RotSuppress: ${rotationSuppress.toFixed(3)}, Scale: ${currentScale}, AxisScale: [${xScale},${yScale},${zScale}]`);
+              console.log(`Scaled: [${scaledX.toFixed(4)}, ${scaledY.toFixed(4)}, ${scaledZ.toFixed(4)}]`);
+              console.log(`Accumulated: [${accumulatedPosition.x.toFixed(4)}, ${accumulatedPosition.y.toFixed(4)}, ${accumulatedPosition.z.toFixed(4)}]`);
+              console.log(`Smoothed: [${smoothedPosition.x.toFixed(4)}, ${smoothedPosition.y.toFixed(4)}, ${smoothedPosition.z.toFixed(4)}]`);
+              console.log(`arGroup.position: [${arGroup.position.x.toFixed(4)}, ${arGroup.position.y.toFixed(4)}, ${arGroup.position.z.toFixed(4)}]`);
+            }
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
