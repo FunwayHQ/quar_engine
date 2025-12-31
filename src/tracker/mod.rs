@@ -1,17 +1,22 @@
 //! Optical flow tracking module for QUAR WebAR Engine.
 //!
-//! This module provides Lucas-Kanade optical flow tracking and 3DoF pose estimation.
-//! It tracks features between frames and estimates camera rotation.
+//! This module provides Lucas-Kanade optical flow tracking and pose estimation:
+//! - 3DoF (rotation only) via homography decomposition
+//! - 6DoF (rotation + translation) via Essential matrix decomposition
 
 mod optical_flow;
 mod pyramid;
 mod rotation;
 mod types;
+pub mod essential;
+pub mod triangulation;
+mod tracker_6dof;
 
 pub use optical_flow::LucasKanadeTracker;
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
 pub use rotation::estimate_rotation;
 pub use types::{Point2, Pose3D, TrackResult, TrackerConfig};
+pub use tracker_6dof::{Tracker6DoF, Tracker6DoFConfig, ScaleMethod};
 
 use wasm_bindgen::prelude::*;
 
@@ -252,6 +257,15 @@ impl Default for TrackerHandle {
         Self::new()
     }
 }
+
+// Note: 6DoF Tracker WASM bindings are temporarily disabled due to
+// nalgebra DMatrix WASM compatibility issues. The Tracker6DoF struct
+// is fully functional for native Rust usage and tests.
+//
+// TODO: Fix WASM bindings by either:
+// 1. Using fixed-size matrices instead of DMatrix
+// 2. Adding nalgebra's std feature for WASM
+// 3. Using a different SVD implementation for WASM target
 
 #[cfg(test)]
 mod tests {

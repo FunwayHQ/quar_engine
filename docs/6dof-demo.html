@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QUAR Engine - 6DoF Tracking Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    #video-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #three-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* HUD Panel - 6DoF Info */
+    #hud {
+      position: absolute;
+      top: 20px; left: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      z-index: 100;
+      min-width: 200px;
+    }
+    #hud h2 {
+      color: #f472b6;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .stat { margin: 5px 0; }
+    .stat-label { color: #888; }
+    .stat-value { color: #4ade80; }
+    .stat-value.warning { color: #facc15; }
+    .stat-value.error { color: #f87171; }
+
+    /* Pose Panel */
+    #pose-panel {
+      position: absolute;
+      top: 20px; right: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      z-index: 100;
+      min-width: 180px;
+    }
+    #pose-panel h3 {
+      color: #4cc9f0;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    .pose-section {
+      margin: 10px 0;
+      padding: 8px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+    }
+    .pose-section h4 {
+      color: #888;
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+    .pose-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 3px 0;
+    }
+    .pose-axis { color: #888; }
+    .pose-axis.x { color: #f87171; }
+    .pose-axis.y { color: #4ade80; }
+    .pose-axis.z { color: #60a5fa; }
+
+    /* Controls */
+    #controls {
+      position: absolute;
+      bottom: 40px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 100;
+    }
+    button {
+      padding: 12px 25px;
+      background: #f472b6;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #f9a8d4; }
+    button:disabled { background: #4b5563; cursor: not-allowed; }
+    button.secondary {
+      background: #4b5563;
+      color: #fff;
+    }
+    button.secondary:hover { background: #6b7280; }
+
+    /* Scale slider */
+    #scale-panel {
+      position: absolute;
+      bottom: 100px; left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 12px 20px;
+      border-radius: 8px;
+      z-index: 100;
+    }
+    #scale-panel label {
+      font-size: 13px;
+      color: #888;
+    }
+    #scale-panel input[type="range"] {
+      width: 120px;
+    }
+    #scale-panel .value {
+      font-size: 13px;
+      color: #4ade80;
+      min-width: 50px;
+    }
+
+    /* Start overlay */
+    #start-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: linear-gradient(135deg, #1a1a2e 0%, #2d1f3d 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+    }
+    #start-overlay h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #f472b6, #4cc9f0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    #start-overlay p {
+      color: #888;
+      margin-bottom: 30px;
+    }
+    #start-overlay .features {
+      margin-bottom: 30px;
+      text-align: center;
+    }
+    #start-overlay .features span {
+      display: inline-block;
+      margin: 5px;
+      padding: 5px 12px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 20px;
+      font-size: 12px;
+      color: #aaa;
+    }
+    #start-overlay.hidden { display: none; }
+
+    /* Trajectory visualization */
+    #trajectory-toggle {
+      position: absolute;
+      bottom: 160px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+    }
+    #trajectory-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px 15px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="three-canvas"></canvas>
+
+    <div id="hud">
+      <h2>6DoF Tracking</h2>
+      <div class="stat">
+        <span class="stat-label">FPS: </span>
+        <span class="stat-value" id="fps">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Features: </span>
+        <span class="stat-value" id="features">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">State: </span>
+        <span class="stat-value" id="state">initializing</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Scale: </span>
+        <span class="stat-value" id="scale-display">0.01</span>
+        <span class="stat-label"> m/unit</span>
+      </div>
+    </div>
+
+    <div id="pose-panel">
+      <h3>Camera Pose</h3>
+      <div class="pose-section">
+        <h4>TRANSLATION (meters)</h4>
+        <div class="pose-row">
+          <span class="pose-axis x">X:</span>
+          <span id="tx">0.000</span>
+        </div>
+        <div class="pose-row">
+          <span class="pose-axis y">Y:</span>
+          <span id="ty">0.000</span>
+        </div>
+        <div class="pose-row">
+          <span class="pose-axis z">Z:</span>
+          <span id="tz">0.000</span>
+        </div>
+      </div>
+      <div class="pose-section">
+        <h4>ROTATION (degrees)</h4>
+        <div class="pose-row">
+          <span class="pose-axis x">Pitch:</span>
+          <span id="rx">0.0</span>
+        </div>
+        <div class="pose-row">
+          <span class="pose-axis y">Yaw:</span>
+          <span id="ry">0.0</span>
+        </div>
+        <div class="pose-row">
+          <span class="pose-axis z">Roll:</span>
+          <span id="rz">0.0</span>
+        </div>
+      </div>
+      <div class="pose-section">
+        <h4>DISTANCE TRAVELED</h4>
+        <div class="pose-row">
+          <span>Total:</span>
+          <span id="distance">0.000</span>
+          <span>m</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="trajectory-toggle">
+      <label>
+        <input type="checkbox" id="show-trajectory" checked>
+        Show trajectory
+      </label>
+    </div>
+
+    <div id="scale-panel">
+      <label>Translation Scale:</label>
+      <input type="range" id="scale-slider" min="0.001" max="0.1" step="0.001" value="0.01">
+      <span class="value" id="scale-val">0.010</span>
+    </div>
+
+    <div id="controls">
+      <button id="reset-btn" disabled>Reset</button>
+      <button id="clear-trajectory-btn" class="secondary" disabled>Clear Path</button>
+    </div>
+
+    <div id="start-overlay">
+      <h1>QUAR Engine</h1>
+      <p>6DoF Visual Tracking Preview</p>
+      <div class="features">
+        <span>Essential Matrix</span>
+        <span>RANSAC</span>
+        <span>Triangulation</span>
+        <span>Translation (Simulated*)</span>
+      </div>
+      <p style="font-size: 11px; color: #666; margin-top: 15px; max-width: 300px;">
+        *Full 6DoF with Essential matrix translation is implemented in Rust.
+        WASM bindings coming soon.
+      </p>
+      <button id="start-btn">Start Tracking</button>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    // Note: Full 6DoF tracking (Tracker6DoFHandle) is available in native Rust
+    // but has WASM compatibility issues with DMatrix/SVD. Using 3DoF tracker
+    // with simulated translation for demo purposes.
+    import init, { TrackerHandle, version } from './pkg/quar_engine.js';
+
+    // DOM elements
+    const videoCanvas = document.getElementById('video-canvas');
+    const threeCanvas = document.getElementById('three-canvas');
+    const startOverlay = document.getElementById('start-overlay');
+    const startBtn = document.getElementById('start-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const clearTrajectoryBtn = document.getElementById('clear-trajectory-btn');
+    const fpsEl = document.getElementById('fps');
+    const featuresEl = document.getElementById('features');
+    const stateEl = document.getElementById('state');
+    const scaleDisplay = document.getElementById('scale-display');
+    const scaleSlider = document.getElementById('scale-slider');
+    const scaleVal = document.getElementById('scale-val');
+    const showTrajectoryCheckbox = document.getElementById('show-trajectory');
+
+    // Pose display elements
+    const txEl = document.getElementById('tx');
+    const tyEl = document.getElementById('ty');
+    const tzEl = document.getElementById('tz');
+    const rxEl = document.getElementById('rx');
+    const ryEl = document.getElementById('ry');
+    const rzEl = document.getElementById('rz');
+    const distanceEl = document.getElementById('distance');
+
+    const videoCtx = videoCanvas.getContext('2d');
+
+    // Three.js
+    let scene, camera, renderer, arGroup;
+    let cube, axes, trajectoryLine, trajectoryPoints;
+    let gridHelper;
+
+    // State
+    let trackerHandle = null;
+    let video = null;
+    let stream = null;
+    let animationId = null;
+    let isRunning = false;
+
+    // FPS counter
+    let frameCount = 0;
+    let lastFpsTime = 0;
+
+    // Tracking state
+    let totalDistance = 0;
+    let lastPosition = new THREE.Vector3();
+    let currentScale = 0.01;
+
+    // Simulated translation from optical flow
+    let simulatedTranslation = new THREE.Vector3(0, 0, 0);
+    let lastEuler = new THREE.Euler();
+
+    // Scale slider
+    scaleSlider.addEventListener('input', (e) => {
+      currentScale = parseFloat(e.target.value);
+      scaleVal.textContent = currentScale.toFixed(3);
+      scaleDisplay.textContent = currentScale.toFixed(3);
+    });
+
+    // Trajectory toggle
+    showTrajectoryCheckbox.addEventListener('change', (e) => {
+      if (trajectoryLine) {
+        trajectoryLine.visible = e.target.checked;
+      }
+    });
+
+    async function loadWasm() {
+      await init();
+      console.log('WASM loaded:', version());
+    }
+
+    function initThreeJS() {
+      scene = new THREE.Scene();
+
+      // Camera setup - positioned to see the origin clearly
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+      camera.position.set(0, 1, 3);
+      camera.lookAt(0, 0, 0);
+
+      renderer = new THREE.WebGLRenderer({
+        canvas: threeCanvas,
+        alpha: true,
+        antialias: true
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setClearColor(0x000000, 0);
+
+      // AR Group - world-space container
+      arGroup = new THREE.Group();
+      scene.add(arGroup);
+
+      // Reference cube at origin (where tracking started)
+      const cubeGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+      const cubeMat = new THREE.MeshStandardMaterial({
+        color: 0x4cc9f0,
+        roughness: 0.4,
+        metalness: 0.3,
+        transparent: true,
+        opacity: 0.8
+      });
+      cube = new THREE.Mesh(cubeGeo, cubeMat);
+      cube.position.set(0, 0, 0);
+      arGroup.add(cube);
+
+      // Cube edges
+      const edges = new THREE.EdgesGeometry(cubeGeo);
+      const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+      cube.add(new THREE.LineSegments(edges, edgeMat));
+
+      // World axes at origin (RGB = XYZ)
+      axes = new THREE.AxesHelper(0.5);
+      arGroup.add(axes);
+
+      // Grid on ground plane
+      gridHelper = new THREE.GridHelper(2, 20, 0x444444, 0x333333);
+      gridHelper.position.y = -0.5;
+      arGroup.add(gridHelper);
+
+      // Trajectory line
+      const trajGeo = new THREE.BufferGeometry();
+      const trajMat = new THREE.LineBasicMaterial({
+        color: 0xf472b6,
+        linewidth: 2
+      });
+      trajectoryLine = new THREE.Line(trajGeo, trajMat);
+      arGroup.add(trajectoryLine);
+      trajectoryPoints = [];
+
+      // Lights
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(5, 10, 5);
+      scene.add(dirLight);
+
+      // Point light that follows camera
+      const pointLight = new THREE.PointLight(0xffffff, 0.5, 10);
+      camera.add(pointLight);
+      scene.add(camera);
+
+      window.addEventListener('resize', onResize);
+    }
+
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      videoCanvas.width = window.innerWidth;
+      videoCanvas.height = window.innerHeight;
+    }
+
+    async function startCamera() {
+      video = document.createElement('video');
+      video.setAttribute('playsinline', '');
+      video.muted = true;
+      video.autoplay = true;
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      await new Promise(r => { video.onloadedmetadata = r; });
+      await video.play();
+
+      videoCanvas.width = window.innerWidth;
+      videoCanvas.height = window.innerHeight;
+    }
+
+    function updateTrajectory(position) {
+      trajectoryPoints.push(position.clone());
+
+      // Limit trajectory length
+      if (trajectoryPoints.length > 1000) {
+        trajectoryPoints.shift();
+      }
+
+      // Update line geometry
+      const positions = new Float32Array(trajectoryPoints.length * 3);
+      for (let i = 0; i < trajectoryPoints.length; i++) {
+        positions[i * 3] = trajectoryPoints[i].x;
+        positions[i * 3 + 1] = trajectoryPoints[i].y;
+        positions[i * 3 + 2] = trajectoryPoints[i].z;
+      }
+      trajectoryLine.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      trajectoryLine.geometry.attributes.position.needsUpdate = true;
+    }
+
+    function render() {
+      if (!isRunning) return;
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsEl.textContent = frameCount;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      // Draw video background
+      if (video && video.readyState >= 2) {
+        const vAspect = video.videoWidth / video.videoHeight;
+        const cAspect = videoCanvas.width / videoCanvas.height;
+        let dw, dh, ox, oy;
+        if (vAspect > cAspect) {
+          dh = videoCanvas.height;
+          dw = dh * vAspect;
+          ox = (videoCanvas.width - dw) / 2;
+          oy = 0;
+        } else {
+          dw = videoCanvas.width;
+          dh = dw / vAspect;
+          ox = 0;
+          oy = (videoCanvas.height - dh) / 2;
+        }
+        videoCtx.drawImage(video, ox, oy, dw, dh);
+
+        // Process frame with 6DoF tracker
+        if (trackerHandle) {
+          // Downscale for processing
+          const pCanvas = document.createElement('canvas');
+          pCanvas.width = 640;
+          pCanvas.height = 480;
+          const pCtx = pCanvas.getContext('2d');
+          pCtx.drawImage(video, 0, 0, 640, 480);
+          const imgData = pCtx.getImageData(0, 0, 640, 480);
+
+          // Get 6DoF pose
+          const pose = trackerHandle.process_frame(imgData.data, 640, 480);
+          const tracked = trackerHandle.tracked_points();
+
+          featuresEl.textContent = tracked;
+
+          if (pose && tracked > 10) {
+            stateEl.textContent = 'tracking';
+            stateEl.style.color = '#4ade80';
+
+            // Extract rotation (quaternion to euler)
+            const q = pose.rotation;
+            const quat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
+            const euler = new THREE.Euler().setFromQuaternion(quat);
+
+            // Simulate translation from rotation changes
+            // This approximates forward/sideways motion from camera rotation
+            const deltaX = (euler.y - lastEuler.y) * currentScale * 10;
+            const deltaZ = (euler.x - lastEuler.x) * currentScale * 10;
+            simulatedTranslation.x += deltaX;
+            simulatedTranslation.z -= deltaZ;
+            lastEuler.copy(euler);
+
+            const tx = simulatedTranslation.x;
+            const ty = simulatedTranslation.y;
+            const tz = simulatedTranslation.z;
+
+            // Update pose display
+            txEl.textContent = tx.toFixed(3);
+            tyEl.textContent = ty.toFixed(3);
+            tzEl.textContent = tz.toFixed(3);
+
+            const toDeg = 180 / Math.PI;
+            rxEl.textContent = (euler.x * toDeg).toFixed(1);
+            ryEl.textContent = (euler.y * toDeg).toFixed(1);
+            rzEl.textContent = (euler.z * toDeg).toFixed(1);
+
+            // Calculate distance traveled
+            const currentPos = new THREE.Vector3(tx, ty, tz);
+            if (lastPosition.lengthSq() > 0) {
+              const delta = currentPos.distanceTo(lastPosition);
+              if (delta < 0.5) { // Ignore large jumps
+                totalDistance += delta;
+              }
+            }
+            lastPosition.copy(currentPos);
+            distanceEl.textContent = totalDistance.toFixed(3);
+
+            // Update camera position and rotation
+            camera.position.set(-tx, -ty + 1, -tz + 3);
+            camera.quaternion.copy(quat).conjugate();
+
+            // Add to trajectory
+            if (showTrajectoryCheckbox.checked) {
+              if (frameCount % 3 === 0) {
+                updateTrajectory(new THREE.Vector3(tx, ty, tz));
+              }
+            }
+
+          } else if (tracked > 5) {
+            stateEl.textContent = 'initializing';
+            stateEl.style.color = '#facc15';
+          } else {
+            stateEl.textContent = 'searching';
+            stateEl.style.color = '#f87171';
+          }
+
+          // Update scale display
+          scaleDisplay.textContent = currentScale.toFixed(3);
+        }
+      }
+
+      // Render Three.js scene
+      renderer.render(scene, camera);
+
+      animationId = requestAnimationFrame(render);
+    }
+
+    function reset() {
+      if (trackerHandle) {
+        trackerHandle.reset();
+      }
+
+      // Reset tracking state
+      totalDistance = 0;
+      lastPosition.set(0, 0, 0);
+      simulatedTranslation.set(0, 0, 0);
+      lastEuler.set(0, 0, 0);
+
+      // Reset camera
+      camera.position.set(0, 1, 3);
+      camera.rotation.set(0, 0, 0);
+      camera.lookAt(0, 0, 0);
+
+      // Reset display
+      txEl.textContent = '0.000';
+      tyEl.textContent = '0.000';
+      tzEl.textContent = '0.000';
+      rxEl.textContent = '0.0';
+      ryEl.textContent = '0.0';
+      rzEl.textContent = '0.0';
+      distanceEl.textContent = '0.000';
+    }
+
+    function clearTrajectory() {
+      trajectoryPoints = [];
+      trajectoryLine.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+    }
+
+    // Start button
+    startBtn.addEventListener('click', async () => {
+      try {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Loading...';
+
+        await loadWasm();
+        await startCamera();
+
+        // Create tracker (using 3DoF with simulated translation)
+        trackerHandle = new TrackerHandle();
+        console.log('Tracker created (3DoF with simulated translation)');
+
+        initThreeJS();
+        onResize();
+
+        startOverlay.classList.add('hidden');
+        resetBtn.disabled = false;
+        clearTrajectoryBtn.disabled = false;
+        isRunning = true;
+        lastFpsTime = performance.now();
+        render();
+
+      } catch (err) {
+        console.error(err);
+        alert('Error: ' + err.message);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start 6DoF Tracking';
+      }
+    });
+
+    resetBtn.addEventListener('click', reset);
+    clearTrajectoryBtn.addEventListener('click', clearTrajectory);
+  </script>
+</body>
+</html>

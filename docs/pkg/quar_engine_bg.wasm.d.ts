@@ -1,6 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const log: (a: number, b: number) => void;
 export const __wbg_adaptiveconfig_free: (a: number, b: number) => void;
 export const __wbg_adaptivehandle_free: (a: number, b: number) => void;
 export const __wbg_breakdownreport_free: (a: number, b: number) => void;
@@ -88,7 +89,6 @@ export const get_grayscale: (a: number, b: number) => [number, number];
 export const get_performance_now: () => number;
 export const greet: (a: number, b: number) => [number, number];
 export const init: () => void;
-export const log: (a: number, b: number) => void;
 export const pose3d_from_components: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
 export const pose3d_new: () => number;
 export const pose3d_position: (a: number) => [number, number];

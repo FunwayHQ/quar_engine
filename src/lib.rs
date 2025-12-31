@@ -10,6 +10,7 @@ use wasm_bindgen::prelude::*;
 pub mod error;
 pub mod features;
 pub mod tracker;
+pub mod camera;
 
 // Sprint 6: Performance optimization modules
 pub mod memory;

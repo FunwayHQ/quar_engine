@@ -1177,6 +1177,287 @@ pub fn optimize_pose_graph(
 
 ---
 
+# Sprint 19: Plane Detection & Hit Testing
+
+## Goal
+Enable AR placement by detecting planar surfaces (floors, tables, walls) from the 3D point cloud and providing hit testing (raycast) capabilities for placing virtual objects.
+
+## Prerequisites
+- Sprint 15 (Keyframe & Map Building) - Need 3D point cloud
+- Sprint 16 (Bundle Adjustment) - Accurate point positions help
+
+## LLM Prompt
+
+```
+You are implementing plane detection and hit testing for a WebAR SLAM engine in Rust/WASM.
+
+Given:
+- 3D point cloud from triangulated map points
+- Camera pose (6DoF) from SLAM tracking
+- Screen coordinates from user touch/click
+
+Implement:
+
+### 1. RANSAC Plane Detection
+
+Detect planar surfaces in the point cloud using RANSAC:
+
+```rust
+pub struct Plane {
+    /// Plane normal (unit vector)
+    pub normal: Vector3<f64>,
+    /// Distance from origin (signed)
+    pub d: f64,
+    /// Inlier point indices
+    pub inliers: Vec<usize>,
+    /// Plane type classification
+    pub plane_type: PlaneType,
+}
+
+pub enum PlaneType {
+    Horizontal,  // Floor/ceiling/table (normal ≈ ±Y)
+    Vertical,    // Wall (normal ⊥ Y)
+    Unknown,
+}
+
+impl Plane {
+    /// Create plane from 3 points
+    pub fn from_points(p1: &Vector3<f64>, p2: &Vector3<f64>, p3: &Vector3<f64>) -> Option<Self>;
+
+    /// Distance from point to plane
+    pub fn distance_to_point(&self, point: &Vector3<f64>) -> f64 {
+        (self.normal.dot(point) + self.d).abs()
+    }
+
+    /// Project point onto plane
+    pub fn project_point(&self, point: &Vector3<f64>) -> Vector3<f64>;
+
+    /// Classify plane as horizontal/vertical based on normal
+    pub fn classify(&mut self);
+}
+
+/// Detect planes in point cloud using RANSAC
+pub fn detect_planes(
+    points: &[Vector3<f64>],
+    config: PlaneDetectionConfig,
+) -> Vec<Plane>;
+
+pub struct PlaneDetectionConfig {
+    pub min_inliers: usize,           // Minimum points to form valid plane
+    pub distance_threshold: f64,      // RANSAC inlier threshold (meters)
+    pub max_iterations: usize,        // RANSAC iterations
+    pub max_planes: usize,            // Maximum planes to detect
+    pub horizontal_threshold: f64,    // Angle threshold for horizontal (degrees)
+}
+
+impl Default for PlaneDetectionConfig {
+    fn default() -> Self {
+        Self {
+            min_inliers: 20,
+            distance_threshold: 0.02,  // 2cm tolerance
+            max_iterations: 100,
+            max_planes: 5,
+            horizontal_threshold: 10.0,  // 10 degrees from Y-axis
+        }
+    }
+}
+```
+
+### 2. Ground Plane Detection
+
+Find the primary ground plane (largest horizontal plane below camera):
+
+```rust
+pub struct GroundPlane {
+    pub plane: Plane,
+    pub height: f64,      // Height relative to camera
+    pub extent: AABB2D,   // 2D bounding box in plane coordinates
+}
+
+/// Detect the ground plane from point cloud
+pub fn detect_ground_plane(
+    points: &[Vector3<f64>],
+    camera_height_hint: Option<f64>,
+) -> Option<GroundPlane>;
+
+/// Refine ground plane with more points over time
+pub fn refine_ground_plane(
+    plane: &mut GroundPlane,
+    new_points: &[Vector3<f64>],
+);
+```
+
+### 3. Hit Testing (Raycast)
+
+Cast rays from screen coordinates to find plane intersections:
+
+```rust
+pub struct HitResult {
+    /// 3D intersection point in world coordinates
+    pub point: Vector3<f64>,
+    /// Surface normal at intersection
+    pub normal: Vector3<f64>,
+    /// Distance from camera
+    pub distance: f64,
+    /// Which plane was hit
+    pub plane_index: usize,
+    /// Confidence (0.0-1.0)
+    pub confidence: f64,
+}
+
+/// Raycast from screen coordinates through detected planes
+pub fn raycast(
+    screen_x: f64,
+    screen_y: f64,
+    camera_pose: &SE3,
+    camera_intrinsics: &CameraIntrinsics,
+    planes: &[Plane],
+) -> Option<HitResult>;
+
+/// Raycast against ground plane only (faster)
+pub fn raycast_ground(
+    screen_x: f64,
+    screen_y: f64,
+    camera_pose: &SE3,
+    camera_intrinsics: &CameraIntrinsics,
+    ground: &GroundPlane,
+) -> Option<HitResult>;
+
+/// Batch raycast for multiple points
+pub fn raycast_batch(
+    screen_points: &[(f64, f64)],
+    camera_pose: &SE3,
+    camera_intrinsics: &CameraIntrinsics,
+    planes: &[Plane],
+) -> Vec<Option<HitResult>>;
+```
+
+### 4. Plane Visualization Support
+
+Provide data for rendering detected planes:
+
+```rust
+/// Get plane mesh for visualization (as triangle vertices)
+pub fn get_plane_mesh(
+    plane: &Plane,
+    points: &[Vector3<f64>],
+    max_extent: f64,
+) -> Vec<Vector3<f64>>;
+
+/// Get plane boundaries (convex hull of inliers projected to plane)
+pub fn get_plane_boundary(
+    plane: &Plane,
+    points: &[Vector3<f64>],
+) -> Vec<Vector3<f64>>;
+```
+
+### 5. WASM Bindings
+
+```rust
+#[wasm_bindgen]
+pub struct PlaneDetector {
+    planes: Vec<Plane>,
+    ground: Option<GroundPlane>,
+    config: PlaneDetectionConfig,
+}
+
+#[wasm_bindgen]
+impl PlaneDetector {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self;
+
+    /// Update planes with new point cloud data
+    pub fn update(&mut self, points: &[f64]) -> usize;  // Returns plane count
+
+    /// Get detected ground plane height
+    pub fn ground_height(&self) -> Option<f64>;
+
+    /// Raycast from screen coordinates
+    /// Returns [x, y, z, nx, ny, nz, distance, confidence] or empty
+    pub fn raycast(
+        &self,
+        screen_x: f64,
+        screen_y: f64,
+        pose_matrix: &[f64],  // 16 floats (4x4 matrix)
+        fx: f64, fy: f64, cx: f64, cy: f64,
+    ) -> Vec<f64>;
+
+    /// Get plane meshes for visualization
+    /// Returns flat array of vertices [x1,y1,z1, x2,y2,z2, ...]
+    pub fn get_plane_meshes(&self) -> Vec<f64>;
+
+    /// Get number of detected planes
+    pub fn plane_count(&self) -> usize;
+}
+```
+
+### Integration Notes
+
+1. **Performance**: Plane detection can be expensive, run it:
+   - On keyframe insertion (not every frame)
+   - In a separate thread/worker
+   - With point cloud downsampling
+
+2. **Coordinate Systems**:
+   - Y-up (Three.js convention)
+   - Meters for all measurements
+   - Planes persist across frames
+
+3. **Ground Initialization**:
+   - First stable horizontal plane becomes ground
+   - Lock ground plane after 30+ inliers
+   - Allow manual ground reset via API
+
+4. **Hit Test Priority**:
+   - Ground plane (most common use case)
+   - Other horizontal planes (tables)
+   - Vertical planes (walls)
+```
+
+## Implementation Order
+
+1. **Plane struct and basic operations** - Core data structure
+2. **RANSAC plane detection** - Main algorithm
+3. **Plane classification** - Horizontal vs vertical
+4. **Ground plane detection** - AR placement foundation
+5. **Raycast implementation** - Hit testing
+6. **WASM bindings** - JavaScript API
+7. **Tests and benchmarks** - Validation
+
+## Key Algorithms
+
+### RANSAC Plane Detection
+```
+for iteration in 0..max_iterations:
+    sample 3 random points
+    fit plane through points
+    count inliers within threshold
+    if inlier_count > best_count:
+        best_plane = current_plane
+
+refine plane with all inliers using PCA/SVD
+```
+
+### Ray-Plane Intersection
+```
+ray_origin = camera_position
+ray_dir = unproject(screen_x, screen_y)
+ray_dir = normalize(camera_rotation * ray_dir)
+
+t = -(plane.d + dot(plane.normal, ray_origin)) / dot(plane.normal, ray_dir)
+if t > 0:
+    intersection = ray_origin + t * ray_dir
+```
+
+## Success Criteria
+- [ ] Detect ground plane in < 100ms from 1000 points
+- [ ] Raycast in < 1ms
+- [ ] Plane detection stable (no flickering)
+- [ ] Hit test accuracy < 2cm on detected planes
+- [ ] Works with sparse point clouds (50+ points)
+
+---
+
 ## Summary: Sprint Timeline
 
 | Sprint | Focus | Duration | Cumulative |
@@ -1187,10 +1468,12 @@ pub fn optimize_pose_graph(
 | 16 | Local Bundle Adjustment | 1 sprint | Drift reduction |
 | 17 | Visual-Inertial Odometry | 1 sprint | Metric scale |
 | 18 | Loop Closure (Optional) | 1 sprint | Long-term accuracy |
+| 19 | Plane Detection & Hit Testing | 1 sprint | AR placement |
 
 **Minimum for 6DoF:** Sprints 13-15 (Essential + Descriptors + Map)
 **Recommended:** Sprints 13-17 (adds optimization + VIO)
 **Full System:** Sprints 13-18 (complete SLAM)
+**AR Placement:** Sprint 19 (requires 15-16 for point cloud)
 
 ---
 
@@ -1204,8 +1487,8 @@ Sprint 14 (ORB Descriptors)
 Sprint 15 (Keyframes & Map) ←── requires both 13 & 14
     ↓
 Sprint 16 (Bundle Adjustment)
-    ↓
-Sprint 17 (VIO) ←── can start after 15, parallel with 16
+    ↓                    ↘
+Sprint 17 (VIO)          Sprint 19 (Plane Detection) ←── requires 15-16
     ↓
 Sprint 18 (Loop Closure) ←── requires 14-16
 ```

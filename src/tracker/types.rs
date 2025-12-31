@@ -105,6 +105,41 @@ impl Pose3D {
         self.normalize_rotation();
     }
 
+    /// Apply a translation in world coordinates.
+    /// The translation is rotated by the current orientation before being added.
+    pub fn apply_translation(&mut self, delta: &[f32; 3]) {
+        // Rotate translation by current orientation (q * v * q^-1)
+        let rotated = self.rotate_vector(delta);
+        self.translation[0] += rotated[0];
+        self.translation[1] += rotated[1];
+        self.translation[2] += rotated[2];
+    }
+
+    /// Apply a translation in camera/local coordinates (already in world frame).
+    pub fn apply_translation_local(&mut self, delta: &[f32; 3]) {
+        self.translation[0] += delta[0];
+        self.translation[1] += delta[1];
+        self.translation[2] += delta[2];
+    }
+
+    /// Rotate a vector by the current quaternion orientation.
+    pub fn rotate_vector(&self, v: &[f32; 3]) -> [f32; 3] {
+        let [qx, qy, qz, qw] = self.rotation;
+        let [vx, vy, vz] = *v;
+
+        // Quaternion rotation: q * v * q^-1
+        // Optimized formula (avoiding full quaternion multiplication)
+        let tx = 2.0 * (qy * vz - qz * vy);
+        let ty = 2.0 * (qz * vx - qx * vz);
+        let tz = 2.0 * (qx * vy - qy * vx);
+
+        [
+            vx + qw * tx + qy * tz - qz * ty,
+            vy + qw * ty + qz * tx - qx * tz,
+            vz + qw * tz + qx * ty - qy * tx,
+        ]
+    }
+
     /// Normalize the rotation quaternion.
     fn normalize_rotation(&mut self) {
         let len = (self.rotation[0] * self.rotation[0]
@@ -270,5 +305,45 @@ mod tests {
 
         let failure = TrackResult::failure();
         assert!(!failure.status);
+    }
+
+    #[test]
+    fn test_apply_translation_local() {
+        let mut pose = Pose3D::identity();
+        pose.apply_translation_local(&[1.0, 2.0, 3.0]);
+
+        assert!((pose.translation[0] - 1.0).abs() < 1e-6);
+        assert!((pose.translation[1] - 2.0).abs() < 1e-6);
+        assert!((pose.translation[2] - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_rotate_vector_identity() {
+        let pose = Pose3D::identity();
+        let v = [1.0, 2.0, 3.0];
+        let rotated = pose.rotate_vector(&v);
+
+        // Identity quaternion should not change the vector
+        assert!((rotated[0] - v[0]).abs() < 1e-6);
+        assert!((rotated[1] - v[1]).abs() < 1e-6);
+        assert!((rotated[2] - v[2]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_rotate_vector_90_deg_y() {
+        // 90 degree rotation around Y axis
+        let angle = std::f32::consts::FRAC_PI_2;
+        let pose = Pose3D::new(
+            [0.0, (angle / 2.0).sin(), 0.0, (angle / 2.0).cos()],
+            [0.0, 0.0, 0.0],
+        );
+
+        // Rotate [1, 0, 0] by 90 deg around Y -> should become [0, 0, -1]
+        let v = [1.0, 0.0, 0.0];
+        let rotated = pose.rotate_vector(&v);
+
+        assert!(rotated[0].abs() < 1e-5);
+        assert!(rotated[1].abs() < 1e-5);
+        assert!((rotated[2] - (-1.0)).abs() < 1e-5);
     }
 }

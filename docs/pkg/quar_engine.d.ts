@@ -439,6 +439,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly log: (a: number, b: number) => void;
   readonly __wbg_adaptiveconfig_free: (a: number, b: number) => void;
   readonly __wbg_adaptivehandle_free: (a: number, b: number) => void;
   readonly __wbg_breakdownreport_free: (a: number, b: number) => void;
@@ -526,7 +527,6 @@ export interface InitOutput {
   readonly get_performance_now: () => number;
   readonly greet: (a: number, b: number) => [number, number];
   readonly init: () => void;
-  readonly log: (a: number, b: number) => void;
   readonly pose3d_from_components: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
   readonly pose3d_new: () => number;
   readonly pose3d_position: (a: number) => [number, number];
