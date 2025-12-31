@@ -362,6 +362,7 @@
     let scene, camera, renderer, arGroup;
     let cube, axes, trajectoryLine, trajectoryPoints;
     let gridHelper;
+    let animatedObjects = []; // Objects to animate
 
     // State
     let trackerHandle = null;
@@ -439,6 +440,106 @@
       const edges = new THREE.EdgesGeometry(cubeGeo);
       const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff });
       cube.add(new THREE.LineSegments(edges, edgeMat));
+      animatedObjects.push({ mesh: cube, type: 'tumble', speed: 0.5 });
+
+      // === Additional 3D Objects ===
+
+      // Floating sphere (pink) - front left
+      const sphereGeo = new THREE.SphereGeometry(0.12, 32, 32);
+      const sphereMat = new THREE.MeshStandardMaterial({
+        color: 0xf472b6,
+        roughness: 0.3,
+        metalness: 0.5
+      });
+      const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+      sphere.position.set(-0.5, 0.2, -0.5);
+      sphere.userData.baseY = 0.2;
+      sphere.userData.floatSpeed = 2;
+      arGroup.add(sphere);
+      animatedObjects.push({ mesh: sphere, type: 'float' });
+
+      // Torus (gold) - front right - spins
+      const torusGeo = new THREE.TorusGeometry(0.1, 0.03, 16, 48);
+      const torusMat = new THREE.MeshStandardMaterial({
+        color: 0xfacc15,
+        roughness: 0.2,
+        metalness: 0.8
+      });
+      const torus = new THREE.Mesh(torusGeo, torusMat);
+      torus.position.set(0.5, 0.15, -0.5);
+      arGroup.add(torus);
+      animatedObjects.push({ mesh: torus, type: 'spin', axis: 'y', speed: 1.5 });
+
+      // Cone (green) - back left
+      const coneGeo = new THREE.ConeGeometry(0.1, 0.25, 32);
+      const coneMat = new THREE.MeshStandardMaterial({
+        color: 0x4ade80,
+        roughness: 0.4,
+        metalness: 0.3
+      });
+      const cone = new THREE.Mesh(coneGeo, coneMat);
+      cone.position.set(-0.5, 0.125, 0.5);
+      arGroup.add(cone);
+      animatedObjects.push({ mesh: cone, type: 'spin', axis: 'y', speed: -1 });
+
+      // Octahedron (purple) - back right - tumbles
+      const octaGeo = new THREE.OctahedronGeometry(0.12);
+      const octaMat = new THREE.MeshStandardMaterial({
+        color: 0xa855f7,
+        roughness: 0.3,
+        metalness: 0.4
+      });
+      const octa = new THREE.Mesh(octaGeo, octaMat);
+      octa.position.set(0.5, 0.15, 0.5);
+      arGroup.add(octa);
+      animatedObjects.push({ mesh: octa, type: 'tumble', speed: 0.8 });
+
+      // Floating ring of small spheres - orbits around center
+      const ringGroup = new THREE.Group();
+      ringGroup.position.y = 0.4;
+      const ringRadius = 0.8;
+      const numSpheres = 8;
+      for (let i = 0; i < numSpheres; i++) {
+        const angle = (i / numSpheres) * Math.PI * 2;
+        const miniSphere = new THREE.Mesh(
+          new THREE.SphereGeometry(0.03, 16, 16),
+          new THREE.MeshStandardMaterial({
+            color: new THREE.Color().setHSL(i / numSpheres, 0.8, 0.5),
+            roughness: 0.3,
+            metalness: 0.5
+          })
+        );
+        miniSphere.position.set(
+          Math.cos(angle) * ringRadius,
+          0,
+          Math.sin(angle) * ringRadius
+        );
+        ringGroup.add(miniSphere);
+      }
+      arGroup.add(ringGroup);
+      animatedObjects.push({ mesh: ringGroup, type: 'spin', axis: 'y', speed: 0.3 });
+
+      // Tall pillar (wireframe)
+      const pillarGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.6, 8);
+      const pillarMat = new THREE.MeshBasicMaterial({
+        color: 0x60a5fa,
+        wireframe: true
+      });
+      const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+      pillar.position.set(0, 0.3, -0.8);
+      arGroup.add(pillar);
+      animatedObjects.push({ mesh: pillar, type: 'spin', axis: 'y', speed: 0.5 });
+
+      // Small platform
+      const platformGeo = new THREE.BoxGeometry(0.3, 0.02, 0.3);
+      const platformMat = new THREE.MeshStandardMaterial({
+        color: 0x64748b,
+        roughness: 0.8,
+        metalness: 0.1
+      });
+      const platform = new THREE.Mesh(platformGeo, platformMat);
+      platform.position.set(0, -0.49, -0.8);
+      arGroup.add(platform);
 
       // World axes at origin (RGB = XYZ)
       axes = new THREE.AxesHelper(0.5);
@@ -626,6 +727,25 @@
           // Update scale display from tracker
           const trackerScale = trackerHandle.get_scale();
           scaleDisplay.textContent = trackerScale.toFixed(3);
+        }
+      }
+
+      // Animate objects
+      const time = performance.now() * 0.001; // seconds
+      for (const obj of animatedObjects) {
+        if (obj.type === 'spin') {
+          if (obj.axis === 'y') {
+            obj.mesh.rotation.y = time * obj.speed;
+          } else if (obj.axis === 'x') {
+            obj.mesh.rotation.x = time * obj.speed;
+          }
+        } else if (obj.type === 'float') {
+          const baseY = obj.mesh.userData.baseY || 0.2;
+          const speed = obj.mesh.userData.floatSpeed || 2;
+          obj.mesh.position.y = baseY + Math.sin(time * speed) * 0.05;
+        } else if (obj.type === 'tumble') {
+          obj.mesh.rotation.x = time * obj.speed;
+          obj.mesh.rotation.z = time * obj.speed * 0.7;
         }
       }
 
