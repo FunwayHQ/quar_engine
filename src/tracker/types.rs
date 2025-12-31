@@ -236,6 +236,11 @@ pub struct TrackerConfig {
     pub max_error: f32,
     /// Frames between feature re-detection (default: 30)
     pub redetect_interval: u32,
+    /// Enable forward-backward consistency check (default: true)
+    pub use_fb_check: bool,
+    /// Forward-backward error threshold in pixels (default: 1.0)
+    /// Points with higher FB error are rejected as unreliable
+    pub fb_threshold: f32,
 }
 
 impl Default for TrackerConfig {
@@ -249,6 +254,8 @@ impl Default for TrackerConfig {
             min_tracked_points: 8,
             max_error: 10.0,
             redetect_interval: 30,
+            use_fb_check: true,
+            fb_threshold: 1.0,
         }
     }
 }

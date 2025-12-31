@@ -16,7 +16,7 @@ pub mod linalg;
 pub mod robust;
 pub mod flow_compensation;
 
-pub use optical_flow::LucasKanadeTracker;
+pub use optical_flow::{LucasKanadeTracker, FBTrackResult};
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
 pub use rotation::estimate_rotation;
 pub use types::{Point2, Pose3D, TrackResult, TrackerConfig};
@@ -149,18 +149,40 @@ impl Tracker {
 
         // Track points if we have any
         if !self.prev_points.is_empty() {
-            let track_results = self.lk_tracker.track(prev_gray, &curr_gray, &self.prev_points);
+            // Filter successfully tracked points
+            let (curr_points, prev_matched) = if self.config.use_fb_check {
+                // Use forward-backward consistency check for better quality
+                let fb_results = self.lk_tracker.track_with_fb_check(prev_gray, &curr_gray, &self.prev_points);
 
-            // Filter successfully tracked points (by LK error)
-            let mut curr_points = Vec::new();
-            let mut prev_matched = Vec::new();
+                let mut curr = Vec::new();
+                let mut prev = Vec::new();
 
-            for (i, result) in track_results.iter().enumerate() {
-                if result.status && result.error < self.config.max_error {
-                    prev_matched.push(self.prev_points[i]);
-                    curr_points.push(result.point);
+                for (i, result) in fb_results.iter().enumerate() {
+                    // Check both forward error and FB error
+                    if result.status
+                        && result.forward_error < self.config.max_error
+                        && result.fb_error <= self.config.fb_threshold
+                    {
+                        prev.push(self.prev_points[i]);
+                        curr.push(result.point);
+                    }
                 }
-            }
+                (curr, prev)
+            } else {
+                // Standard tracking without FB check
+                let track_results = self.lk_tracker.track(prev_gray, &curr_gray, &self.prev_points);
+
+                let mut curr = Vec::new();
+                let mut prev = Vec::new();
+
+                for (i, result) in track_results.iter().enumerate() {
+                    if result.status && result.error < self.config.max_error {
+                        prev.push(self.prev_points[i]);
+                        curr.push(result.point);
+                    }
+                }
+                (curr, prev)
+            };
 
             // Apply RANSAC filtering to reject outliers
             if curr_points.len() >= self.config.min_tracked_points {
