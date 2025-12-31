@@ -36,9 +36,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 18: Loop Closure** - LSH visual vocabulary, Bag of Words, TF-IDF weighting, place recognition database, pose graph optimization (38 tests)
 
 ### Current Status
-- **Full 6DoF tracking with VIO, mapping, BA, loop closure, and plane detection in WASM** (~111KB gzipped)
+- **Full 6DoF tracking with VIO, mapping, BA, loop closure, and plane detection in WASM** (~113KB gzipped)
 - **TypeScript SDK** with Web Worker support in `/sdk/` (builds to ES/CJS modules)
-- 424 unit tests passing (Rust) + SDK tests (TypeScript)
+- 426 unit tests passing (Rust) + SDK tests (TypeScript)
 - Bundle Adjustment integrated into tracker (39 BA tests)
 - Loop Closure integrated into tracker (38 LC tests)
 - Pure-Rust linear algebra (no external math dependencies)
@@ -51,10 +51,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - ORB descriptors for feature matching
 - Keyframe management and covisibility graph
 - Plane detection with hit testing (world-space locked planes)
+- Gravity-aligned world frame for proper floor detection
 
 ### Known Issues / Debug Notes
-- **Real Map Points (v19)**: Plane detection now uses real triangulated 3D points from Essential matrix decomposition instead of simulated points. Points are triangulated when parallax is sufficient (>2° min_parallax) and stored with FIFO management (max 500 points).
-- **Plane detection**: Planes are detected in world space and locked once found. Floor mesh added to scene directly (not arGroup) to stay fixed as camera moves.
+- **Gravity-aligned coordinates (v19)**: Map points stored in camera frame, transformed to world frame via `get_map_points_world()` using accelerometer-derived gravity. Device-to-camera frame conversion applied (Y and Z flipped for rear camera). IMU data always pushed for gravity estimation.
+- **Real Map Points**: Plane detection uses real triangulated 3D points from Essential matrix decomposition. Points triangulated when parallax >2° and stored with FIFO management (max 500 points).
+- **Plane detection**: Planes detected in gravity-aligned world frame (Y up) for proper horizontal/vertical classification. Floor mesh added to scene directly (not arGroup) to stay fixed.
 - **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
 - **Rotation vs Translation**: Camera rotation (tilting) works via gyro fusion. Translation (panning) works via optical flow deltas accumulated over time.
 - **Debug output in demo**: HUD shows `d:[x,y,z]` (deltas) and `a:[x,y,z]` (accumulated). Console logs detailed chain every ~2 seconds.
