@@ -931,7 +931,9 @@
           const imgData = pCtx.getImageData(0, 0, 640, 480);
 
           // Get 6DoF pose from Essential matrix decomposition
-          const pose = trackerHandle.process_frame(imgData.data, 640, 480);
+          // Use timestamped version for gyro compensation
+          const frameTime = performance.now();
+          const pose = trackerHandle.process_frame_with_time(imgData.data, 640, 480, frameTime);
           const tracked = trackerHandle.tracked_points();
           const inliers = trackerHandle.inlier_points();
           const confidenceLevel = trackerHandle.confidence_level();

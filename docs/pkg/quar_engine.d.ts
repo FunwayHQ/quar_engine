@@ -396,6 +396,11 @@ export class TrackerHandle {
    */
   set_gyro_compensation(enabled: boolean): void;
   /**
+   * Process a frame with timestamp for gyro compensation.
+   * timestamp_ms should be from performance.now() for best results.
+   */
+  process_frame_with_time(rgba: Uint8Array, width: number, height: number, timestamp_ms: number): any;
+  /**
    * Check if gyro compensation is currently active.
    */
   is_gyro_compensation_enabled(): boolean;
@@ -617,6 +622,7 @@ export interface InitOutput {
   readonly trackerhandle_is_gyro_compensation_enabled: (a: number) => number;
   readonly trackerhandle_new: () => number;
   readonly trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly trackerhandle_process_frame_with_time: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
   readonly trackerhandle_push_gyro: (a: number, b: number, c: number, d: number, e: number) => void;
   readonly trackerhandle_reset: (a: number) => void;
   readonly trackerhandle_set_gyro_compensation: (a: number, b: number) => void;

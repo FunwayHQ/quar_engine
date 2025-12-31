@@ -116,6 +116,7 @@ export const trackerhandle_inlier_points: (a: number) => number;
 export const trackerhandle_is_gyro_compensation_enabled: (a: number) => number;
 export const trackerhandle_new: () => number;
 export const trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
+export const trackerhandle_process_frame_with_time: (a: number, b: number, c: number, d: number, e: number, f: number) => any;
 export const trackerhandle_push_gyro: (a: number, b: number, c: number, d: number, e: number) => void;
 export const trackerhandle_reset: (a: number) => void;
 export const trackerhandle_set_gyro_compensation: (a: number, b: number) => void;

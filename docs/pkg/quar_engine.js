@@ -1385,6 +1385,21 @@ export class TrackerHandle {
         wasm.trackerhandle_set_gyro_compensation(this.__wbg_ptr, enabled);
     }
     /**
+     * Process a frame with timestamp for gyro compensation.
+     * timestamp_ms should be from performance.now() for best results.
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @param {number} timestamp_ms
+     * @returns {any}
+     */
+    process_frame_with_time(rgba, width, height, timestamp_ms) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trackerhandle_process_frame_with_time(this.__wbg_ptr, ptr0, len0, width, height, timestamp_ms);
+        return ret;
+    }
+    /**
      * Check if gyro compensation is currently active.
      * @returns {boolean}
      */

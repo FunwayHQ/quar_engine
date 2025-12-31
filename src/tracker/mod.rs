@@ -118,6 +118,20 @@ impl Tracker {
     /// # Returns
     /// The estimated pose, or None if tracking failed.
     pub fn process_frame(&mut self, rgba: &[u8], width: u32, height: u32) -> Option<Pose3D> {
+        self.process_frame_with_time(rgba, width, height, 0.0)
+    }
+
+    /// Process a new frame with timestamp for gyro compensation.
+    ///
+    /// # Arguments
+    /// * `rgba` - RGBA pixel data
+    /// * `width` - Frame width
+    /// * `height` - Frame height
+    /// * `timestamp_ms` - Frame timestamp in milliseconds (for gyro interpolation)
+    ///
+    /// # Returns
+    /// The estimated pose, or None if tracking failed.
+    pub fn process_frame_with_time(&mut self, rgba: &[u8], width: u32, height: u32, timestamp_ms: f64) -> Option<Pose3D> {
         self.frame_count += 1;
 
         // Convert to grayscale
@@ -165,9 +179,19 @@ impl Tracker {
 
                     // Only compute translation if confidence allows
                     if confidence.allow_translation() {
-                        // Calculate optical flow components for 6DoF translation using inliers only
+                        // Apply gyro compensation if enabled
+                        let (comp_prev, comp_curr) = if self.gyro_compensation_enabled && timestamp_ms > 0.0 {
+                            let compensated = self.flow_compensator.compensate(&inlier_prev, &inlier_curr, timestamp_ms);
+                            let prev: Vec<_> = compensated.iter().map(|(p, _)| *p).collect();
+                            let curr: Vec<_> = compensated.iter().map(|(_, c)| *c).collect();
+                            (prev, curr)
+                        } else {
+                            (inlier_prev.clone(), inlier_curr.clone())
+                        };
+
+                        // Calculate optical flow components for 6DoF translation using compensated points
                         let (flow_x, flow_y, radial_z) =
-                            self.calculate_flow_components(&inlier_prev, &inlier_curr, width, height);
+                            self.calculate_flow_components(&comp_prev, &comp_curr, width, height);
 
                         // Scale translation by confidence
                         let confidence_scale = confidence.translation_scale();
@@ -445,6 +469,16 @@ impl TrackerHandle {
     #[wasm_bindgen]
     pub fn process_frame(&mut self, rgba: &[u8], width: u32, height: u32) -> JsValue {
         match self.tracker.process_frame(rgba, width, height) {
+            Some(pose) => serde_wasm_bindgen::to_value(&pose).unwrap_or(JsValue::NULL),
+            None => JsValue::NULL,
+        }
+    }
+
+    /// Process a frame with timestamp for gyro compensation.
+    /// timestamp_ms should be from performance.now() for best results.
+    #[wasm_bindgen]
+    pub fn process_frame_with_time(&mut self, rgba: &[u8], width: u32, height: u32, timestamp_ms: f64) -> JsValue {
+        match self.tracker.process_frame_with_time(rgba, width, height, timestamp_ms) {
             Some(pose) => serde_wasm_bindgen::to_value(&pose).unwrap_or(JsValue::NULL),
             None => JsValue::NULL,
         }
