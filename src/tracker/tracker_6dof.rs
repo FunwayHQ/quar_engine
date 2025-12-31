@@ -456,12 +456,9 @@ impl Tracker6DoF {
                     &best.translation,
                 );
 
-                // Get gravity-to-world rotation matrix
-                // This transforms from camera frame (Z forward, Y down) to world frame (Y up)
-                let gravity_rotation = self.compute_gravity_rotation();
-
-                // Transform triangulated points to world coordinates and add to map
-                // Note: triangulated points are in camera 1's frame (previous frame)
+                    // Store triangulated points in camera frame (scaled)
+                // Note: Points are in camera 1's frame (previous frame)
+                // Plane detection will transform normals to world frame for classification
                 for (_idx, point_cam) in valid_points.iter() {
                     // Scale the point by our scale factor
                     let scaled_point = Vec3::new(
@@ -470,18 +467,15 @@ impl Tracker6DoF {
                         point_cam.z * self.scale as f64,
                     );
 
-                    // Transform from camera frame to gravity-aligned world frame
-                    let world_point = gravity_rotation.mul_vec(&scaled_point);
-
                     // Only add if point is in reasonable depth range (0.1m to 20m)
-                    let depth = scaled_point.z; // Use camera-frame depth for filtering
+                    let depth = scaled_point.z;
                     if depth > 0.1 && depth < 20.0 {
                         // Add to map points, maintaining max size
                         if self.map_points_3d.len() >= self.max_map_points {
                             // Remove oldest point (FIFO)
                             self.map_points_3d.remove(0);
                         }
-                        self.map_points_3d.push(world_point);
+                        self.map_points_3d.push(scaled_point);
                     }
                 }
             }
@@ -617,7 +611,7 @@ impl Tracker6DoF {
     }
 
     /// Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
-    /// Points are in camera/world coordinates (scaled by current scale factor).
+    /// Points are in camera frame coordinates (scaled by current scale factor).
     pub fn get_map_points(&self) -> Vec<f64> {
         let mut result = Vec::with_capacity(self.map_points_3d.len() * 3);
         for p in &self.map_points_3d {
@@ -626,6 +620,32 @@ impl Tracker6DoF {
             result.push(p.z);
         }
         result
+    }
+
+    /// Get map points transformed to gravity-aligned world frame.
+    /// Returns a flat array [x1, y1, z1, x2, y2, z2, ...].
+    /// World frame has Y pointing up (opposite to gravity).
+    pub fn get_map_points_world(&self) -> Vec<f64> {
+        let gravity_rotation = self.compute_gravity_rotation();
+        let mut result = Vec::with_capacity(self.map_points_3d.len() * 3);
+        for p in &self.map_points_3d {
+            let world_p = gravity_rotation.mul_vec(p);
+            result.push(world_p.x);
+            result.push(world_p.y);
+            result.push(world_p.z);
+        }
+        result
+    }
+
+    /// Get the gravity rotation matrix as a flat array (row-major).
+    /// This transforms from camera frame to gravity-aligned world frame.
+    pub fn get_gravity_rotation(&self) -> Vec<f64> {
+        let r = self.compute_gravity_rotation();
+        vec![
+            r.data[0][0], r.data[0][1], r.data[0][2],
+            r.data[1][0], r.data[1][1], r.data[1][2],
+            r.data[2][0], r.data[2][1], r.data[2][2],
+        ]
     }
 
     /// Clear all map points (e.g., when relocalization is needed).

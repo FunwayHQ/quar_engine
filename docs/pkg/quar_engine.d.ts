@@ -533,7 +533,7 @@ export class Tracker6DoFHandle {
   process_frame(rgba: Uint8Array, width: number, height: number): any;
   /**
    * Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
-   * Points are in camera/world coordinates (scaled by current scale factor).
+   * Points are in camera frame coordinates (scaled by current scale factor).
    */
   get_map_points(): Float64Array;
   /**
@@ -603,6 +603,17 @@ export class Tracker6DoFHandle {
    * Call after computing translation each frame.
    */
   apply_stabilization(): void;
+  /**
+   * Get the gravity rotation matrix as a flat array (row-major, 9 elements).
+   * This transforms from camera frame to gravity-aligned world frame.
+   */
+  get_gravity_rotation(): Float64Array;
+  /**
+   * Get map points transformed to gravity-aligned world frame.
+   * Returns a flat array [x1, y1, z1, x2, y2, z2, ...].
+   * World frame has Y pointing up (opposite to gravity).
+   */
+  get_map_points_world(): Float64Array;
   /**
    * Get scale estimation confidence (0.0-1.0).
    */
@@ -976,7 +987,9 @@ export interface InitOutput {
   readonly tracker6dofhandle_get_accel_speed: (a: number) => number;
   readonly tracker6dofhandle_get_accel_velocity: (a: number) => [number, number];
   readonly tracker6dofhandle_get_gravity: (a: number) => [number, number];
+  readonly tracker6dofhandle_get_gravity_rotation: (a: number) => [number, number];
   readonly tracker6dofhandle_get_map_points: (a: number) => [number, number];
+  readonly tracker6dofhandle_get_map_points_world: (a: number) => [number, number];
   readonly tracker6dofhandle_get_pose: (a: number) => any;
   readonly tracker6dofhandle_get_scale: (a: number) => number;
   readonly tracker6dofhandle_get_scale_confidence: (a: number) => number;

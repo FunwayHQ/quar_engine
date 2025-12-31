@@ -1933,7 +1933,7 @@ export class Tracker6DoFHandle {
     }
     /**
      * Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
-     * Points are in camera/world coordinates (scaled by current scale factor).
+     * Points are in camera frame coordinates (scaled by current scale factor).
      * @returns {Float64Array}
      */
     get_map_points() {
@@ -2073,6 +2073,29 @@ export class Tracker6DoFHandle {
      */
     apply_stabilization() {
         wasm.tracker6dofhandle_apply_stabilization(this.__wbg_ptr);
+    }
+    /**
+     * Get the gravity rotation matrix as a flat array (row-major, 9 elements).
+     * This transforms from camera frame to gravity-aligned world frame.
+     * @returns {Float64Array}
+     */
+    get_gravity_rotation() {
+        const ret = wasm.tracker6dofhandle_get_gravity_rotation(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
+    }
+    /**
+     * Get map points transformed to gravity-aligned world frame.
+     * Returns a flat array [x1, y1, z1, x2, y2, z2, ...].
+     * World frame has Y pointing up (opposite to gravity).
+     * @returns {Float64Array}
+     */
+    get_map_points_world() {
+        const ret = wasm.tracker6dofhandle_get_map_points_world(this.__wbg_ptr);
+        var v1 = getArrayF64FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 8, 8);
+        return v1;
     }
     /**
      * Get scale estimation confidence (0.0-1.0).

@@ -1026,10 +1026,25 @@ impl Tracker6DoFHandle {
     }
 
     /// Get map points as a flat array [x1, y1, z1, x2, y2, z2, ...].
-    /// Points are in camera/world coordinates (scaled by current scale factor).
+    /// Points are in camera frame coordinates (scaled by current scale factor).
     #[wasm_bindgen]
     pub fn get_map_points(&self) -> Vec<f64> {
         self.tracker.get_map_points()
+    }
+
+    /// Get map points transformed to gravity-aligned world frame.
+    /// Returns a flat array [x1, y1, z1, x2, y2, z2, ...].
+    /// World frame has Y pointing up (opposite to gravity).
+    #[wasm_bindgen]
+    pub fn get_map_points_world(&self) -> Vec<f64> {
+        self.tracker.get_map_points_world()
+    }
+
+    /// Get the gravity rotation matrix as a flat array (row-major, 9 elements).
+    /// This transforms from camera frame to gravity-aligned world frame.
+    #[wasm_bindgen]
+    pub fn get_gravity_rotation(&self) -> Vec<f64> {
+        self.tracker.get_gravity_rotation()
     }
 
     /// Clear all map points.
