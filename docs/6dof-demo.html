@@ -950,52 +950,58 @@
             smoothedPosition.y += (targetY - smoothedPosition.y) * smoothing;
             smoothedPosition.z += (targetZ - smoothedPosition.z) * smoothing;
 
-            // Apply translations to camera FIRST
-            // X: left/right - direct
-            // Y: up/down - inverted
-            // Z: forward/back - with optional invert
-            const newX = smoothedPosition.x;
-            const newY = 1 - smoothedPosition.y;
+            // Move the SCENE (arGroup) instead of camera for translation
+            // This works better with gyro-controlled camera rotation
             const zVal = invertZ ? -smoothedPosition.z : smoothedPosition.z;
-            const newZ = 3 - zVal * 3.0;
 
-            camera.position.set(newX, newY, newZ);
+            // Scene moves opposite to camera movement
+            arGroup.position.x = -smoothedPosition.x;
+            arGroup.position.y = smoothedPosition.y;  // Y was already inverted
+            arGroup.position.z = zVal * 3.0;  // Positive Z = scene moves away = looks like moving forward
 
-            // Debug: show smoothed values AND actual camera Z
+            // Keep camera at default position (rotation is handled by gyro)
+            camera.position.set(0, 1, 3);
+
+            // Debug: show Z values
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
-            flowDebugEl.textContent = `z:${smoothedPosition.z.toFixed(2)} cam:${camera.position.z.toFixed(2)}`;
+            flowDebugEl.textContent = `z:${smoothedPosition.z.toFixed(2)} grp:${arGroup.position.z.toFixed(2)}`;
 
             // Update state
             stateEl.textContent = gyroActive ? 'tracking (IMU)' : 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Update pose display
-            txEl.textContent = smoothedPosition.x.toFixed(3);
-            tyEl.textContent = smoothedPosition.y.toFixed(3);
-            tzEl.textContent = smoothedPosition.z.toFixed(3);
+            // Update pose display (show scene position)
+            txEl.textContent = arGroup.position.x.toFixed(3);
+            tyEl.textContent = arGroup.position.y.toFixed(3);
+            tzEl.textContent = arGroup.position.z.toFixed(3);
 
             const toDeg = 180 / Math.PI;
             rxEl.textContent = (camera.rotation.x * toDeg).toFixed(1);
             ryEl.textContent = (camera.rotation.y * toDeg).toFixed(1);
             rzEl.textContent = (camera.rotation.z * toDeg).toFixed(1);
 
-            // Calculate distance traveled (using smoothed position)
+            // Calculate distance traveled (using arGroup position)
             if (lastPosition.lengthSq() > 0) {
-              const delta = smoothedPosition.distanceTo(lastPosition);
-              if (delta < 0.1 && delta > 0.0001) { // Ignore large jumps and noise
+              const delta = arGroup.position.distanceTo(lastPosition);
+              if (delta < 0.5 && delta > 0.0001) { // Ignore large jumps and noise
                 totalDistance += delta;
               }
             }
-            lastPosition.copy(smoothedPosition);
+            lastPosition.copy(arGroup.position);
             distanceEl.textContent = totalDistance.toFixed(3);
 
             // arGroup stays at world origin - camera moves around it
             // This is handled by camera.rotation and camera.position above
 
-            // Add to trajectory
+            // Add to trajectory (use negative of arGroup position = camera position equivalent)
             if (showTrajectoryCheckbox.checked) {
               if (frameCount % 5 === 0) {
-                updateTrajectory(smoothedPosition.clone());
+                const trajPos = new THREE.Vector3(
+                  -arGroup.position.x,
+                  -arGroup.position.y,
+                  -arGroup.position.z
+                );
+                updateTrajectory(trajPos);
               }
             }
 
@@ -1054,11 +1060,11 @@
       fusedOrientation = { x: 0, y: 0, z: 0 };
       gyroInitialized = false;
 
-      // Reset camera
+      // Reset camera rotation (position stays at 0,1,3)
       camera.position.set(0, 1, 3);
       camera.rotation.set(0, 0, 0);
 
-      // arGroup stays at world origin
+      // Reset arGroup (scene) position
       arGroup.position.set(0, 0, 0);
       arGroup.quaternion.set(0, 0, 0, 1);
 
