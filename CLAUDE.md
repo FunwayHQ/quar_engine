@@ -22,11 +22,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 11: 6DoF Tracker** - Full 6DoF pose estimation (rotation + translation)
 - **Sprint 12: Memory & Performance** - Arena allocator, frame pool, adaptive quality
 - **Sprint 13: Pure-Rust Linear Algebra** - Replaced nalgebra with WASM-compatible pure-Rust implementations
+- **Sprint 21: Robust Feature Tracking** - RANSAC flow outlier rejection, feature quality scoring, tracking confidence levels, grid-based distribution
 
 ### Current Status
 - **Full 6DoF tracking working in WASM** (~51KB gzipped)
-- 165 unit tests passing
+- 172 unit tests passing
 - Pure-Rust linear algebra (no external math dependencies)
+- RANSAC-based outlier rejection for stable tracking
+- Tracking confidence levels (Lost/Low/Medium/High)
 
 ## Technology Stack
 
@@ -89,6 +92,7 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 - `src/tracker/essential_pure.rs` - Pure-Rust Essential matrix (8-point, RANSAC, decomposition)
 - `src/tracker/triangulation.rs` - DLT triangulation, depth validation
 - `src/tracker/linalg.rs` - Pure-Rust linear algebra (Vec2, Vec3, Mat3, SVD, eigensolvers)
+- `src/tracker/robust.rs` - RANSAC flow filtering, feature quality, tracking confidence, grid distribution
 
 **Memory & Performance:**
 - `src/memory/arena.rs` - Arena allocator, FixedVec

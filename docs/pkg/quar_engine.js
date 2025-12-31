@@ -1333,6 +1333,14 @@ export class TrackerHandle {
         return TrackerHandle.__wrap(ret);
     }
     /**
+     * Get the number of inlier points after RANSAC filtering.
+     * @returns {number}
+     */
+    inlier_points() {
+        const ret = wasm.trackerhandle_inlier_points(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * Process a frame and return the pose as JSON.
      * @param {Uint8Array} rgba
      * @param {number} width
@@ -1352,6 +1360,14 @@ export class TrackerHandle {
     tracked_points() {
         const ret = wasm.trackerhandle_tracked_points(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Get the current tracking confidence level (0=Lost, 1=Low, 2=Medium, 3=High).
+     * @returns {number}
+     */
+    confidence_level() {
+        const ret = wasm.trackerhandle_confidence_level(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Create a new tracker.

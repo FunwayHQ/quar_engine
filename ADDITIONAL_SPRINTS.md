@@ -1502,3 +1502,657 @@ Sprint 18 (Loop Closure) ←── requires 14-16
 | Bundle adjustment too slow | Medium | High | Sparse matrices, Schur complement |
 | Loop closure false positives | Low | Medium | Geometric verification |
 | WASM binary size > 3MB | Medium | Medium | Feature flags, tree shaking |
+
+---
+
+# Phase 7: 6DoF Stability & Real-World Robustness (Sprints 20-24)
+
+**Context:** Based on real-world testing of the 6DoF tracker, several stability issues were identified:
+1. Optical flow mixes rotation and translation - hard to separate
+2. Translation drifts during rotation (rotation-induced flow looks like translation)
+3. Noisy/erratic movement when tracked point count drops
+4. Z (depth) estimation from radial flow is unreliable
+5. Position accumulates drift over time
+
+**Goal:** Rock-solid 6DoF tracking that works reliably with natural phone movements.
+
+---
+
+## Sprint 20: Gyro-Compensated Optical Flow
+
+**Duration:** 1 sprint
+**Objective:** Remove rotation-induced flow from optical flow to isolate pure translation.
+
+**Problem:** When the phone rotates, features move in a pattern that looks like translation to our simple flow calculation. Even with rotation suppression, some mixing occurs.
+
+**Solution:** Use gyroscope data to **predict** the rotation-induced flow and **subtract** it from measured optical flow. The residual is pure translation.
+
+**Deliverables:**
+- Gyro-to-flow prediction model
+- Flow compensation algorithm in Rust
+- IMU-camera synchronization
+- Improved translation isolation
+
+**LLM Prompt:**
+```
+You are implementing gyro-compensated optical flow for Aether's 6DoF tracker.
+
+The problem: When the phone rotates, optical flow detects feature movement that includes
+BOTH rotation-induced flow AND translation-induced flow. We need to separate them.
+
+Create the flow compensation module in /src/tracker/flow_compensation.rs:
+
+1. Predict rotation-induced flow from gyroscope:
+
+   For a feature at normalized coordinates (x, y), the flow induced by rotation ω is:
+
+   du = -fy * ωx - fx * x * y * ωy + fx * (1 + x²) * ωz
+   dv = fy * (1 + y²) * ωx + fx * x * y * ωz - fy * y * ωx
+
+   Where (ωx, ωy, ωz) are rotation rates in rad/s, and (fx, fy) are focal lengths.
+
+   ```rust
+   pub fn predict_rotation_flow(
+       point: &Point2,           // Normalized camera coordinates
+       omega: &Vector3<f64>,     // Rotation rate (rad/s)
+       dt: f64,                  // Time between frames
+       camera: &CameraIntrinsics,
+   ) -> Vector2<f64>;  // Predicted flow in pixels
+   ```
+
+2. Compensate measured flow:
+   ```rust
+   pub fn compensate_flow(
+       prev_points: &[Point2],
+       curr_points: &[Point2],
+       gyro_omega: Vector3<f64>,
+       dt: f64,
+       camera: &CameraIntrinsics,
+   ) -> Vec<(Point2, Point2)>  // Compensated (prev, curr) pairs
+   {
+       // For each point pair:
+       // 1. Compute predicted rotation flow
+       // 2. Subtract from measured flow
+       // 3. Return adjusted curr_point
+   }
+   ```
+
+3. Integration with tracker:
+   - Add gyro buffer to TrackerHandle
+   - Interpolate gyro to frame timestamp
+   - Apply compensation before calculate_flow_components
+
+4. Handle edge cases:
+   - No gyro data: fall back to uncompensated + rotation suppression
+   - High rotation rate: trust gyro compensation more
+   - IMU-camera calibration: rotation matrix for misaligned sensors
+
+Expected improvement: Translation stable during rotation, enabling natural
+phone movement without position jumping.
+```
+
+---
+
+## Sprint 21: Robust Feature Tracking & Outlier Rejection
+
+**Duration:** 1 sprint
+**Objective:** Improve tracking quality with better feature selection and flow outlier rejection.
+
+**Problem:** Low tracked point counts, noisy features, and outlier flows cause erratic pose estimation. When the scene changes or features are lost, tracking becomes unstable.
+
+**Deliverables:**
+- Feature quality scoring
+- RANSAC-based flow outlier rejection
+- Minimum inlier thresholds
+- Feature distribution enforcement (grid-based)
+
+**LLM Prompt:**
+```
+You are improving feature tracking robustness for Aether's 6DoF system.
+
+Create robust tracking in /src/tracker/robust.rs:
+
+1. Feature quality scoring:
+   ```rust
+   pub struct FeatureQuality {
+       corner_score: f32,      // FAST corner strength
+       track_length: u32,      // Consecutive frames tracked
+       flow_variance: f32,     // How consistent is this feature's flow
+   }
+
+   impl FeatureQuality {
+       pub fn overall_score(&self) -> f32;
+   }
+   ```
+
+2. Flow outlier rejection with RANSAC:
+   ```rust
+   /// Fit an affine motion model and reject outliers
+   pub fn ransac_flow_filter(
+       prev_points: &[Point2],
+       curr_points: &[Point2],
+       threshold: f32,         // Max residual to be inlier (pixels)
+       iterations: usize,
+   ) -> (Vec<bool>, AffineModel)  // Inlier mask and fitted model
+
+   /// The affine model captures global motion (rotation + translation)
+   pub struct AffineModel {
+       pub rotation: f32,      // Estimated rotation angle
+       pub scale: f32,         // Estimated scale change
+       pub tx: f32, ty: f32,   // Estimated translation
+   }
+   ```
+
+3. Minimum inlier thresholds:
+   ```rust
+   pub struct TrackingThresholds {
+       pub min_points_pose: usize,        // Min points for any pose update (15)
+       pub min_points_translation: usize, // Min points for translation (25)
+       pub min_inlier_ratio: f32,         // Min inlier percentage (0.6)
+   }
+
+   pub enum TrackingConfidence {
+       High,       // > 50 inliers, good distribution
+       Medium,     // 25-50 inliers, translation enabled
+       Low,        // 15-25 inliers, rotation only
+       Lost,       // < 15 inliers, no updates
+   }
+   ```
+
+4. Feature distribution enforcement:
+   ```rust
+   /// Ensure features are well-distributed across image
+   pub fn enforce_distribution(
+       keypoints: &mut Vec<KeyPoint>,
+       width: u32,
+       height: u32,
+       grid_size: (usize, usize),  // e.g., 4x4
+       min_per_cell: usize,         // e.g., 3
+       max_per_cell: usize,         // e.g., 30
+   );
+
+   /// Detect new features only in sparse grid cells
+   pub fn detect_in_sparse_cells(
+       image: &GrayImage,
+       existing: &[Point2],
+       grid_size: (usize, usize),
+       min_per_cell: usize,
+   ) -> Vec<KeyPoint>;
+   ```
+
+5. Temporal consistency check:
+   - Track velocity (change in flow over time)
+   - Reject sudden velocity jumps (> 3 standard deviations)
+   - Use exponential moving average for velocity
+
+Expected improvement: Stable tracking with partial occlusion, fewer erratic jumps,
+graceful degradation when features are lost.
+```
+
+---
+
+## Sprint 22: Kalman Filter State Estimation
+
+**Duration:** 1 sprint
+**Objective:** Implement proper state estimation for smooth, physically-plausible motion.
+
+**Problem:** Raw optical flow measurements are noisy. Simple exponential smoothing doesn't model physics correctly - it can't distinguish between noise and real motion, and doesn't handle varying measurement confidence.
+
+**Deliverables:**
+- Extended Kalman Filter for pose estimation
+- Position/velocity state model
+- Adaptive measurement noise
+- Outlier-robust updates
+
+**LLM Prompt:**
+```
+You are implementing Kalman filter state estimation for Aether's 6DoF tracker.
+
+Create the state estimation module in /src/tracker/kalman.rs:
+
+1. State vector:
+   ```rust
+   pub struct MotionState {
+       // Position (3D) - in camera frame or world frame
+       pub position: Vector3<f64>,
+       pub velocity: Vector3<f64>,
+
+       // Covariance (6x6)
+       pub covariance: Matrix6<f64>,
+
+       // Process noise (adjusted based on motion model)
+       pub process_noise: Matrix6<f64>,
+   }
+   ```
+
+2. Prediction step (every frame):
+   ```rust
+   impl MotionState {
+       /// Predict state forward by dt seconds
+       pub fn predict(&mut self, dt: f64) {
+           // State transition: x_new = F * x
+           // Position: p_new = p + v * dt
+           // Velocity: v_new = v * decay (slight friction)
+
+           // Covariance propagation: P_new = F * P * F^T + Q
+       }
+   }
+   ```
+
+3. Update step (when measurement available):
+   ```rust
+   impl MotionState {
+       /// Update with position measurement
+       pub fn update(
+           &mut self,
+           measured_position: Vector3<f64>,
+           confidence: f64,  // 0.0-1.0, affects measurement noise
+       ) {
+           // Adaptive measurement noise based on confidence
+           let R = base_noise / confidence.max(0.1);
+
+           // Standard Kalman update
+           // K = P * H^T * (H * P * H^T + R)^-1
+           // x = x + K * (z - H * x)
+           // P = (I - K * H) * P
+       }
+
+       /// Update with Mahalanobis gating (reject outliers)
+       pub fn update_gated(
+           &mut self,
+           measured_position: Vector3<f64>,
+           confidence: f64,
+           gate_threshold: f64,  // Chi-squared threshold
+       ) -> bool {
+           // Compute Mahalanobis distance
+           // If > threshold, reject measurement
+           // Otherwise, apply standard update
+       }
+   }
+   ```
+
+4. Motion model adaptations:
+   ```rust
+   pub enum MotionModel {
+       /// Low motion - tight process noise
+       Stationary,
+       /// Normal handheld motion
+       Walking,
+       /// Fast motion - loose process noise
+       Running,
+   }
+
+   impl MotionState {
+       pub fn adapt_to_motion(&mut self, gyro_magnitude: f64, flow_magnitude: f64);
+   }
+   ```
+
+5. Integration with tracker:
+   ```rust
+   // In render loop:
+   kalman_state.predict(dt);
+
+   if let Some(measurement) = optical_flow_translation {
+       let confidence = compute_confidence(tracked_points, inlier_ratio);
+       kalman_state.update_gated(measurement, confidence, 9.21);  // Chi-squared 99%
+   }
+
+   let smoothed_position = kalman_state.position;
+   ```
+
+Expected improvement: Smooth, physically-plausible motion. Proper handling of
+measurement uncertainty. Automatic rejection of outlier measurements.
+```
+
+---
+
+## Sprint 23: Accelerometer-Aided Translation
+
+**Duration:** 1 sprint
+**Objective:** Use accelerometer data to improve translation estimation and provide metric scale hints.
+
+**Problem:** Visual-only translation has unknown scale and drifts. Accelerometer provides metric acceleration that can help estimate scale and supplement visual during fast motion.
+
+**Deliverables:**
+- Accelerometer preprocessing (gravity removal)
+- Double integration with ZUPT (Zero Velocity Update)
+- Visual-inertial translation fusion
+- Metric scale hints
+
+**LLM Prompt:**
+```
+You are implementing accelerometer-aided translation for Aether.
+
+The accelerometer measures linear acceleration in m/s², which can theoretically be
+double-integrated to position. However, double integration drifts rapidly. We use it
+primarily for:
+1. Scale hints (compare visual translation magnitude to accel magnitude)
+2. Short-term velocity during visual degradation
+3. Zero-velocity detection (ZUPT) to reset drift
+
+Create /src/vio/accelerometer.rs:
+
+1. Gravity removal:
+   ```rust
+   pub struct AccelerometerProcessor {
+       gravity_estimate: Vector3<f64>,  // Estimated gravity direction
+       alpha: f64,                       // Low-pass filter coefficient
+   }
+
+   impl AccelerometerProcessor {
+       /// Update gravity estimate (call during stationary periods)
+       pub fn update_gravity(&mut self, accel: &Vector3<f64>);
+
+       /// Remove gravity from acceleration reading
+       pub fn remove_gravity(
+           &self,
+           accel: &Vector3<f64>,
+           orientation: &UnitQuaternion<f64>,
+       ) -> Vector3<f64>;
+   }
+   ```
+
+2. Integration with ZUPT:
+   ```rust
+   pub struct AccelIntegrator {
+       velocity: Vector3<f64>,
+       position: Vector3<f64>,
+       last_time: f64,
+       zupt_threshold: f64,    // Variance threshold for zero-velocity
+       zupt_window: VecDeque<Vector3<f64>>,  // Recent accelerations
+   }
+
+   impl AccelIntegrator {
+       pub fn integrate(&mut self, accel: &Vector3<f64>, dt: f64);
+
+       /// Detect if device is stationary (for ZUPT)
+       pub fn is_stationary(&self) -> bool {
+           let variance = self.zupt_window.variance();
+           variance < self.zupt_threshold
+       }
+
+       /// Apply ZUPT - reset velocity to zero
+       pub fn apply_zupt(&mut self) {
+           if self.is_stationary() {
+               self.velocity = Vector3::zeros();
+           }
+       }
+   }
+   ```
+
+3. Visual-inertial fusion:
+   ```rust
+   /// Fuse visual translation with accelerometer data
+   pub fn fuse_translation(
+       visual_translation: Vector3<f64>,    // From optical flow (unknown scale)
+       visual_confidence: f64,
+       accel_velocity: Vector3<f64>,        // From integration (metric, drifty)
+       accel_confidence: f64,
+       dt: f64,
+   ) -> FusedTranslation {
+       // Compare directions to estimate scale
+       // Use accel for short-term, visual for long-term
+       // Weight by confidence
+   }
+
+   pub struct FusedTranslation {
+       pub position: Vector3<f64>,
+       pub velocity: Vector3<f64>,
+       pub scale_estimate: f64,    // Visual-to-metric scale
+       pub confidence: f64,
+   }
+   ```
+
+4. Scale estimation:
+   ```rust
+   pub struct ScaleEstimator {
+       scale_history: VecDeque<f64>,
+       current_scale: f64,
+   }
+
+   impl ScaleEstimator {
+       /// Update scale estimate from visual and accel magnitudes
+       pub fn update(
+           &mut self,
+           visual_displacement: f64,   // Magnitude of visual translation
+           accel_displacement: f64,    // Magnitude from double-integrated accel
+       ) {
+           if visual_displacement > 0.01 && accel_displacement > 0.001 {
+               let scale = accel_displacement / visual_displacement;
+               // Robust update with outlier rejection
+           }
+       }
+   }
+   ```
+
+5. WASM interface:
+   ```rust
+   #[wasm_bindgen]
+   impl TrackerHandle {
+       pub fn set_accelerometer(&mut self, ax: f64, ay: f64, az: f64, timestamp: f64);
+       pub fn get_metric_scale(&self) -> f64;
+       pub fn get_velocity(&self) -> Vec<f64>;  // [vx, vy, vz]
+   }
+   ```
+
+Expected improvement: Metric scale hints, better velocity tracking,
+position stability during stationary periods (ZUPT).
+```
+
+---
+
+## Sprint 24: Position Stabilization & Drift Correction
+
+**Duration:** 1 sprint
+**Objective:** Implement mechanisms to prevent and correct accumulated drift.
+
+**Problem:** Even with all the improvements, position drifts over time. We need active mechanisms to detect and correct drift, especially when the device is stationary.
+
+**Deliverables:**
+- Stationary detection (visual + IMU)
+- Position anchoring during stationary periods
+- Drift decay when stationary
+- Visual anchor points for drift correction
+
+**LLM Prompt:**
+```
+You are implementing position stabilization for Aether's 6DoF tracker.
+
+Even with good tracking, small errors accumulate into drift. We need to:
+1. Detect when user is stationary
+2. Anchor position during stationary periods
+3. Allow controlled decay toward stable position
+4. Use visual anchors to correct drift
+
+Create /src/tracker/stabilization.rs:
+
+1. Stationary detection:
+   ```rust
+   pub struct StationaryDetector {
+       gyro_window: VecDeque<f64>,        // Gyro magnitude history
+       accel_window: VecDeque<f64>,       // Accel variance history
+       flow_window: VecDeque<f64>,        // Optical flow magnitude history
+       stationary_frames: u32,            // Consecutive stationary frames
+   }
+
+   impl StationaryDetector {
+       pub fn update(
+           &mut self,
+           gyro_mag: f64,
+           accel_variance: f64,
+           flow_mag: f64,
+       );
+
+       pub fn is_stationary(&self) -> bool {
+           // All three indicators must be low
+           self.gyro_window.mean() < 0.05 &&      // rad/s
+           self.accel_window.mean() < 0.1 &&      // m/s² variance
+           self.flow_window.mean() < 1.0 &&       // pixels
+           self.stationary_frames > 10            // ~160ms at 60fps
+       }
+
+       pub fn stationary_duration(&self) -> f64;  // seconds
+   }
+   ```
+
+2. Position anchoring:
+   ```rust
+   pub struct PositionAnchor {
+       anchor_position: Option<Vector3<f64>>,
+       anchor_time: f64,
+       anchor_strength: f64,   // How strongly to pull toward anchor
+   }
+
+   impl PositionAnchor {
+       /// Set anchor when becoming stationary
+       pub fn set_anchor(&mut self, position: Vector3<f64>, time: f64);
+
+       /// Clear anchor when motion detected
+       pub fn clear_anchor(&mut self);
+
+       /// Apply anchor pull (call every frame)
+       pub fn apply(
+           &self,
+           current_position: &mut Vector3<f64>,
+           is_stationary: bool,
+           dt: f64,
+       ) {
+           if let Some(anchor) = self.anchor_position {
+               if is_stationary {
+                   // Strong pull toward anchor
+                   let pull = (anchor - *current_position) * self.anchor_strength;
+                   *current_position += pull * dt;
+               }
+           }
+       }
+   }
+   ```
+
+3. Drift decay:
+   ```rust
+   pub struct DriftDecay {
+       decay_rate: f64,         // Per-second decay toward origin
+       max_drift: f64,          // Maximum allowed drift before forcing correction
+       origin: Vector3<f64>,    // Reference position (usually zero)
+   }
+
+   impl DriftDecay {
+       /// Apply decay when stationary (pull position toward origin)
+       pub fn apply(
+           &self,
+           position: &mut Vector3<f64>,
+           velocity: &mut Vector3<f64>,
+           is_stationary: bool,
+           stationary_duration: f64,
+       ) {
+           if is_stationary && stationary_duration > 1.0 {
+               // Gradual decay toward origin
+               let decay_factor = (-self.decay_rate * stationary_duration).exp();
+               *position = *position * decay_factor + self.origin * (1.0 - decay_factor);
+               *velocity = *velocity * decay_factor;
+           }
+       }
+   }
+   ```
+
+4. Visual anchor points:
+   ```rust
+   pub struct VisualAnchor {
+       pub position_3d: Vector3<f64>,
+       pub descriptors: Vec<OrbDescriptor>,
+       pub confidence: f64,
+       pub last_seen: f64,
+   }
+
+   pub struct AnchorManager {
+       anchors: Vec<VisualAnchor>,
+       max_anchors: usize,
+   }
+
+   impl AnchorManager {
+       /// Create anchor from current stable position
+       pub fn create_anchor(
+           &mut self,
+           position: Vector3<f64>,
+           features: &[Feature],
+       );
+
+       /// Find matching anchor in current frame
+       pub fn find_anchor(
+           &self,
+           features: &[Feature],
+       ) -> Option<(usize, Vector3<f64>)>;  // (anchor_idx, correction)
+
+       /// Apply anchor correction to reduce drift
+       pub fn correct_drift(
+           &self,
+           position: &mut Vector3<f64>,
+           anchor_match: Option<(usize, Vector3<f64>)>,
+       );
+   }
+   ```
+
+5. Integration:
+   ```rust
+   // In main tracking loop:
+
+   stationary_detector.update(gyro_mag, accel_var, flow_mag);
+   let is_stationary = stationary_detector.is_stationary();
+
+   if is_stationary && !was_stationary {
+       // Just became stationary - set anchor
+       position_anchor.set_anchor(current_position);
+       anchor_manager.create_anchor(current_position, features);
+   }
+
+   if !is_stationary && was_stationary {
+       // Just started moving - clear anchor
+       position_anchor.clear_anchor();
+   }
+
+   // Apply stabilization
+   position_anchor.apply(&mut position, is_stationary, dt);
+   drift_decay.apply(&mut position, &mut velocity, is_stationary, stationary_duration);
+
+   // Check for visual anchor matches for drift correction
+   if let Some(correction) = anchor_manager.find_anchor(features) {
+       anchor_manager.correct_drift(&mut position, correction);
+   }
+   ```
+
+Expected improvement: Position stays stable when device is stationary.
+Drift is actively corrected. Long-term stability improved.
+```
+
+---
+
+## Sprint Summary: Stability Improvements
+
+| Sprint | Focus | Key Outcome |
+|--------|-------|-------------|
+| 20 | Gyro Compensation | Clean translation during rotation |
+| 21 | Robust Tracking | Outlier rejection, quality features |
+| 22 | Kalman Filter | Smooth, physically-plausible motion |
+| 23 | Accelerometer | Metric scale, velocity hints |
+| 24 | Stabilization | Drift correction, position anchoring |
+
+## Implementation Priority
+
+**Immediate impact (do first):**
+1. **Sprint 21** - Robust tracking (immediate stability improvement, pure Rust)
+2. **Sprint 20** - Gyro compensation (fixes rotation/translation mixing)
+
+**Medium effort, high impact:**
+3. **Sprint 22** - Kalman filter (proper state estimation)
+4. **Sprint 24** - Stabilization (drift prevention)
+
+**Longer term:**
+5. **Sprint 23** - Accelerometer (metric scale, requires more sensor work)
+
+## Validation Checkpoints
+
+- **Sprint 20 Exit:** Translation stable during slow (< 30°/s) rotation
+- **Sprint 21 Exit:** No erratic jumps, graceful degradation below 20 points
+- **Sprint 22 Exit:** Smooth motion with < 100ms latency, outliers rejected
+- **Sprint 23 Exit:** Scale estimate within 30% of reality after 10 seconds
+- **Sprint 24 Exit:** Position drift < 5cm over 30 seconds when stationary

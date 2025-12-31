@@ -262,6 +262,14 @@
         <span class="stat-value" id="features">--</span>
       </div>
       <div class="stat">
+        <span class="stat-label">Inliers: </span>
+        <span class="stat-value" id="inliers">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Confidence: </span>
+        <span class="stat-value" id="confidence">--</span>
+      </div>
+      <div class="stat">
         <span class="stat-label">State: </span>
         <span class="stat-value" id="state">initializing</span>
       </div>
@@ -445,6 +453,8 @@
     const clearTrajectoryBtn = document.getElementById('clear-trajectory-btn');
     const fpsEl = document.getElementById('fps');
     const featuresEl = document.getElementById('features');
+    const inliersEl = document.getElementById('inliers');
+    const confidenceEl = document.getElementById('confidence');
     const stateEl = document.getElementById('state');
     const scaleDisplay = document.getElementById('scale-display');
     const scaleSlider = document.getElementById('scale-slider');
@@ -911,6 +921,10 @@
           // Get 6DoF pose from Essential matrix decomposition
           const pose = trackerHandle.process_frame(imgData.data, 640, 480);
           const tracked = trackerHandle.tracked_points();
+          const inliers = trackerHandle.inlier_points();
+          const confidenceLevel = trackerHandle.confidence_level();
+          const confidenceNames = ['LOST', 'LOW', 'MEDIUM', 'HIGH'];
+          const confidenceColors = ['#f87171', '#facc15', '#60a5fa', '#4ade80'];
 
           // Debug: log pose every 60 frames
           if (frameCount % 60 === 0) {
@@ -922,6 +936,9 @@
           }
 
           featuresEl.textContent = tracked;
+          inliersEl.textContent = inliers;
+          confidenceEl.textContent = confidenceNames[confidenceLevel];
+          confidenceEl.style.color = confidenceColors[confidenceLevel];
 
           if (pose && tracked >= 8) {
             // Get rotation from optical flow and update visual orientation

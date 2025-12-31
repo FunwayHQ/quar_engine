@@ -372,6 +372,10 @@ export class TrackerHandle {
    */
   static with_config(window_size: number, pyramid_levels: number, fast_threshold: number, max_features: number): TrackerHandle;
   /**
+   * Get the number of inlier points after RANSAC filtering.
+   */
+  inlier_points(): number;
+  /**
    * Process a frame and return the pose as JSON.
    */
   process_frame(rgba: Uint8Array, width: number, height: number): any;
@@ -379,6 +383,10 @@ export class TrackerHandle {
    * Get the number of tracked points.
    */
   tracked_points(): number;
+  /**
+   * Get the current tracking confidence level (0=Lost, 1=Low, 2=Medium, 3=High).
+   */
+  confidence_level(): number;
   /**
    * Create a new tracker.
    */
@@ -584,7 +592,9 @@ export interface InitOutput {
   readonly tracker6dofhandle_set_scale: (a: number, b: number) => void;
   readonly tracker6dofhandle_test_essential: () => number;
   readonly tracker6dofhandle_tracked_points: (a: number) => number;
+  readonly trackerhandle_confidence_level: (a: number) => number;
   readonly trackerhandle_get_pose: (a: number) => any;
+  readonly trackerhandle_inlier_points: (a: number) => number;
   readonly trackerhandle_new: () => number;
   readonly trackerhandle_process_frame: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly trackerhandle_reset: (a: number) => void;

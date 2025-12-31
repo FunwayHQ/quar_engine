@@ -13,12 +13,17 @@ pub mod essential_pure;
 pub mod triangulation;
 mod tracker_6dof;
 pub mod linalg;
+pub mod robust;
 
 pub use optical_flow::LucasKanadeTracker;
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
 pub use rotation::estimate_rotation;
 pub use types::{Point2, Pose3D, TrackResult, TrackerConfig};
 pub use tracker_6dof::{Tracker6DoF, Tracker6DoFConfig, ScaleMethod};
+pub use robust::{
+    AffineModel, FeatureGrid, FeatureQuality, RobustTracker, TrackingConfidence,
+    TrackingThresholds, ransac_flow_filter,
+};
 
 use wasm_bindgen::prelude::*;
 
@@ -42,6 +47,12 @@ pub struct Tracker {
     frame_count: u32,
     /// Accumulated translation from optical flow
     accumulated_translation: [f32; 3],
+    /// Robust tracker for RANSAC filtering
+    robust_tracker: RobustTracker,
+    /// Current tracking confidence
+    tracking_confidence: TrackingConfidence,
+    /// Last inlier count (for debugging/display)
+    last_inlier_count: usize,
 }
 
 impl Tracker {
@@ -61,6 +72,26 @@ impl Tracker {
             config,
             frame_count: 0,
             accumulated_translation: [0.0, 0.0, 0.0],
+            robust_tracker: RobustTracker::new(640, 480), // Default resolution
+            tracking_confidence: TrackingConfidence::Lost,
+            last_inlier_count: 0,
+        }
+    }
+
+    /// Create tracker with specific image dimensions for robust tracking.
+    pub fn with_dimensions(config: TrackerConfig, width: u32, height: u32) -> Self {
+        Self {
+            prev_gray: None,
+            prev_points: Vec::new(),
+            lk_tracker: LucasKanadeTracker::new(config.window_size, config.pyramid_levels),
+            fast_detector: FastDetector::new(config.fast_threshold),
+            current_pose: Pose3D::identity(),
+            config,
+            frame_count: 0,
+            accumulated_translation: [0.0, 0.0, 0.0],
+            robust_tracker: RobustTracker::new(width, height),
+            tracking_confidence: TrackingConfidence::Lost,
+            last_inlier_count: 0,
         }
     }
 
@@ -93,7 +124,7 @@ impl Tracker {
         if !self.prev_points.is_empty() {
             let track_results = self.lk_tracker.track(prev_gray, &curr_gray, &self.prev_points);
 
-            // Filter successfully tracked points
+            // Filter successfully tracked points (by LK error)
             let mut curr_points = Vec::new();
             let mut prev_matched = Vec::new();
 
@@ -104,36 +135,54 @@ impl Tracker {
                 }
             }
 
-            // Estimate rotation if we have enough points
+            // Apply RANSAC filtering to reject outliers
             if curr_points.len() >= self.config.min_tracked_points {
-                if let Some(rotation) = estimate_rotation(&prev_matched, &curr_points, width, height)
-                {
-                    self.current_pose.apply_rotation(&rotation);
+                let (inlier_prev, inlier_curr, confidence, _affine) =
+                    self.robust_tracker.process(&prev_matched, &curr_points, width, height);
+
+                self.tracking_confidence = confidence;
+                self.last_inlier_count = inlier_prev.len();
+
+                // Only update pose if confidence allows rotation
+                if confidence.allow_rotation() && inlier_prev.len() >= self.config.min_tracked_points {
+                    if let Some(rotation) = estimate_rotation(&inlier_prev, &inlier_curr, width, height)
+                    {
+                        self.current_pose.apply_rotation(&rotation);
+                    }
+
+                    // Only compute translation if confidence allows
+                    if confidence.allow_translation() {
+                        // Calculate optical flow components for 6DoF translation using inliers only
+                        let (flow_x, flow_y, radial_z) =
+                            self.calculate_flow_components(&inlier_prev, &inlier_curr, width, height);
+
+                        // Scale translation by confidence
+                        let confidence_scale = confidence.translation_scale();
+                        let translation_scale = 0.003 * confidence_scale;
+                        self.accumulated_translation[0] += flow_x * translation_scale;
+                        self.accumulated_translation[1] += flow_y * translation_scale;
+                        self.accumulated_translation[2] += radial_z * translation_scale;
+
+                        // Update pose translation
+                        self.current_pose.translation = self.accumulated_translation;
+                    }
+
+                    // Update tracked points with inliers only for better stability
+                    self.prev_points = inlier_curr;
+                } else {
+                    // Low confidence - keep more points but don't update much
+                    self.prev_points = curr_points;
                 }
-
-                // Calculate optical flow components for 6DoF translation
-                // Returns (lateral_x, lateral_y, radial_z)
-                // JavaScript will use gyro to decide when to apply these
-                let (flow_x, flow_y, radial_z) =
-                    self.calculate_flow_components(&prev_matched, &curr_points, width, height);
-
-                // Accumulate all translation components
-                // JavaScript will filter based on gyro rotation rate
-                let translation_scale = 0.003;
-                self.accumulated_translation[0] += flow_x * translation_scale;
-                self.accumulated_translation[1] += flow_y * translation_scale;
-                self.accumulated_translation[2] += radial_z * translation_scale;
-
-                // Update pose translation
-                self.current_pose.translation = self.accumulated_translation;
-
-                self.prev_points = curr_points;
             } else {
                 // Lost tracking - re-detect features
+                self.tracking_confidence = TrackingConfidence::Lost;
+                self.last_inlier_count = 0;
                 self.detect_features(&curr_gray);
             }
         } else {
             // No points to track - detect new features
+            self.tracking_confidence = TrackingConfidence::Lost;
+            self.last_inlier_count = 0;
             self.detect_features(&curr_gray);
         }
 
@@ -274,6 +323,9 @@ impl Tracker {
         self.current_pose = Pose3D::identity();
         self.frame_count = 0;
         self.accumulated_translation = [0.0, 0.0, 0.0];
+        self.robust_tracker.reset();
+        self.tracking_confidence = TrackingConfidence::Lost;
+        self.last_inlier_count = 0;
     }
 
     /// Get the current pose.
@@ -284,6 +336,26 @@ impl Tracker {
     /// Get the number of currently tracked points.
     pub fn tracked_point_count(&self) -> usize {
         self.prev_points.len()
+    }
+
+    /// Get the number of inlier points after RANSAC filtering.
+    pub fn inlier_count(&self) -> usize {
+        self.last_inlier_count
+    }
+
+    /// Get the current tracking confidence level.
+    pub fn get_confidence(&self) -> TrackingConfidence {
+        self.tracking_confidence
+    }
+
+    /// Get confidence as a numeric level (0=Lost, 1=Low, 2=Medium, 3=High).
+    pub fn get_confidence_level(&self) -> u8 {
+        match self.tracking_confidence {
+            TrackingConfidence::Lost => 0,
+            TrackingConfidence::Low => 1,
+            TrackingConfidence::Medium => 2,
+            TrackingConfidence::High => 3,
+        }
     }
 }
 
@@ -350,6 +422,18 @@ impl TrackerHandle {
     #[wasm_bindgen]
     pub fn tracked_points(&self) -> usize {
         self.tracker.tracked_point_count()
+    }
+
+    /// Get the number of inlier points after RANSAC filtering.
+    #[wasm_bindgen]
+    pub fn inlier_points(&self) -> usize {
+        self.tracker.inlier_count()
+    }
+
+    /// Get the current tracking confidence level (0=Lost, 1=Low, 2=Medium, 3=High).
+    #[wasm_bindgen]
+    pub fn confidence_level(&self) -> u8 {
+        self.tracker.get_confidence_level()
     }
 
     /// Get the current pose as JSON.
