@@ -311,11 +311,14 @@
       fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
       fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
 
-      // Apply to camera with sensitivity
+      // Apply to camera with correct axis mapping (based on device testing):
+      // - Alpha (z) = pitch (tilt up/down) → camera.rotation.x
+      // - Beta (x) = yaw (rotate left/right) → camera.rotation.y
+      // - Gamma (y) = roll → camera.rotation.z
       if (isRunning && camera) {
-        camera.rotation.x = fusedOrientation.x * sensitivity;
-        camera.rotation.y = fusedOrientation.z * sensitivity;
-        camera.rotation.z = -fusedOrientation.y * sensitivity;
+        camera.rotation.x = -fusedOrientation.z * sensitivity;  // pitch from alpha (inverted for AR)
+        camera.rotation.y = -fusedOrientation.x * sensitivity;  // yaw from beta (inverted for AR)
+        camera.rotation.z = -fusedOrientation.y * sensitivity;  // roll from gamma
 
         // Debug: show integrated gyro values (in degrees for readability)
         const toDeg = 180 / Math.PI;
