@@ -31,10 +31,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 24: Position Stabilization** - Multi-sensor stationary detection, position anchoring, drift decay, visual anchors
 - **Sprint 8 (VIO): IMU Preintegration** - Full accelerometer+gyro fusion, IMU preintegration (Forster et al.), scale estimation from IMU, gravity estimation, bias correction
 - **Sprint 19: Plane Detection & Hit Testing** - RANSAC plane fitting, plane classification (horizontal/vertical), ray-plane intersection, hit testing API
+- **Sprint 5 (Web Workers)** - TypeScript SDK with Web Worker architecture, SharedArrayBuffer zero-copy transfer, WorkerBridge, AetherWorker, worker-demo.html
 
 ### Current Status
 - **Full 6DoF tracking with VIO, mapping, and plane detection in WASM** (~111KB gzipped)
-- 333 unit tests passing
+- **TypeScript SDK** with Web Worker support in `/sdk/` (builds to ES/CJS modules)
+- 333 unit tests passing (Rust) + SDK tests (TypeScript)
 - Pure-Rust linear algebra (no external math dependencies)
 - RANSAC-based outlier rejection for stable tracking
 - Tracking confidence levels (Lost/Low/Medium/High)

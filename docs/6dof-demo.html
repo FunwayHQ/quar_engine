@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v16 Planes)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v17 Worker)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -267,6 +267,10 @@
           <span class="stat-label">FPS: </span>
           <span class="stat-value" id="fps">--</span>
         </div>
+        <div class="stat">
+          <span class="stat-label">Mode: </span>
+          <span class="stat-value" style="color:#60a5fa">Main Thread</span>
+        </div>
       <div class="stat">
         <span class="stat-label">Features: </span>
         <span class="stat-value" id="features">--</span>
@@ -469,7 +473,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF VIO Demo v16 (Planes)</p>
+      <p>6DoF VIO Demo v17 (Worker)</p>
       <div class="features">
         <span>Plane Detection</span>
         <span>Hit Testing</span>
@@ -480,6 +484,9 @@
         Detect floors and walls! Tap screen to place objects on detected planes.
       </p>
       <button id="start-btn">Start Tracking</button>
+      <p style="font-size: 11px; color: #888; margin-top: 20px;">
+        <a href="worker-demo.html" style="color: #60a5fa;">Try Web Worker Demo →</a>
+      </p>
     </div>
   </div>
 

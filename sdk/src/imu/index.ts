@@ -23,21 +23,21 @@ export {
   ComplementaryFilter,
 } from './LowPassFilter';
 
-export {
-  // Types
+// Type-only exports
+export type {
   Vector3,
   Orientation,
   IMUReading,
   IMUBias,
   IMUConfig,
   IMUEvents,
+} from './types';
 
-  // Enums
+// Value exports (enums, functions)
+export {
   IMUState,
   CalibrationState,
   PermissionState,
-
-  // Utilities
   isDeviceMotionSupported,
   requiresPermission,
   zeroVector3,

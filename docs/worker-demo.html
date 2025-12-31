@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QUAR Engine - Web Worker Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #111;
+      color: #fff;
+      overflow: hidden;
+    }
+    #container { position: relative; width: 100vw; height: 100vh; }
+    #video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+    #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+
+    /* HUD Panel */
+    .panel {
+      position: absolute;
+      background: rgba(0,0,0,0.85);
+      padding: 15px;
+      border-radius: 10px;
+      font-size: 13px;
+      z-index: 100;
+    }
+    .panel h3 {
+      color: #4ade80;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    #hud {
+      top: 10px;
+      left: 10px;
+      min-width: 220px;
+    }
+
+    #metrics {
+      top: 10px;
+      right: 10px;
+      min-width: 200px;
+    }
+    #metrics h3 { color: #60a5fa; }
+
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      margin: 6px 0;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .stat:last-child { border-bottom: none; }
+    .stat-label { color: #888; }
+    .stat-value { color: #fff; font-family: monospace; }
+    .stat-value.good { color: #4ade80; }
+    .stat-value.warn { color: #fbbf24; }
+    .stat-value.bad { color: #f87171; }
+
+    /* Mode Toggle */
+    #mode-toggle {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      background: rgba(0,0,0,0.9);
+      padding: 10px 20px;
+      border-radius: 30px;
+      z-index: 100;
+    }
+    .mode-btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .mode-btn.active {
+      background: #4ade80;
+      color: #000;
+    }
+    .mode-btn:not(.active) {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .mode-btn:hover:not(.active) {
+      background: rgba(255,255,255,0.2);
+    }
+
+    /* Start Overlay */
+    #start-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    #start-overlay h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #4ade80, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    #start-overlay p {
+      color: #888;
+      margin-bottom: 30px;
+    }
+    #start-btn {
+      padding: 15px 40px;
+      font-size: 18px;
+      background: linear-gradient(90deg, #4ade80, #22c55e);
+      color: #000;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    #start-btn:hover {
+      transform: scale(1.05);
+    }
+
+    /* Worker Status */
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    .status-indicator.initializing { background: #fbbf24; }
+    .status-indicator.ready { background: #4ade80; }
+    .status-indicator.processing { background: #60a5fa; }
+    .status-indicator.error { background: #f87171; }
+
+    /* Feature Visualization */
+    .feature-dot {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #4ade80;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+
+    <!-- HUD Panel -->
+    <div id="hud" class="panel">
+      <h3>Web Worker Demo</h3>
+      <div class="stat">
+        <span class="stat-label">Mode:</span>
+        <span class="stat-value" id="mode-display">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Worker Status:</span>
+        <span class="stat-value" id="worker-status">
+          <span class="status-indicator"></span>
+          <span id="status-text">--</span>
+        </span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">SharedBuffer:</span>
+        <span class="stat-value" id="shared-buffer">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Tracked Points:</span>
+        <span class="stat-value" id="tracked-points">--</span>
+      </div>
+    </div>
+
+    <!-- Metrics Panel -->
+    <div id="metrics" class="panel">
+      <h3>Performance</h3>
+      <div class="stat">
+        <span class="stat-label">FPS:</span>
+        <span class="stat-value" id="fps">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Frame Time:</span>
+        <span class="stat-value" id="frame-time">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Process Time:</span>
+        <span class="stat-value" id="process-time">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Main Thread:</span>
+        <span class="stat-value" id="main-thread">--</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Frames Dropped:</span>
+        <span class="stat-value" id="frames-dropped">0</span>
+      </div>
+    </div>
+
+    <!-- Mode Toggle -->
+    <div id="mode-toggle">
+      <button class="mode-btn active" id="btn-worker">Worker Mode</button>
+      <button class="mode-btn" id="btn-main">Main Thread</button>
+    </div>
+  </div>
+
+  <!-- Start Overlay -->
+  <div id="start-overlay">
+    <h1>QUAR Engine</h1>
+    <p>Web Worker Architecture Demo</p>
+    <button id="start-btn">Start Demo</button>
+  </div>
+
+  <script type="module">
+    // WASM module references
+    let init, TrackerHandle, version;
+    let tracker = null;
+    let worker = null;
+    let sharedBuffers = [];
+
+    // State
+    let mode = 'worker'; // 'worker' or 'main'
+    let workerStatus = 'initializing';
+    let useSharedBuffer = false;
+    let isProcessing = false;
+
+    // Metrics
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let fps = 0;
+    let lastFrameTime = 0;
+    let processTime = 0;
+    let mainThreadTime = 0;
+    let framesDropped = 0;
+    let trackedPoints = 0;
+
+    // Elements
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    // Check SharedArrayBuffer availability
+    function isSharedArrayBufferAvailable() {
+      try {
+        new SharedArrayBuffer(1);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // Create inline worker code
+    function getWorkerCode() {
+      return `
+        let wasmModule = null;
+        let trackerHandle = null;
+        let sharedBuffers = [];
+        let isProcessing = false;
+
+        async function initWasm(wasmPath) {
+          try {
+            const module = await import(wasmPath);
+            await module.default();
+            wasmModule = module;
+            trackerHandle = new module.TrackerHandle();
+            return true;
+          } catch (error) {
+            self.postMessage({ type: 'error', code: 'WASM_LOAD_FAILED', message: String(error) });
+            return false;
+          }
+        }
+
+        function processFrame(data, width, height, timestamp) {
+          if (!trackerHandle || isProcessing) {
+            self.postMessage({ type: 'dropped' });
+            return;
+          }
+          isProcessing = true;
+          const startTime = performance.now();
+          try {
+            const frameData = new Uint8ClampedArray(data);
+            const pose = trackerHandle.process_frame(frameData, width, height);
+            const trackedPoints = trackerHandle.tracked_points();
+            const processingTime = performance.now() - startTime;
+            self.postMessage({ type: 'pose', pose, trackedPoints, timestamp, processingTime });
+          } catch (error) {
+            self.postMessage({ type: 'error', code: 'PROCESSING_ERROR', message: String(error) });
+          } finally {
+            isProcessing = false;
+          }
+        }
+
+        function processSharedFrame(bufferIndex, width, height, timestamp) {
+          if (!trackerHandle || isProcessing || bufferIndex >= sharedBuffers.length) {
+            self.postMessage({ type: 'dropped' });
+            return;
+          }
+          isProcessing = true;
+          const startTime = performance.now();
+          try {
+            const buffer = sharedBuffers[bufferIndex];
+            const controlView = new Int32Array(buffer, 0, 1);
+            Atomics.store(controlView, 0, 2); // PROCESSING
+            const frameData = new Uint8ClampedArray(buffer, 4, width * height * 4);
+            const pose = trackerHandle.process_frame(frameData, width, height);
+            const trackedPoints = trackerHandle.tracked_points();
+            Atomics.store(controlView, 0, 0); // EMPTY
+            const processingTime = performance.now() - startTime;
+            self.postMessage({ type: 'pose', pose, trackedPoints, timestamp, processingTime });
+          } catch (error) {
+            self.postMessage({ type: 'error', code: 'PROCESSING_ERROR', message: String(error) });
+          } finally {
+            isProcessing = false;
+          }
+        }
+
+        self.onmessage = async (event) => {
+          const msg = event.data;
+          if (msg.buffers) sharedBuffers = msg.buffers;
+
+          switch (msg.type) {
+            case 'init':
+              self.postMessage({ type: 'status', status: 'initializing' });
+              const success = await initWasm(msg.wasmPath);
+              if (success) {
+                self.postMessage({ type: 'ready', version: wasmModule.version() });
+              }
+              break;
+            case 'frame':
+              if (msg.data) {
+                processFrame(msg.data, msg.width, msg.height, msg.timestamp);
+              } else {
+                processSharedFrame(msg.bufferIndex, msg.width, msg.height, msg.timestamp);
+              }
+              break;
+            case 'reset':
+              if (trackerHandle) trackerHandle.reset();
+              self.postMessage({ type: 'status', status: 'ready' });
+              break;
+            case 'terminate':
+              self.postMessage({ type: 'status', status: 'terminated' });
+              self.close();
+              break;
+          }
+        };
+
+        self.postMessage({ type: 'status', status: 'initializing' });
+      `;
+    }
+
+    // Initialize worker
+    async function initWorker() {
+      const workerCode = getWorkerCode();
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      const workerUrl = URL.createObjectURL(blob);
+      worker = new Worker(workerUrl, { type: 'module' });
+      URL.revokeObjectURL(workerUrl);
+
+      useSharedBuffer = isSharedArrayBufferAvailable();
+      document.getElementById('shared-buffer').textContent = useSharedBuffer ? 'Yes' : 'No (fallback)';
+
+      // Create shared buffers if available
+      if (useSharedBuffer) {
+        const bufferSize = 4 + canvas.width * canvas.height * 4; // control byte + RGBA
+        for (let i = 0; i < 2; i++) {
+          const buffer = new SharedArrayBuffer(bufferSize);
+          const controlView = new Int32Array(buffer, 0, 1);
+          Atomics.store(controlView, 0, 0); // EMPTY
+          sharedBuffers.push(buffer);
+        }
+      }
+
+      return new Promise((resolve, reject) => {
+        worker.onmessage = (event) => {
+          const msg = event.data;
+          switch (msg.type) {
+            case 'status':
+              updateWorkerStatus(msg.status);
+              break;
+            case 'ready':
+              updateWorkerStatus('ready');
+              console.log('Worker ready, QUAR version:', msg.version);
+              resolve();
+              break;
+            case 'pose':
+              handlePoseResult(msg);
+              break;
+            case 'dropped':
+              framesDropped++;
+              break;
+            case 'error':
+              console.error('Worker error:', msg.code, msg.message);
+              updateWorkerStatus('error');
+              break;
+          }
+        };
+
+        worker.onerror = (e) => {
+          console.error('Worker error:', e);
+          updateWorkerStatus('error');
+          reject(e);
+        };
+
+        // Send init message
+        const initMsg = {
+          type: 'init',
+          wasmPath: './pkg/quar_engine.js',
+        };
+        if (useSharedBuffer) {
+          initMsg.buffers = sharedBuffers;
+        }
+        worker.postMessage(initMsg);
+      });
+    }
+
+    // Initialize main thread tracker
+    async function initMainThread() {
+      const wasm = await import('./pkg/quar_engine.js');
+      await wasm.default();
+      init = wasm.default;
+      TrackerHandle = wasm.TrackerHandle;
+      version = wasm.version;
+      tracker = new TrackerHandle();
+      console.log('Main thread WASM ready, version:', version());
+    }
+
+    // Update worker status display
+    function updateWorkerStatus(status) {
+      workerStatus = status;
+      const indicator = document.querySelector('.status-indicator');
+      const text = document.getElementById('status-text');
+
+      indicator.className = 'status-indicator ' + status;
+      text.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    }
+
+    // Handle pose result from worker
+    function handlePoseResult(msg) {
+      trackedPoints = msg.trackedPoints;
+      processTime = msg.processingTime;
+      // Pose data available in msg.pose if needed
+    }
+
+    // Submit frame to worker
+    let currentBufferIndex = 0;
+    function submitFrameToWorker(imageData) {
+      if (workerStatus !== 'ready' || isProcessing) {
+        framesDropped++;
+        return false;
+      }
+
+      const timestamp = performance.now();
+
+      if (useSharedBuffer) {
+        const bufferIndex = currentBufferIndex;
+        const buffer = sharedBuffers[bufferIndex];
+        const controlView = new Int32Array(buffer, 0, 1);
+
+        // Check if buffer is available
+        if (Atomics.load(controlView, 0) === 2) { // PROCESSING
+          framesDropped++;
+          return false;
+        }
+
+        // Write frame data
+        const dataView = new Uint8ClampedArray(buffer, 4);
+        dataView.set(imageData.data);
+        Atomics.store(controlView, 0, 1); // FILLED
+
+        worker.postMessage({
+          type: 'frame',
+          bufferIndex,
+          width: canvas.width,
+          height: canvas.height,
+          timestamp,
+        });
+
+        currentBufferIndex = (currentBufferIndex + 1) % 2;
+      } else {
+        // Transferable mode
+        const buffer = imageData.data.buffer.slice(0);
+        worker.postMessage({
+          type: 'frame',
+          data: buffer,
+          width: canvas.width,
+          height: canvas.height,
+          timestamp,
+        }, [buffer]);
+      }
+
+      return true;
+    }
+
+    // Process frame on main thread
+    function processFrameMainThread(imageData) {
+      if (!tracker || isProcessing) {
+        framesDropped++;
+        return;
+      }
+
+      isProcessing = true;
+      const startTime = performance.now();
+
+      try {
+        const pose = tracker.process_frame(imageData.data, canvas.width, canvas.height);
+        trackedPoints = tracker.tracked_points();
+        processTime = performance.now() - startTime;
+      } catch (e) {
+        console.error('Processing error:', e);
+      } finally {
+        isProcessing = false;
+      }
+    }
+
+    // Start camera
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          }
+        });
+        video.srcObject = stream;
+        await video.play();
+
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+
+        return true;
+      } catch (e) {
+        console.error('Camera error:', e);
+        return false;
+      }
+    }
+
+    // Main render loop
+    function renderLoop() {
+      const now = performance.now();
+      const frameStart = now;
+
+      // Capture frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+      // Process based on mode
+      if (mode === 'worker') {
+        submitFrameToWorker(imageData);
+        mainThreadTime = performance.now() - frameStart;
+      } else {
+        processFrameMainThread(imageData);
+        mainThreadTime = performance.now() - frameStart;
+      }
+
+      // Update FPS
+      frameCount++;
+      if (now - lastFpsTime >= 1000) {
+        fps = frameCount;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      // Update metrics display
+      updateMetrics();
+
+      // Continue loop
+      lastFrameTime = performance.now() - frameStart;
+      requestAnimationFrame(renderLoop);
+    }
+
+    // Update metrics display
+    function updateMetrics() {
+      document.getElementById('fps').textContent = fps;
+      document.getElementById('fps').className = 'stat-value ' + (fps >= 55 ? 'good' : fps >= 30 ? 'warn' : 'bad');
+
+      document.getElementById('frame-time').textContent = lastFrameTime.toFixed(2) + ' ms';
+      document.getElementById('process-time').textContent = processTime.toFixed(2) + ' ms';
+      document.getElementById('process-time').className = 'stat-value ' + (processTime < 16 ? 'good' : processTime < 33 ? 'warn' : 'bad');
+
+      document.getElementById('main-thread').textContent = mainThreadTime.toFixed(2) + ' ms';
+      document.getElementById('main-thread').className = 'stat-value ' + (mainThreadTime < 8 ? 'good' : mainThreadTime < 16 ? 'warn' : 'bad');
+
+      document.getElementById('frames-dropped').textContent = framesDropped;
+      document.getElementById('tracked-points').textContent = trackedPoints;
+
+      document.getElementById('mode-display').textContent = mode === 'worker' ? 'Web Worker' : 'Main Thread';
+    }
+
+    // Switch mode
+    function switchMode(newMode) {
+      mode = newMode;
+      document.getElementById('btn-worker').classList.toggle('active', mode === 'worker');
+      document.getElementById('btn-main').classList.toggle('active', mode === 'main');
+
+      // Reset metrics for fair comparison
+      framesDropped = 0;
+      frameCount = 0;
+      lastFpsTime = performance.now();
+    }
+
+    // Initialize
+    async function start() {
+      document.getElementById('start-overlay').style.display = 'none';
+
+      try {
+        // Initialize both worker and main thread
+        await Promise.all([
+          initWorker(),
+          initMainThread(),
+        ]);
+
+        // Start camera
+        const cameraOk = await startCamera();
+        if (!cameraOk) {
+          alert('Camera access required');
+          return;
+        }
+
+        // Start render loop
+        renderLoop();
+
+      } catch (e) {
+        console.error('Initialization error:', e);
+        alert('Failed to initialize: ' + e.message);
+      }
+    }
+
+    // Event listeners
+    document.getElementById('start-btn').addEventListener('click', start);
+    document.getElementById('btn-worker').addEventListener('click', () => switchMode('worker'));
+    document.getElementById('btn-main').addEventListener('click', () => switchMode('main'));
+  </script>
+</body>
+</html>

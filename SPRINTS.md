@@ -12,7 +12,7 @@ This document outlines the comprehensive sprint plan for building the Aether Web
 | 2 | Camera Access | ✅ COMPLETED |
 | 3 | Feature Detection (FAST) | ✅ COMPLETED |
 | 4 | Basic Optical Flow & 3DoF | ✅ COMPLETED |
-| 5 | Web Worker Architecture | ⏭️ SKIPPED (not needed for MVP) |
+| 5 | Web Worker Architecture | ✅ COMPLETED |
 | 6 | Pipeline Optimization | ✅ COMPLETED (as Sprint 12: Memory & Performance) |
 | 7 | IMU Data Capture | ✅ COMPLETED |
 | 8 | IMU Preintegration & VIO | ✅ COMPLETED |
