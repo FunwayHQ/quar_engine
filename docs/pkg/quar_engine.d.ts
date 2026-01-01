@@ -160,6 +160,78 @@ export class FrameTiming {
   tracked_count: number;
 }
 
+export class ImageTargetDetectorHandle {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Create a detector with custom configuration.
+   *
+   * # Arguments
+   * * `min_matches` - Minimum matches required (default: 10)
+   * * `ransac_threshold` - RANSAC inlier threshold in pixels (default: 3.0)
+   * * `min_inliers` - Minimum inliers required (default: 8)
+   */
+  static with_config(min_matches: number, ransac_threshold: number, min_inliers: number): ImageTargetDetectorHandle;
+  /**
+   * Add a reference image template.
+   *
+   * # Arguments
+   * * `id` - Unique identifier for this template
+   * * `rgba` - RGBA pixel data of the template image
+   * * `width` - Template width in pixels
+   * * `height` - Template height in pixels
+   * * `physical_width_meters` - Physical width of the target in meters
+   *
+   * # Returns
+   * True if template was added successfully (has enough features)
+   */
+  add_template(id: string, rgba: Uint8Array, width: number, height: number, physical_width_meters: number): boolean;
+  /**
+   * Set camera intrinsics for pose estimation.
+   *
+   * # Arguments
+   * * `fx` - Focal length X (pixels)
+   * * `fy` - Focal length Y (pixels)
+   * * `cx` - Principal point X
+   * * `cy` - Principal point Y
+   */
+  set_intrinsics(fx: number, fy: number, cx: number, cy: number): void;
+  /**
+   * Get the number of registered templates.
+   */
+  template_count(): number;
+  /**
+   * Remove a template by ID.
+   *
+   * # Returns
+   * True if template was found and removed
+   */
+  remove_template(id: string): boolean;
+  /**
+   * Get feature count for a template.
+   *
+   * # Returns
+   * Number of features, or 0 if template not found
+   */
+  get_template_feature_count(id: string): number;
+  /**
+   * Create a new image target detector.
+   */
+  constructor();
+  /**
+   * Detect all registered templates in a camera frame.
+   *
+   * # Arguments
+   * * `rgba` - RGBA pixel data of the camera frame
+   * * `width` - Frame width
+   * * `height` - Frame height
+   *
+   * # Returns
+   * Array of detected targets as JSON
+   */
+  detect(rgba: Uint8Array, width: number, height: number): any;
+}
+
 export class JsHitResult {
   private constructor();
   free(): void;
@@ -280,6 +352,68 @@ export class JsPlaneInfo {
   plane_type: number;
 }
 
+export class LightingEstimatorHandle {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get the overall confidence (0.0-1.0).
+   */
+  confidence(): number;
+  /**
+   * Get the current estimate without processing a new frame.
+   */
+  get_estimate(): any;
+  /**
+   * Get the ambient color as [r, g, b] array.
+   */
+  ambient_color(): Float32Array;
+  /**
+   * Analyze a frame and return the lighting estimate as a JavaScript object.
+   *
+   * # Arguments
+   * * `rgba` - RGBA pixel data as Uint8ClampedArray
+   * * `width` - Image width in pixels
+   * * `height` - Image height in pixels
+   *
+   * # Returns
+   * JsValue containing the LightingEstimate object
+   */
+  analyze_frame(rgba: Uint8Array, width: number, height: number): any;
+  /**
+   * Create an estimator with custom smoothing factor (0.0-0.99).
+   */
+  static with_smoothing(smoothing: number): LightingEstimatorHandle;
+  /**
+   * Get the ambient intensity (0.0-1.0).
+   */
+  ambient_intensity(): number;
+  /**
+   * Get the color temperature in Kelvin.
+   */
+  color_temperature(): number;
+  /**
+   * Get the directional light direction as [x, y, z] unit vector.
+   */
+  directional_direction(): Float32Array;
+  /**
+   * Get the directional light intensity (0.0-1.0).
+   */
+  directional_intensity(): number;
+  /**
+   * Set the analysis interval (frames between full analysis).
+   * Lower values = more responsive but higher CPU usage.
+   */
+  set_analysis_interval(interval: number): void;
+  /**
+   * Create a new lighting estimator handle.
+   */
+  constructor();
+  /**
+   * Reset the estimator state.
+   */
+  reset(): void;
+}
+
 export class PlaneDetectorHandle {
   free(): void;
   [Symbol.dispose](): void;
@@ -396,6 +530,47 @@ export class Pose3D {
    * Quaternion W component
    */
   qw: number;
+}
+
+export class QrDetectorHandle {
+  free(): void;
+  [Symbol.dispose](): void;
+  /**
+   * Get the current QR size setting in meters.
+   */
+  get_qr_size(): number;
+  /**
+   * Set the physical size of QR codes in meters.
+   *
+   * This is used for pose estimation. Default is 0.05 (5cm).
+   */
+  set_qr_size(size_meters: number): void;
+  /**
+   * Set camera intrinsics for pose estimation.
+   *
+   * # Arguments
+   * * `fx` - Focal length X (pixels)
+   * * `fy` - Focal length Y (pixels)
+   * * `cx` - Principal point X
+   * * `cy` - Principal point Y
+   */
+  set_intrinsics(fx: number, fy: number, cx: number, cy: number): void;
+  /**
+   * Create a new QR code detector.
+   */
+  constructor();
+  /**
+   * Detect QR codes in a camera frame.
+   *
+   * # Arguments
+   * * `rgba` - RGBA pixel data
+   * * `width` - Frame width
+   * * `height` - Frame height
+   *
+   * # Returns
+   * Array of detected QR codes as JSON
+   */
+  detect(rgba: Uint8Array, width: number, height: number): any;
 }
 
 /**
@@ -879,8 +1054,10 @@ export interface InitOutput {
   readonly __wbg_get_qualitysettings_pose_smoothing: (a: number) => number;
   readonly __wbg_get_qualitysettings_window_size: (a: number) => number;
   readonly __wbg_get_timingreport_frame_count: (a: number) => number;
+  readonly __wbg_imagetargetdetectorhandle_free: (a: number, b: number) => void;
   readonly __wbg_jshitresult_free: (a: number, b: number) => void;
   readonly __wbg_jsplaneinfo_free: (a: number, b: number) => void;
+  readonly __wbg_lightingestimatorhandle_free: (a: number, b: number) => void;
   readonly __wbg_planedetectorhandle_free: (a: number, b: number) => void;
   readonly __wbg_pose3d_free: (a: number, b: number) => void;
   readonly __wbg_set_adaptiveconfig_adjustment_delay: (a: number, b: number) => void;
@@ -947,6 +1124,14 @@ export interface InitOutput {
   readonly get_grayscale: (a: number, b: number) => [number, number];
   readonly get_performance_now: () => number;
   readonly greet: (a: number, b: number) => [number, number];
+  readonly imagetargetdetectorhandle_add_template: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+  readonly imagetargetdetectorhandle_detect: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly imagetargetdetectorhandle_get_template_feature_count: (a: number, b: number, c: number) => number;
+  readonly imagetargetdetectorhandle_new: () => number;
+  readonly imagetargetdetectorhandle_remove_template: (a: number, b: number, c: number) => number;
+  readonly imagetargetdetectorhandle_set_intrinsics: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly imagetargetdetectorhandle_template_count: (a: number) => number;
+  readonly imagetargetdetectorhandle_with_config: (a: number, b: number, c: number) => number;
   readonly init: () => void;
   readonly jshitresult_normal: (a: number) => [number, number];
   readonly jshitresult_position: (a: number) => [number, number];
@@ -955,6 +1140,18 @@ export interface InitOutput {
   readonly jsplaneinfo_is_floor: (a: number) => number;
   readonly jsplaneinfo_is_horizontal: (a: number) => number;
   readonly jsplaneinfo_is_vertical: (a: number) => number;
+  readonly lightingestimatorhandle_ambient_color: (a: number) => [number, number];
+  readonly lightingestimatorhandle_ambient_intensity: (a: number) => number;
+  readonly lightingestimatorhandle_analyze_frame: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly lightingestimatorhandle_color_temperature: (a: number) => number;
+  readonly lightingestimatorhandle_confidence: (a: number) => number;
+  readonly lightingestimatorhandle_directional_direction: (a: number) => [number, number];
+  readonly lightingestimatorhandle_directional_intensity: (a: number) => number;
+  readonly lightingestimatorhandle_get_estimate: (a: number) => any;
+  readonly lightingestimatorhandle_new: () => number;
+  readonly lightingestimatorhandle_reset: (a: number) => void;
+  readonly lightingestimatorhandle_set_analysis_interval: (a: number, b: number) => void;
+  readonly lightingestimatorhandle_with_smoothing: (a: number) => number;
   readonly match_features: (a: any, b: any, c: number) => any;
   readonly planedetectorhandle_clear: (a: number) => void;
   readonly planedetectorhandle_detect_planes: (a: number, b: number, c: number) => number;
@@ -974,6 +1171,11 @@ export interface InitOutput {
   readonly pose3d_position: (a: number) => [number, number];
   readonly pose3d_quaternion: (a: number) => [number, number];
   readonly pose3d_to_matrix4: (a: number) => [number, number];
+  readonly qrdetectorhandle_detect: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly qrdetectorhandle_get_qr_size: (a: number) => number;
+  readonly qrdetectorhandle_new: () => number;
+  readonly qrdetectorhandle_set_intrinsics: (a: number, b: number, c: number, d: number, e: number) => void;
+  readonly qrdetectorhandle_set_qr_size: (a: number, b: number) => void;
   readonly qualitysettings_for_level: (a: number) => number;
   readonly timingreport_breakdown_percentages: (a: number) => number;
   readonly timingreport_estimated_fps: (a: number) => number;
@@ -1090,6 +1292,7 @@ export interface InitOutput {
   readonly __wbg_get_timingreport_min_total_ms: (a: number) => number;
   readonly __wbg_timingreport_free: (a: number, b: number) => void;
   readonly __wbg_qualitysettings_free: (a: number, b: number) => void;
+  readonly __wbg_qrdetectorhandle_free: (a: number, b: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;

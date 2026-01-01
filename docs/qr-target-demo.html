@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QUAR Engine - QR Code Detection Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #video-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+
+    #overlay-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* HUD Panel */
+    #hud {
+      position: absolute;
+      top: 20px; left: 20px;
+      background: rgba(0,0,0,0.85);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      z-index: 100;
+      min-width: 200px;
+    }
+
+    #hud h2 {
+      color: #facc15;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .stat { margin: 5px 0; }
+    .stat-label { color: #888; }
+    .stat-value { color: #4ade80; }
+
+    /* Settings Panel */
+    #settings-panel {
+      position: absolute;
+      top: 20px; right: 20px;
+      background: rgba(0,0,0,0.85);
+      padding: 15px 20px;
+      border-radius: 8px;
+      z-index: 100;
+      min-width: 220px;
+    }
+
+    #settings-panel h3 {
+      color: #60a5fa;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    .slider-row label {
+      font-size: 12px;
+      color: #888;
+      min-width: 80px;
+    }
+
+    .slider-row input[type="range"] {
+      flex: 1;
+    }
+
+    .slider-row .value {
+      font-size: 13px;
+      color: #4ade80;
+      min-width: 50px;
+      text-align: right;
+    }
+
+    .info-text {
+      font-size: 11px;
+      color: #666;
+      margin-top: 15px;
+      line-height: 1.4;
+    }
+
+    /* Start button */
+    #start-btn {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 200;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    #start-btn:hover {
+      transform: translate(-50%, -50%) scale(1.05);
+    }
+
+    .hidden { display: none !important; }
+
+    /* Detection indicator */
+    #detection-indicator {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 24px;
+      background: rgba(0,0,0,0.8);
+      border-radius: 30px;
+      font-size: 16px;
+      z-index: 100;
+    }
+
+    #detection-indicator.detected {
+      background: rgba(34, 197, 94, 0.9);
+    }
+
+    #detection-indicator.not-detected {
+      background: rgba(100, 100, 100, 0.8);
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+
+    <button id="start-btn">Start QR Detection Demo</button>
+
+    <div id="hud" class="hidden">
+      <h2>QR Detection</h2>
+      <div class="stat">
+        <span class="stat-label">FPS: </span>
+        <span class="stat-value" id="fps">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">QR Codes: </span>
+        <span class="stat-value" id="qr-count">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Version: </span>
+        <span class="stat-value" id="qr-version">-</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Size (px): </span>
+        <span class="stat-value" id="qr-size">-</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Confidence: </span>
+        <span class="stat-value" id="confidence">-</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Distance: </span>
+        <span class="stat-value" id="distance">-</span>
+      </div>
+    </div>
+
+    <div id="settings-panel" class="hidden">
+      <h3>QR Settings</h3>
+
+      <div class="slider-row">
+        <label>QR Size (cm):</label>
+        <input type="range" id="size-slider" min="1" max="30" step="1" value="5">
+        <span class="value" id="size-value">5 cm</span>
+      </div>
+
+      <div class="info-text">
+        Set the physical size of your QR code for accurate distance estimation.
+        <br><br>
+        Point camera at a QR code to detect its corners and estimate pose.
+        <br><br>
+        <strong>Note:</strong> Detection only - content is not decoded.
+      </div>
+    </div>
+
+    <div id="detection-indicator" class="hidden not-detected">
+      Scanning for QR codes...
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { QrDetectorHandle, version } from './pkg/quar_engine.js';
+
+    let detector = null;
+    let videoStream = null;
+    let video = null;
+    let animationId = null;
+    let lastTime = 0;
+    let frameCount = 0;
+    let fps = 0;
+
+    const videoCanvas = document.getElementById('video-canvas');
+    const overlayCanvas = document.getElementById('overlay-canvas');
+    const videoCtx = videoCanvas.getContext('2d');
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    const startBtn = document.getElementById('start-btn');
+    const hud = document.getElementById('hud');
+    const settingsPanel = document.getElementById('settings-panel');
+    const detectionIndicator = document.getElementById('detection-indicator');
+    const sizeSlider = document.getElementById('size-slider');
+    const sizeValue = document.getElementById('size-value');
+
+    // HUD elements
+    const fpsEl = document.getElementById('fps');
+    const qrCountEl = document.getElementById('qr-count');
+    const qrVersionEl = document.getElementById('qr-version');
+    const qrSizeEl = document.getElementById('qr-size');
+    const confidenceEl = document.getElementById('confidence');
+    const distanceEl = document.getElementById('distance');
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.classList.add('hidden');
+      await startDemo();
+    });
+
+    sizeSlider.addEventListener('input', () => {
+      const sizeCm = parseInt(sizeSlider.value);
+      sizeValue.textContent = sizeCm + ' cm';
+      if (detector) {
+        detector.set_qr_size(sizeCm / 100); // Convert to meters
+      }
+    });
+
+    async function startDemo() {
+      try {
+        // Initialize WASM
+        await init();
+        console.log('QUAR Engine:', version());
+
+        // Create QR detector
+        detector = new QrDetectorHandle();
+        detector.set_qr_size(0.05); // 5cm default
+
+        // Start camera
+        const constraints = {
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video = document.createElement('video');
+        video.srcObject = videoStream;
+        video.playsInline = true;
+        await video.play();
+
+        // Set canvas sizes
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        videoCanvas.width = width;
+        videoCanvas.height = height;
+        overlayCanvas.width = width;
+        overlayCanvas.height = height;
+
+        // Set camera intrinsics (approximate)
+        const fx = width * 0.8;
+        const fy = width * 0.8;
+        const cx = width / 2;
+        const cy = height / 2;
+        detector.set_intrinsics(fx, fy, cx, cy);
+
+        // Show UI
+        hud.classList.remove('hidden');
+        settingsPanel.classList.remove('hidden');
+        detectionIndicator.classList.remove('hidden');
+
+        // Start render loop
+        requestAnimationFrame(processFrame);
+
+      } catch (err) {
+        console.error('Failed to start demo:', err);
+        alert('Failed to start: ' + err.message);
+      }
+    }
+
+    function processFrame(timestamp) {
+      animationId = requestAnimationFrame(processFrame);
+
+      // Calculate FPS
+      frameCount++;
+      if (timestamp - lastTime >= 1000) {
+        fps = frameCount;
+        frameCount = 0;
+        lastTime = timestamp;
+        fpsEl.textContent = fps;
+      }
+
+      // Draw video frame
+      videoCtx.drawImage(video, 0, 0);
+
+      // Get frame data
+      const imageData = videoCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
+
+      // Detect QR codes
+      const detections = detector.detect(imageData.data, videoCanvas.width, videoCanvas.height);
+
+      // Clear overlay
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+      if (detections && detections.length > 0) {
+        const qr = detections[0];
+
+        // Update HUD
+        qrCountEl.textContent = detections.length;
+        qrVersionEl.textContent = 'v' + qr.estimated_version;
+        qrSizeEl.textContent = qr.size_pixels.toFixed(0);
+        confidenceEl.textContent = (qr.confidence * 100).toFixed(0) + '%';
+
+        if (qr.has_pose) {
+          distanceEl.textContent = qr.pose_tz.toFixed(2) + 'm';
+        } else {
+          distanceEl.textContent = '-';
+        }
+
+        // Update indicator
+        detectionIndicator.textContent = 'QR Code Detected!';
+        detectionIndicator.classList.remove('not-detected');
+        detectionIndicator.classList.add('detected');
+
+        // Draw all detected QR codes
+        for (const det of detections) {
+          drawQrCode(det);
+        }
+      } else {
+        qrCountEl.textContent = '0';
+        qrVersionEl.textContent = '-';
+        qrSizeEl.textContent = '-';
+        confidenceEl.textContent = '-';
+        distanceEl.textContent = '-';
+
+        // Update indicator
+        detectionIndicator.textContent = 'Scanning for QR codes...';
+        detectionIndicator.classList.remove('detected');
+        detectionIndicator.classList.add('not-detected');
+      }
+    }
+
+    function drawQrCode(qr) {
+      const corners = [
+        { x: qr.corner_tl_x, y: qr.corner_tl_y },
+        { x: qr.corner_tr_x, y: qr.corner_tr_y },
+        { x: qr.corner_br_x, y: qr.corner_br_y },
+        { x: qr.corner_bl_x, y: qr.corner_bl_y }
+      ];
+
+      // Draw filled quadrilateral with transparency
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < 4; i++) {
+        overlayCtx.lineTo(corners[i].x, corners[i].y);
+      }
+      overlayCtx.closePath();
+      overlayCtx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+      overlayCtx.fill();
+
+      // Draw outline
+      overlayCtx.strokeStyle = '#22c55e';
+      overlayCtx.lineWidth = 4;
+      overlayCtx.stroke();
+
+      // Draw finder pattern indicators (3 corners)
+      const finderCorners = [corners[0], corners[1], corners[3]]; // TL, TR, BL
+      for (let i = 0; i < 3; i++) {
+        const c = finderCorners[i];
+
+        // Outer square
+        overlayCtx.strokeStyle = '#facc15';
+        overlayCtx.lineWidth = 3;
+        const size = 20;
+        overlayCtx.strokeRect(c.x - size/2, c.y - size/2, size, size);
+
+        // Inner dot
+        overlayCtx.beginPath();
+        overlayCtx.arc(c.x, c.y, 4, 0, Math.PI * 2);
+        overlayCtx.fillStyle = '#facc15';
+        overlayCtx.fill();
+      }
+
+      // Draw 4th corner (alignment pattern location)
+      overlayCtx.beginPath();
+      overlayCtx.arc(corners[2].x, corners[2].y, 8, 0, Math.PI * 2);
+      overlayCtx.strokeStyle = '#60a5fa';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.stroke();
+
+      // Draw center cross
+      const cx = qr.center_x;
+      const cy = qr.center_y;
+      const crossSize = 15;
+
+      overlayCtx.strokeStyle = '#fff';
+      overlayCtx.lineWidth = 2;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx - crossSize, cy);
+      overlayCtx.lineTo(cx + crossSize, cy);
+      overlayCtx.moveTo(cx, cy - crossSize);
+      overlayCtx.lineTo(cx, cy + crossSize);
+      overlayCtx.stroke();
+
+      // Draw version label
+      overlayCtx.font = 'bold 14px sans-serif';
+      overlayCtx.fillStyle = '#fff';
+      overlayCtx.textAlign = 'center';
+      overlayCtx.fillText('v' + qr.estimated_version, cx, cy - 25);
+
+      // Draw pose axes if available
+      if (qr.has_pose) {
+        drawPoseAxes(cx, cy);
+      }
+    }
+
+    function drawPoseAxes(cx, cy) {
+      const axisLength = 40;
+
+      // X axis (red)
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx, cy);
+      overlayCtx.lineTo(cx + axisLength, cy);
+      overlayCtx.strokeStyle = '#ef4444';
+      overlayCtx.lineWidth = 3;
+      overlayCtx.stroke();
+
+      // Draw arrow
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx + axisLength, cy);
+      overlayCtx.lineTo(cx + axisLength - 8, cy - 5);
+      overlayCtx.lineTo(cx + axisLength - 8, cy + 5);
+      overlayCtx.closePath();
+      overlayCtx.fillStyle = '#ef4444';
+      overlayCtx.fill();
+
+      // Y axis (green)
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx, cy);
+      overlayCtx.lineTo(cx, cy - axisLength);
+      overlayCtx.strokeStyle = '#22c55e';
+      overlayCtx.lineWidth = 3;
+      overlayCtx.stroke();
+
+      // Draw arrow
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx, cy - axisLength);
+      overlayCtx.lineTo(cx - 5, cy - axisLength + 8);
+      overlayCtx.lineTo(cx + 5, cy - axisLength + 8);
+      overlayCtx.closePath();
+      overlayCtx.fillStyle = '#22c55e';
+      overlayCtx.fill();
+
+      // Z axis (blue, diagonal)
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx, cy);
+      overlayCtx.lineTo(cx + axisLength * 0.6, cy - axisLength * 0.6);
+      overlayCtx.strokeStyle = '#3b82f6';
+      overlayCtx.lineWidth = 3;
+      overlayCtx.stroke();
+    }
+  </script>
+</body>
+</html>

@@ -29,6 +29,15 @@ pub mod optimization;
 // Sprint 18: Loop Closure
 pub mod loop_closure;
 
+// Sprint 11: Lighting Estimation
+pub mod lighting;
+
+// Sprint 13: Image Target Detection
+pub mod image_target;
+
+// Sprint 13: QR Target Detection (detection only, no decoding)
+pub mod qr_target;
+
 /// Initialize the WASM module with panic hook for better error messages.
 /// This function is automatically called when the WASM module is loaded.
 #[wasm_bindgen(start)]

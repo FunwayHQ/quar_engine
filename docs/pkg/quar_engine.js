@@ -236,6 +236,10 @@ const FrameTimingFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_frametiming_free(ptr >>> 0, 1));
 
+const ImageTargetDetectorHandleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_imagetargetdetectorhandle_free(ptr >>> 0, 1));
+
 const JsHitResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_jshitresult_free(ptr >>> 0, 1));
@@ -244,6 +248,10 @@ const JsPlaneInfoFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_jsplaneinfo_free(ptr >>> 0, 1));
 
+const LightingEstimatorHandleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_lightingestimatorhandle_free(ptr >>> 0, 1));
+
 const PlaneDetectorHandleFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_planedetectorhandle_free(ptr >>> 0, 1));
@@ -251,6 +259,10 @@ const PlaneDetectorHandleFinalization = (typeof FinalizationRegistry === 'undefi
 const Pose3DFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_pose3d_free(ptr >>> 0, 1));
+
+const QrDetectorHandleFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_qrdetectorhandle_free(ptr >>> 0, 1));
 
 const QualitySettingsFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
@@ -796,6 +808,155 @@ export class FrameTiming {
 if (Symbol.dispose) FrameTiming.prototype[Symbol.dispose] = FrameTiming.prototype.free;
 
 /**
+ * WASM handle for image target detector.
+ */
+export class ImageTargetDetectorHandle {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(ImageTargetDetectorHandle.prototype);
+        obj.__wbg_ptr = ptr;
+        ImageTargetDetectorHandleFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        ImageTargetDetectorHandleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_imagetargetdetectorhandle_free(ptr, 0);
+    }
+    /**
+     * Create a detector with custom configuration.
+     *
+     * # Arguments
+     * * `min_matches` - Minimum matches required (default: 10)
+     * * `ransac_threshold` - RANSAC inlier threshold in pixels (default: 3.0)
+     * * `min_inliers` - Minimum inliers required (default: 8)
+     * @param {number} min_matches
+     * @param {number} ransac_threshold
+     * @param {number} min_inliers
+     * @returns {ImageTargetDetectorHandle}
+     */
+    static with_config(min_matches, ransac_threshold, min_inliers) {
+        const ret = wasm.imagetargetdetectorhandle_with_config(min_matches, ransac_threshold, min_inliers);
+        return ImageTargetDetectorHandle.__wrap(ret);
+    }
+    /**
+     * Add a reference image template.
+     *
+     * # Arguments
+     * * `id` - Unique identifier for this template
+     * * `rgba` - RGBA pixel data of the template image
+     * * `width` - Template width in pixels
+     * * `height` - Template height in pixels
+     * * `physical_width_meters` - Physical width of the target in meters
+     *
+     * # Returns
+     * True if template was added successfully (has enough features)
+     * @param {string} id
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @param {number} physical_width_meters
+     * @returns {boolean}
+     */
+    add_template(id, rgba, width, height, physical_width_meters) {
+        const ptr0 = passStringToWasm0(id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.imagetargetdetectorhandle_add_template(this.__wbg_ptr, ptr0, len0, ptr1, len1, width, height, physical_width_meters);
+        return ret !== 0;
+    }
+    /**
+     * Set camera intrinsics for pose estimation.
+     *
+     * # Arguments
+     * * `fx` - Focal length X (pixels)
+     * * `fy` - Focal length Y (pixels)
+     * * `cx` - Principal point X
+     * * `cy` - Principal point Y
+     * @param {number} fx
+     * @param {number} fy
+     * @param {number} cx
+     * @param {number} cy
+     */
+    set_intrinsics(fx, fy, cx, cy) {
+        wasm.imagetargetdetectorhandle_set_intrinsics(this.__wbg_ptr, fx, fy, cx, cy);
+    }
+    /**
+     * Get the number of registered templates.
+     * @returns {number}
+     */
+    template_count() {
+        const ret = wasm.imagetargetdetectorhandle_template_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Remove a template by ID.
+     *
+     * # Returns
+     * True if template was found and removed
+     * @param {string} id
+     * @returns {boolean}
+     */
+    remove_template(id) {
+        const ptr0 = passStringToWasm0(id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.imagetargetdetectorhandle_remove_template(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+     * Get feature count for a template.
+     *
+     * # Returns
+     * Number of features, or 0 if template not found
+     * @param {string} id
+     * @returns {number}
+     */
+    get_template_feature_count(id) {
+        const ptr0 = passStringToWasm0(id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.imagetargetdetectorhandle_get_template_feature_count(this.__wbg_ptr, ptr0, len0);
+        return ret >>> 0;
+    }
+    /**
+     * Create a new image target detector.
+     */
+    constructor() {
+        const ret = wasm.imagetargetdetectorhandle_new();
+        this.__wbg_ptr = ret >>> 0;
+        ImageTargetDetectorHandleFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Detect all registered templates in a camera frame.
+     *
+     * # Arguments
+     * * `rgba` - RGBA pixel data of the camera frame
+     * * `width` - Frame width
+     * * `height` - Frame height
+     *
+     * # Returns
+     * Array of detected targets as JSON
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @returns {any}
+     */
+    detect(rgba, width, height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.imagetargetdetectorhandle_detect(this.__wbg_ptr, ptr0, len0, width, height);
+        return ret;
+    }
+}
+if (Symbol.dispose) ImageTargetDetectorHandle.prototype[Symbol.dispose] = ImageTargetDetectorHandle.prototype.free;
+
+/**
  * JavaScript-friendly hit test result.
  */
 export class JsHitResult {
@@ -1208,6 +1369,145 @@ export class JsPlaneInfo {
 if (Symbol.dispose) JsPlaneInfo.prototype[Symbol.dispose] = JsPlaneInfo.prototype.free;
 
 /**
+ * WASM-bindgen handle for the lighting estimator.
+ *
+ * Provides JavaScript-accessible interface to the lighting estimation system.
+ */
+export class LightingEstimatorHandle {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(LightingEstimatorHandle.prototype);
+        obj.__wbg_ptr = ptr;
+        LightingEstimatorHandleFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        LightingEstimatorHandleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_lightingestimatorhandle_free(ptr, 0);
+    }
+    /**
+     * Get the overall confidence (0.0-1.0).
+     * @returns {number}
+     */
+    confidence() {
+        const ret = wasm.lightingestimatorhandle_confidence(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get the current estimate without processing a new frame.
+     * @returns {any}
+     */
+    get_estimate() {
+        const ret = wasm.lightingestimatorhandle_get_estimate(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get the ambient color as [r, g, b] array.
+     * @returns {Float32Array}
+     */
+    ambient_color() {
+        const ret = wasm.lightingestimatorhandle_ambient_color(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Analyze a frame and return the lighting estimate as a JavaScript object.
+     *
+     * # Arguments
+     * * `rgba` - RGBA pixel data as Uint8ClampedArray
+     * * `width` - Image width in pixels
+     * * `height` - Image height in pixels
+     *
+     * # Returns
+     * JsValue containing the LightingEstimate object
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @returns {any}
+     */
+    analyze_frame(rgba, width, height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.lightingestimatorhandle_analyze_frame(this.__wbg_ptr, ptr0, len0, width, height);
+        return ret;
+    }
+    /**
+     * Create an estimator with custom smoothing factor (0.0-0.99).
+     * @param {number} smoothing
+     * @returns {LightingEstimatorHandle}
+     */
+    static with_smoothing(smoothing) {
+        const ret = wasm.lightingestimatorhandle_with_smoothing(smoothing);
+        return LightingEstimatorHandle.__wrap(ret);
+    }
+    /**
+     * Get the ambient intensity (0.0-1.0).
+     * @returns {number}
+     */
+    ambient_intensity() {
+        const ret = wasm.lightingestimatorhandle_ambient_intensity(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get the color temperature in Kelvin.
+     * @returns {number}
+     */
+    color_temperature() {
+        const ret = wasm.lightingestimatorhandle_color_temperature(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Get the directional light direction as [x, y, z] unit vector.
+     * @returns {Float32Array}
+     */
+    directional_direction() {
+        const ret = wasm.lightingestimatorhandle_directional_direction(this.__wbg_ptr);
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Get the directional light intensity (0.0-1.0).
+     * @returns {number}
+     */
+    directional_intensity() {
+        const ret = wasm.lightingestimatorhandle_directional_intensity(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Set the analysis interval (frames between full analysis).
+     * Lower values = more responsive but higher CPU usage.
+     * @param {number} interval
+     */
+    set_analysis_interval(interval) {
+        wasm.lightingestimatorhandle_set_analysis_interval(this.__wbg_ptr, interval);
+    }
+    /**
+     * Create a new lighting estimator handle.
+     */
+    constructor() {
+        const ret = wasm.lightingestimatorhandle_new();
+        this.__wbg_ptr = ret >>> 0;
+        LightingEstimatorHandleFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Reset the estimator state.
+     */
+    reset() {
+        wasm.lightingestimatorhandle_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) LightingEstimatorHandle.prototype[Symbol.dispose] = LightingEstimatorHandle.prototype.free;
+
+/**
  * WASM-exposed plane detector handle.
  */
 export class PlaneDetectorHandle {
@@ -1546,6 +1846,86 @@ export class Pose3D {
     }
 }
 if (Symbol.dispose) Pose3D.prototype[Symbol.dispose] = Pose3D.prototype.free;
+
+/**
+ * WASM handle for QR code detector.
+ */
+export class QrDetectorHandle {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        QrDetectorHandleFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_qrdetectorhandle_free(ptr, 0);
+    }
+    /**
+     * Get the current QR size setting in meters.
+     * @returns {number}
+     */
+    get_qr_size() {
+        const ret = wasm.qrdetectorhandle_get_qr_size(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Set the physical size of QR codes in meters.
+     *
+     * This is used for pose estimation. Default is 0.05 (5cm).
+     * @param {number} size_meters
+     */
+    set_qr_size(size_meters) {
+        wasm.qrdetectorhandle_set_qr_size(this.__wbg_ptr, size_meters);
+    }
+    /**
+     * Set camera intrinsics for pose estimation.
+     *
+     * # Arguments
+     * * `fx` - Focal length X (pixels)
+     * * `fy` - Focal length Y (pixels)
+     * * `cx` - Principal point X
+     * * `cy` - Principal point Y
+     * @param {number} fx
+     * @param {number} fy
+     * @param {number} cx
+     * @param {number} cy
+     */
+    set_intrinsics(fx, fy, cx, cy) {
+        wasm.qrdetectorhandle_set_intrinsics(this.__wbg_ptr, fx, fy, cx, cy);
+    }
+    /**
+     * Create a new QR code detector.
+     */
+    constructor() {
+        const ret = wasm.qrdetectorhandle_new();
+        this.__wbg_ptr = ret >>> 0;
+        QrDetectorHandleFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Detect QR codes in a camera frame.
+     *
+     * # Arguments
+     * * `rgba` - RGBA pixel data
+     * * `width` - Frame width
+     * * `height` - Frame height
+     *
+     * # Returns
+     * Array of detected QR codes as JSON
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @returns {any}
+     */
+    detect(rgba, width, height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.qrdetectorhandle_detect(this.__wbg_ptr, ptr0, len0, width, height);
+        return ret;
+    }
+}
+if (Symbol.dispose) QrDetectorHandle.prototype[Symbol.dispose] = QrDetectorHandle.prototype.free;
 
 /**
  * Quality level for tracking.

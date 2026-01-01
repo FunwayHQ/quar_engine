@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>QUAR Engine - Image Target Detection Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #video-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+
+    #overlay-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+
+    /* HUD Panel */
+    #hud {
+      position: absolute;
+      top: 20px; left: 20px;
+      background: rgba(0,0,0,0.85);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      z-index: 100;
+      min-width: 200px;
+    }
+
+    #hud h2 {
+      color: #facc15;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+
+    .stat { margin: 5px 0; }
+    .stat-label { color: #888; }
+    .stat-value { color: #4ade80; }
+
+    /* Template Panel */
+    #template-panel {
+      position: absolute;
+      top: 20px; right: 20px;
+      background: rgba(0,0,0,0.85);
+      padding: 15px 20px;
+      border-radius: 8px;
+      z-index: 100;
+      max-width: 250px;
+    }
+
+    #template-panel h3 {
+      color: #60a5fa;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    #template-preview {
+      width: 100%;
+      max-height: 150px;
+      object-fit: contain;
+      border: 2px solid #333;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      display: none;
+    }
+
+    #template-input {
+      display: none;
+    }
+
+    #load-template-btn {
+      width: 100%;
+      padding: 10px;
+      background: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    #load-template-btn:hover {
+      background: #2563eb;
+    }
+
+    .template-info {
+      font-size: 12px;
+      color: #888;
+      margin-top: 8px;
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    .slider-row label {
+      font-size: 12px;
+      color: #888;
+      min-width: 70px;
+    }
+
+    .slider-row input[type="range"] {
+      flex: 1;
+    }
+
+    .slider-row .value {
+      font-size: 13px;
+      color: #4ade80;
+      min-width: 40px;
+      text-align: right;
+    }
+
+    /* Start button */
+    #start-btn {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 40px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 200;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    #start-btn:hover {
+      transform: translate(-50%, -50%) scale(1.05);
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="overlay-canvas"></canvas>
+
+    <button id="start-btn">Start Image Target Demo</button>
+
+    <div id="hud" class="hidden">
+      <h2>Image Target</h2>
+      <div class="stat">
+        <span class="stat-label">FPS: </span>
+        <span class="stat-value" id="fps">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Detected: </span>
+        <span class="stat-value" id="detected">No</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Inliers: </span>
+        <span class="stat-value" id="inliers">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Confidence: </span>
+        <span class="stat-value" id="confidence">0%</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Pose Z: </span>
+        <span class="stat-value" id="pose-z">-</span>
+      </div>
+    </div>
+
+    <div id="template-panel" class="hidden">
+      <h3>Template Image</h3>
+      <img id="template-preview" alt="Template preview">
+      <input type="file" id="template-input" accept="image/*">
+      <button id="load-template-btn">Load Template Image</button>
+      <div class="template-info" id="template-info">No template loaded</div>
+
+      <div class="slider-row">
+        <label>Size (m):</label>
+        <input type="range" id="size-slider" min="0.01" max="1.0" step="0.01" value="0.1">
+        <span class="value" id="size-value">0.10</span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { ImageTargetDetectorHandle, version } from './pkg/quar_engine.js';
+
+    let detector = null;
+    let videoStream = null;
+    let video = null;
+    let animationId = null;
+    let lastTime = 0;
+    let frameCount = 0;
+    let fps = 0;
+
+    const videoCanvas = document.getElementById('video-canvas');
+    const overlayCanvas = document.getElementById('overlay-canvas');
+    const videoCtx = videoCanvas.getContext('2d');
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    const startBtn = document.getElementById('start-btn');
+    const hud = document.getElementById('hud');
+    const templatePanel = document.getElementById('template-panel');
+    const templateInput = document.getElementById('template-input');
+    const templatePreview = document.getElementById('template-preview');
+    const loadTemplateBtn = document.getElementById('load-template-btn');
+    const sizeSlider = document.getElementById('size-slider');
+    const sizeValue = document.getElementById('size-value');
+
+    // FPS elements
+    const fpsEl = document.getElementById('fps');
+    const detectedEl = document.getElementById('detected');
+    const inliersEl = document.getElementById('inliers');
+    const confidenceEl = document.getElementById('confidence');
+    const poseZEl = document.getElementById('pose-z');
+    const templateInfoEl = document.getElementById('template-info');
+
+    startBtn.addEventListener('click', async () => {
+      startBtn.classList.add('hidden');
+      await startDemo();
+    });
+
+    loadTemplateBtn.addEventListener('click', () => {
+      templateInput.click();
+    });
+
+    templateInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const img = new Image();
+      img.onload = () => {
+        // Show preview
+        templatePreview.src = img.src;
+        templatePreview.style.display = 'block';
+
+        // Get image data
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(img, 0, 0);
+        const imageData = tempCtx.getImageData(0, 0, img.width, img.height);
+
+        // Add to detector
+        const physicalSize = parseFloat(sizeSlider.value);
+        const success = detector.add_template(
+          'template1',
+          imageData.data,
+          img.width,
+          img.height,
+          physicalSize
+        );
+
+        if (success) {
+          const featureCount = detector.get_template_feature_count('template1');
+          templateInfoEl.textContent = `Loaded: ${img.width}x${img.height}, ${featureCount} features`;
+          templateInfoEl.style.color = '#4ade80';
+        } else {
+          templateInfoEl.textContent = 'Failed - not enough features';
+          templateInfoEl.style.color = '#f87171';
+        }
+      };
+      img.src = URL.createObjectURL(file);
+    });
+
+    sizeSlider.addEventListener('input', () => {
+      sizeValue.textContent = parseFloat(sizeSlider.value).toFixed(2);
+    });
+
+    async function startDemo() {
+      try {
+        // Initialize WASM
+        await init();
+        console.log('QUAR Engine:', version());
+
+        // Create detector
+        detector = new ImageTargetDetectorHandle();
+
+        // Start camera
+        const constraints = {
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video = document.createElement('video');
+        video.srcObject = videoStream;
+        video.playsInline = true;
+        await video.play();
+
+        // Set canvas sizes
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        videoCanvas.width = width;
+        videoCanvas.height = height;
+        overlayCanvas.width = width;
+        overlayCanvas.height = height;
+
+        // Set camera intrinsics (approximate)
+        const fx = width * 0.8;
+        const fy = width * 0.8;
+        const cx = width / 2;
+        const cy = height / 2;
+        detector.set_intrinsics(fx, fy, cx, cy);
+
+        // Show UI
+        hud.classList.remove('hidden');
+        templatePanel.classList.remove('hidden');
+
+        // Start render loop
+        requestAnimationFrame(processFrame);
+
+      } catch (err) {
+        console.error('Failed to start demo:', err);
+        alert('Failed to start: ' + err.message);
+      }
+    }
+
+    function processFrame(timestamp) {
+      animationId = requestAnimationFrame(processFrame);
+
+      // Calculate FPS
+      frameCount++;
+      if (timestamp - lastTime >= 1000) {
+        fps = frameCount;
+        frameCount = 0;
+        lastTime = timestamp;
+        fpsEl.textContent = fps;
+      }
+
+      // Draw video frame
+      videoCtx.drawImage(video, 0, 0);
+
+      // Get frame data
+      const imageData = videoCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
+
+      // Detect targets
+      const detections = detector.detect(imageData.data, videoCanvas.width, videoCanvas.height);
+
+      // Clear overlay
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+      if (detections && detections.length > 0) {
+        const det = detections[0];
+
+        // Update HUD
+        detectedEl.textContent = 'Yes';
+        detectedEl.style.color = '#4ade80';
+        inliersEl.textContent = det.num_inliers;
+        confidenceEl.textContent = (det.confidence * 100).toFixed(0) + '%';
+
+        if (det.has_pose) {
+          poseZEl.textContent = det.pose_tz.toFixed(2) + 'm';
+        } else {
+          poseZEl.textContent = '-';
+        }
+
+        // Draw detected corners
+        drawDetection(det);
+      } else {
+        detectedEl.textContent = 'No';
+        detectedEl.style.color = '#888';
+        inliersEl.textContent = '0';
+        confidenceEl.textContent = '0%';
+        poseZEl.textContent = '-';
+      }
+    }
+
+    function drawDetection(det) {
+      const corners = [
+        { x: det.corner_tl_x, y: det.corner_tl_y },
+        { x: det.corner_tr_x, y: det.corner_tr_y },
+        { x: det.corner_br_x, y: det.corner_br_y },
+        { x: det.corner_bl_x, y: det.corner_bl_y }
+      ];
+
+      // Draw filled quadrilateral with transparency
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < 4; i++) {
+        overlayCtx.lineTo(corners[i].x, corners[i].y);
+      }
+      overlayCtx.closePath();
+      overlayCtx.fillStyle = 'rgba(59, 130, 246, 0.3)';
+      overlayCtx.fill();
+
+      // Draw outline
+      overlayCtx.strokeStyle = '#3b82f6';
+      overlayCtx.lineWidth = 3;
+      overlayCtx.stroke();
+
+      // Draw corner points
+      const cornerColors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15'];
+      for (let i = 0; i < 4; i++) {
+        overlayCtx.beginPath();
+        overlayCtx.arc(corners[i].x, corners[i].y, 8, 0, Math.PI * 2);
+        overlayCtx.fillStyle = cornerColors[i];
+        overlayCtx.fill();
+        overlayCtx.strokeStyle = '#fff';
+        overlayCtx.lineWidth = 2;
+        overlayCtx.stroke();
+      }
+
+      // Draw center
+      const cx = det.center_x;
+      const cy = det.center_y;
+      overlayCtx.beginPath();
+      overlayCtx.arc(cx, cy, 6, 0, Math.PI * 2);
+      overlayCtx.fillStyle = '#fff';
+      overlayCtx.fill();
+
+      // Draw axes if pose available
+      if (det.has_pose) {
+        drawAxes(cx, cy, det);
+      }
+    }
+
+    function drawAxes(cx, cy, det) {
+      const axisLength = 50;
+
+      // Simple axis visualization (would need proper projection for accuracy)
+      overlayCtx.lineWidth = 3;
+
+      // X axis (red)
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx, cy);
+      overlayCtx.lineTo(cx + axisLength, cy);
+      overlayCtx.strokeStyle = '#ef4444';
+      overlayCtx.stroke();
+
+      // Y axis (green)
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx, cy);
+      overlayCtx.lineTo(cx, cy - axisLength);
+      overlayCtx.strokeStyle = '#22c55e';
+      overlayCtx.stroke();
+
+      // Z axis (blue) - simplified
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(cx, cy);
+      overlayCtx.lineTo(cx + axisLength * 0.7, cy - axisLength * 0.7);
+      overlayCtx.strokeStyle = '#3b82f6';
+      overlayCtx.stroke();
+    }
+  </script>
+</body>
+</html>

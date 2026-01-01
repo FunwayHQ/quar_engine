@@ -21,6 +21,7 @@ pub mod imu_preintegration;
 pub mod scale_estimator;
 pub mod accelerometer;
 pub mod stabilization;
+pub mod homography;
 
 pub use optical_flow::{LucasKanadeTracker, FBTrackResult};
 pub use pyramid::{build_pyramid, downsample_bilinear, GrayImage};
@@ -51,6 +52,10 @@ pub use accelerometer::{
 pub use stabilization::{
     StationaryDetector, PositionAnchor, DriftDecay, VisualAnchor,
     AnchorManager, PositionStabilizer,
+};
+pub use homography::{
+    compute_homography, compute_homography_ransac, decompose_homography,
+    apply_homography, project_corners, forward_transfer_error,
 };
 
 use wasm_bindgen::prelude::*;
