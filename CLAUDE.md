@@ -34,11 +34,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 5 (Web Workers)** - TypeScript SDK with Web Worker architecture, SharedArrayBuffer zero-copy transfer, WorkerBridge, AetherWorker, worker-demo.html
 - **Sprint 16: Local Bundle Adjustment** - Levenberg-Marquardt optimizer, Jacobians, reprojection residuals, Huber robust cost, structure/motion optimization (39 tests)
 - **Sprint 18: Loop Closure** - LSH visual vocabulary, Bag of Words, TF-IDF weighting, place recognition database, pose graph optimization (38 tests)
+- **Sprint 9: Three.js SDK** - ARSession, HitTester, AnchorManager, Tracker6DoF wrapper, DebugOverlay, CoordinateUtils (440 SDK tests)
 
 ### Current Status
 - **Full 6DoF tracking with VIO, mapping, BA, loop closure, and plane detection in WASM** (~113KB gzipped)
 - **TypeScript SDK** with Web Worker support in `/sdk/` (builds to ES/CJS modules)
-- 426 unit tests passing (Rust) + SDK tests (TypeScript)
+- 426 unit tests passing (Rust) + 440 SDK tests (TypeScript)
 - Bundle Adjustment integrated into tracker (39 BA tests)
 - Loop Closure integrated into tracker (38 LC tests)
 - Pure-Rust linear algebra (no external math dependencies)
@@ -134,6 +135,14 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 - `src/memory/frame_pool.rs` - Frame buffer pool
 - `src/adaptive/mod.rs` - Adaptive quality controller
 - `src/profiling/mod.rs` - Performance timing
+
+**TypeScript SDK (`/sdk/src/`):**
+- `ar/Tracker6DoF.ts` - WASM tracker wrapper with VIO, applyToCamera()
+- `ar/HitTesting.ts` - Hit test API, screen-to-ray conversion, plane intersection
+- `ar/Anchor.ts` - World-locked anchors, Object3D integration, persistence
+- `three/ARHelpers.ts` - ARSession, PlacementReticle, createARSceneFactory
+- `debug/DebugOverlay.ts` - FPS counter, tracking stats, plane visualization
+- `utils/CoordinateSystem.ts` - CV-to-Three.js conversions, matrix/quaternion ops
 
 ### Performance Targets
 - Tracking loop: <16ms (60 FPS) on high-end devices
