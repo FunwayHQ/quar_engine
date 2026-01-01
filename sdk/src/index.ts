@@ -36,6 +36,15 @@ export * from './imu';
 // Re-export AR module
 export * from './ar';
 
+// Re-export Three.js integration module
+export * from './three';
+
+// Re-export debug module
+export * from './debug';
+
+// Re-export utilities module (as namespace to avoid conflicts with imu)
+export * as CoordinateUtils from './utils';
+
 // WASM module type definitions
 interface WasmModule {
   default: () => Promise<void>;
