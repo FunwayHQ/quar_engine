@@ -35,11 +35,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 16: Local Bundle Adjustment** - Levenberg-Marquardt optimizer, Jacobians, reprojection residuals, Huber robust cost, structure/motion optimization (39 tests)
 - **Sprint 18: Loop Closure** - LSH visual vocabulary, Bag of Words, TF-IDF weighting, place recognition database, pose graph optimization (38 tests)
 - **Sprint 9: Three.js SDK** - ARSession, HitTester, AnchorManager, Tracker6DoF wrapper, DebugOverlay, CoordinateUtils (440 SDK tests)
+- **Sprint 11: Lighting Estimation** - Histogram-based ambient analysis, directional light from luminance gradient, color temperature via McCamy's approximation, LightingManager for Three.js (67 Rust tests, 54 SDK tests)
+- **Sprint 12: Production Hardening** - README.md, sdk/README.md, CHANGELOG.md, examples directory, documentation polish
+- **Sprint 13: Image Target & QR Detection** - Homography DLT/RANSAC/decomposition, image target detection with ORB matching, QR finder pattern detection (1:1:3:1:1 ratio), pose estimation from planar targets (39 tests)
 
 ### Current Status
-- **Full 6DoF tracking with VIO, mapping, BA, loop closure, and plane detection in WASM** (~113KB gzipped)
+- **Full 6DoF tracking with VIO, mapping, BA, loop closure, plane detection, image targets, and QR detection in WASM** (~288KB uncompressed, ~51KB gzipped)
 - **TypeScript SDK** with Web Worker support in `/sdk/` (builds to ES/CJS modules)
-- 426 unit tests passing (Rust) + 440 SDK tests (TypeScript)
+- 532 unit tests passing (Rust) + 440+ SDK tests (TypeScript)
 - Bundle Adjustment integrated into tracker (39 BA tests)
 - Loop Closure integrated into tracker (38 LC tests)
 - Pure-Rust linear algebra (no external math dependencies)
@@ -130,6 +133,24 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 - `src/tracker/imu_preintegration.rs` - IMU preintegration (Forster et al.), bias correction, rotation matrices
 - `src/tracker/scale_estimator.rs` - Metric scale estimation from IMU, gravity estimation
 
+**Lighting:**
+- `src/lighting/mod.rs` - LightingEstimator, WASM bindings
+- `src/lighting/histogram.rs` - Luminance histogram, statistics
+- `src/lighting/analyzer.rs` - Ambient and directional light estimation
+- `src/lighting/color_temp.rs` - Color temperature via McCamy's approximation
+
+**Image Target:**
+- `src/image_target/mod.rs` - ImageTargetDetectorHandle WASM bindings
+- `src/image_target/template.rs` - Template storage with FAST/ORB features
+- `src/image_target/detector.rs` - Detection pipeline, descriptor matching, pose estimation
+
+**QR Target:**
+- `src/qr_target/mod.rs` - QrDetectorHandle WASM bindings, pose from corners
+- `src/qr_target/finder.rs` - QR finder pattern detection (1:1:3:1:1 ratio), triplet validation
+
+**Homography:**
+- `src/tracker/homography.rs` - DLT algorithm, RANSAC, decomposition to R/t
+
 **Memory & Performance:**
 - `src/memory/arena.rs` - Arena allocator, FixedVec
 - `src/memory/frame_pool.rs` - Frame buffer pool
@@ -141,6 +162,8 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 - `ar/HitTesting.ts` - Hit test API, screen-to-ray conversion, plane intersection
 - `ar/Anchor.ts` - World-locked anchors, Object3D integration, persistence
 - `three/ARHelpers.ts` - ARSession, PlacementReticle, createARSceneFactory
+- `lighting/LightingEstimator.ts` - WASM wrapper, temporal smoothing
+- `lighting/LightingManager.ts` - Three.js light integration, auto-updates
 - `debug/DebugOverlay.ts` - FPS counter, tracking stats, plane visualization
 - `utils/CoordinateSystem.ts` - CV-to-Three.js conversions, matrix/quaternion ops
 
