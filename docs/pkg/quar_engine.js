@@ -1895,6 +1895,33 @@ export class QrDetectorHandle {
         wasm.qrdetectorhandle_set_intrinsics(this.__wbg_ptr, fx, fy, cx, cy);
     }
     /**
+     * Debug: Get detailed pattern info as JSON.
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @returns {any}
+     */
+    debug_get_patterns(rgba, width, height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.qrdetectorhandle_debug_get_patterns(this.__wbg_ptr, ptr0, len0, width, height);
+        return ret;
+    }
+    /**
+     * Debug: Get number of finder patterns detected (before QR validation).
+     * Returns the count of individual finder patterns found in the frame.
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @returns {number}
+     */
+    debug_detect_patterns(rgba, width, height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.qrdetectorhandle_debug_detect_patterns(this.__wbg_ptr, ptr0, len0, width, height);
+        return ret >>> 0;
+    }
+    /**
      * Create a new QR code detector.
      */
     constructor() {
@@ -3029,6 +3056,10 @@ function __wbg_get_imports() {
         const ret = typeof(val) === 'object' && val !== null;
         return ret;
     };
+    imports.wbg.__wbg___wbindgen_is_string_704ef9c8fc131030 = function(arg0) {
+        const ret = typeof(arg0) === 'string';
+        return ret;
+    };
     imports.wbg.__wbg___wbindgen_is_undefined_f6b95eab589e0269 = function(arg0) {
         const ret = arg0 === undefined;
         return ret;
@@ -3157,6 +3188,10 @@ function __wbg_get_imports() {
         const ret = new Error();
         return ret;
     };
+    imports.wbg.__wbg_new_b546ae120718850e = function() {
+        const ret = new Map();
+        return ret;
+    };
     imports.wbg.__wbg_new_no_args_cb138f77cf6151ee = function(arg0, arg1) {
         const ret = new Function(getStringFromWasm0(arg0, arg1));
         return ret;
@@ -3185,6 +3220,10 @@ function __wbg_get_imports() {
     };
     imports.wbg.__wbg_set_7df433eea03a5c14 = function(arg0, arg1, arg2) {
         arg0[arg1 >>> 0] = arg2;
+    };
+    imports.wbg.__wbg_set_efaaf145b9377369 = function(arg0, arg1, arg2) {
+        const ret = arg0.set(arg1, arg2);
+        return ret;
     };
     imports.wbg.__wbg_stack_0ed75d68575b0f3c = function(arg0, arg1) {
         const ret = arg1.stack;
@@ -3224,6 +3263,11 @@ function __wbg_get_imports() {
     imports.wbg.__wbindgen_cast_4625c577ab2ec9ee = function(arg0) {
         // Cast intrinsic for `U64 -> Externref`.
         const ret = BigInt.asUintN(64, arg0);
+        return ret;
+    };
+    imports.wbg.__wbindgen_cast_9ae0607507abb057 = function(arg0) {
+        // Cast intrinsic for `I64 -> Externref`.
+        const ret = arg0;
         return ret;
     };
     imports.wbg.__wbindgen_cast_d6cd19b81560fd6e = function(arg0) {

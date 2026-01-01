@@ -42,6 +42,9 @@ export * from './three';
 // Re-export debug module
 export * from './debug';
 
+// Re-export lighting module
+export * from './lighting';
+
 // Re-export utilities module (as namespace to avoid conflicts with imu)
 export * as CoordinateUtils from './utils';
 

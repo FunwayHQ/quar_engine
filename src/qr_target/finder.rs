@@ -76,10 +76,10 @@ pub struct QrFinderConfig {
 impl Default for QrFinderConfig {
     fn default() -> Self {
         Self {
-            ratio_tolerance: 0.5,
-            min_module_size: 2.0,
-            max_module_size: 100.0,
-            scan_step: 2,
+            ratio_tolerance: 0.7,  // More permissive for real-world conditions
+            min_module_size: 1.0,  // Allow smaller QR codes
+            max_module_size: 150.0, // Allow larger QR codes
+            scan_step: 1,          // Scan every line for better detection
         }
     }
 }
@@ -203,6 +203,12 @@ impl QrFinderDetector {
                 // Color changed
                 if current_idx == 4 {
                     // Check if we have a valid pattern
+                    // The pattern must be: dark-light-dark-light-dark
+                    // After 5 segments, last_color is now light (we just transitioned TO light)
+                    // So the 5th segment (index 4) was dark, which is correct
+                    // We need to verify segment 0 was dark, segment 2 was dark, segment 4 was dark
+                    // Since we track transitions and last_color is now light after the 5th dark segment,
+                    // the pattern is valid if it matches the ratio
                     if self.check_ratio(&counts) {
                         let total_width: u32 = counts.iter().sum();
                         let module_size = total_width as f32 / 7.0;

@@ -556,6 +556,15 @@ export class QrDetectorHandle {
    */
   set_intrinsics(fx: number, fy: number, cx: number, cy: number): void;
   /**
+   * Debug: Get detailed pattern info as JSON.
+   */
+  debug_get_patterns(rgba: Uint8Array, width: number, height: number): any;
+  /**
+   * Debug: Get number of finder patterns detected (before QR validation).
+   * Returns the count of individual finder patterns found in the frame.
+   */
+  debug_detect_patterns(rgba: Uint8Array, width: number, height: number): number;
+  /**
    * Create a new QR code detector.
    */
   constructor();
@@ -1171,6 +1180,8 @@ export interface InitOutput {
   readonly pose3d_position: (a: number) => [number, number];
   readonly pose3d_quaternion: (a: number) => [number, number];
   readonly pose3d_to_matrix4: (a: number) => [number, number];
+  readonly qrdetectorhandle_debug_detect_patterns: (a: number, b: number, c: number, d: number, e: number) => number;
+  readonly qrdetectorhandle_debug_get_patterns: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly qrdetectorhandle_detect: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly qrdetectorhandle_get_qr_size: (a: number) => number;
   readonly qrdetectorhandle_new: () => number;

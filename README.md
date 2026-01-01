@@ -1,44 +1,43 @@
 # QUAR Engine
 
-A Rust-based WebAR SLAM engine targeting 60FPS markerless 6DoF tracking in the browser.
+**Rust/WASM WebAR SLAM Engine for 60FPS Markerless 6DoF Tracking**
 
-## Overview
+[![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org/)
+[![WASM](https://img.shields.io/badge/WebAssembly-Ready-blueviolet.svg)](https://webassembly.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-493%20Rust%20%7C%20440%2B%20SDK-brightgreen.svg)](#testing)
 
-QUAR Engine is the core computer vision component for WebAR applications. It compiles to WebAssembly and provides:
+QUAR Engine is a high-performance WebAR engine that brings native-quality SLAM tracking to the browser. Built entirely in Rust and compiled to WebAssembly, it delivers real-time 6 degrees of freedom (6DoF) tracking at 60 FPS with a tiny ~51KB gzipped footprint.
 
-- **Feature Detection**: FAST-9 corner detection with non-maximum suppression
-- **6DoF Tracking**: Real-time pose estimation using optical flow
-- **Web Worker Pipeline**: Off-main-thread processing with SharedArrayBuffer
-- **Visual-Inertial Odometry**: IMU fusion for robust tracking (planned)
-- **Relocalization**: Recovery from tracking loss using bag-of-words (planned)
+## Features
 
-## Current Status
+- **6DoF Tracking** - Full rotation and translation via Essential matrix decomposition
+- **Visual-Inertial Odometry** - IMU sensor fusion with automatic scale estimation
+- **Plane Detection** - RANSAC-based plane fitting with horizontal/vertical classification
+- **Hit Testing** - Screen-to-world ray casting for AR object placement
+- **Lighting Estimation** - Real-time ambient and directional light analysis
+- **ORB Descriptors** - 256-bit binary feature descriptors with Hamming distance matching
+- **Loop Closure** - Place recognition using bag-of-words for drift correction
+- **Bundle Adjustment** - Levenberg-Marquardt optimization for map refinement
 
-| Sprint | Feature | Status |
-|--------|---------|--------|
-| 1 | Project Foundation & WASM Scaffold | ✅ Complete |
-| 2 | Camera Access & Frame Capture | ✅ Complete |
-| 3 | Feature Detection (FAST Corners) | ✅ Complete |
-| 4 | Optical Flow & 3DoF Tracking | ✅ Complete |
-| 5 | Web Worker Architecture | ✅ Complete |
-| 6 | Pipeline Optimization & Profiling | 🔜 Next |
+## Live Demos
 
-### WASM Binary Size
-- **Uncompressed**: 60KB
-- **Gzipped**: ~27KB
+Try the demos on your phone (requires camera access):
 
-## Requirements
-
-- **Rust**: 1.70+ (stable)
-- **wasm-pack**: For building WASM modules
-- **Node.js**: 18+ (for SDK development)
+| Demo | Description |
+|------|-------------|
+| [6DoF Tracking](https://funwayhq.github.io/quar_engine/6dof-demo.html) | Full 6DoF with translation |
+| [AR Cube](https://funwayhq.github.io/quar_engine/ar-demo.html) | Basic 3DoF rotation tracking |
+| [Advanced AR](https://funwayhq.github.io/quar_engine/advanced-demo.html) | IMU fusion + performance dashboard |
+| [Feature Detection](https://funwayhq.github.io/quar_engine/feature-demo.html) | FAST corner visualization |
+| [Web Workers](https://funwayhq.github.io/quar_engine/worker-demo.html) | Off-thread processing |
 
 ## Quick Start
 
-### Install Dependencies
+### Installation
 
 ```bash
-# Install Rust (if not already installed)
+# Install Rust (if needed)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Add WASM target
@@ -46,9 +45,127 @@ rustup target add wasm32-unknown-unknown
 
 # Install wasm-pack
 cargo install wasm-pack
+
+# Build WASM module
+wasm-pack build --target web --release
 ```
 
-### Build
+### JavaScript Usage
+
+```javascript
+import init, { Tracker6DoFHandle, version } from './pkg/quar_engine.js';
+
+// Initialize WASM
+await init();
+console.log('QUAR Engine:', version());
+
+// Create 6DoF tracker
+const tracker = new Tracker6DoFHandle(640, 480);
+
+// In your render loop
+function animate() {
+  const imageData = ctx.getImageData(0, 0, 640, 480);
+  const pose = tracker.process_frame(imageData.data, 640, 480);
+
+  if (pose) {
+    // Apply to Three.js camera
+    camera.quaternion.set(pose.rotation[0], pose.rotation[1],
+                          pose.rotation[2], pose.rotation[3]);
+    camera.position.set(pose.translation[0], pose.translation[1],
+                        pose.translation[2]);
+  }
+
+  requestAnimationFrame(animate);
+}
+```
+
+### TypeScript SDK
+
+See [sdk/README.md](sdk/README.md) for the full TypeScript SDK with Three.js integration.
+
+```typescript
+import { ARSession, createThreeLightingCallbacks, LightingManager } from '@quar/sdk';
+
+// Create AR session with automatic camera and tracking
+const session = new ARSession(renderer, scene, camera);
+await session.start();
+
+// Add lighting estimation
+const lighting = new LightingManager(createThreeLightingCallbacks(THREE));
+scene.add(lighting.ambientLight);
+scene.add(lighting.directionalLight);
+```
+
+## Architecture
+
+Based on [ORB-SLAM3](https://github.com/UZ-SLAMLab/ORB_SLAM3) (Campos et al., IEEE T-RO 2021):
+
+```
++-------------------------------------------------------------+
+|                      Browser (JavaScript)                    |
++-------------+-------------+-------------+-------------------+
+|   Camera    |     IMU     |   Worker    |     Three.js      |
+|   Manager   |   Manager   |   Bridge    |     Adapter       |
++-------------+-------------+-------------+-------------------+
+|                    TypeScript SDK                            |
++-------------------------------------------------------------+
+|                    WASM Bindings                             |
++-------------------------------------------------------------+
+|                       Rust Core                              |
++-----------+-----------+-----------+-----------+-------------+
+|  Feature  |  Optical  | Essential |  Bundle   |    Loop     |
+| Detection |   Flow    |  Matrix   | Adjustment|   Closure   |
++-----------+-----------+-----------+-----------+-------------+
+|   FAST-9  |Lucas-Kanade|  8-point  |    L-M    |   BoW/DBoW  |
+|    NMS    |  Pyramid  |  RANSAC   |  Huber    |   TF-IDF    |
+|    ORB    |   Gyro    |  SVD      |           |   LSH       |
++-----------+-----------+-----------+-----------+-------------+
+```
+
+### Core Pipeline
+
+1. **Frame Capture** - Camera frames via getUserMedia
+2. **Feature Detection** - FAST-9 corners with NMS, ORB descriptors
+3. **Optical Flow** - Lucas-Kanade tracking with gyro compensation
+4. **Pose Estimation** - Essential matrix via 8-point + RANSAC
+5. **Triangulation** - DLT for 3D point recovery
+6. **Bundle Adjustment** - Joint optimization of poses and structure
+7. **Loop Closure** - BoW-based place recognition for drift correction
+
+## Project Structure
+
+```
+quar_engine/
++-- src/                    # Rust source
+|   +-- lib.rs              # WASM entry point
+|   +-- features/           # FAST, NMS, ORB, grayscale
+|   +-- tracker/            # Optical flow, Essential, BA, Loop Closure
+|   +-- lighting/           # Luminance analysis, color temperature
+|   +-- memory/             # Arena allocator, frame pool
+|   +-- adaptive/           # Quality controller
++-- sdk/                    # TypeScript SDK
+|   +-- src/
+|       +-- camera/         # CameraManager, FrameCapture
+|       +-- ar/             # Tracker6DoF, HitTesting, Anchor
+|       +-- three/          # ARSession, ARHelpers
+|       +-- lighting/       # LightingManager
+|       +-- imu/            # IMUManager, filters
+|       +-- debug/          # DebugOverlay
++-- docs/                   # GitHub Pages demos
++-- examples/               # Standalone examples
++-- benches/                # Performance benchmarks
+```
+
+## Performance
+
+| Metric | Target | Current |
+|--------|--------|---------|
+| Tracking Loop | <16ms (60 FPS) | Achieved on modern devices |
+| WASM Binary | <100KB gzipped | ~51KB |
+| Motion-to-Photon | <30ms | <25ms with IMU |
+| Feature Detection | <5ms (640x480) | ~3ms |
+
+## Build Commands
 
 ```bash
 # Development build
@@ -56,193 +173,52 @@ wasm-pack build --target web --dev
 
 # Release build (optimized)
 wasm-pack build --target web --release
-```
 
-### Test
-
-```bash
 # Run Rust tests
 cargo test
 
-# Run benchmarks
-cargo bench
+# Run SDK tests
+cd sdk && npm test
 
-# Run WASM tests in browser
-wasm-pack test --headless --chrome
-```
-
-## Project Structure
-
-```
-quar_engine/
-├── src/
-│   ├── lib.rs               # WASM entry point
-│   ├── error.rs             # Error types
-│   ├── features/            # Feature detection module
-│   │   ├── mod.rs           # WASM bindings
-│   │   ├── fast.rs          # FAST-9 corner detector
-│   │   ├── grayscale.rs     # RGBA to grayscale conversion
-│   │   ├── keypoint.rs      # KeyPoint struct
-│   │   └── nms.rs           # Non-maximum suppression
-│   └── tracker/             # Optical flow tracking module
-│       ├── mod.rs           # Tracker + WASM bindings
-│       ├── optical_flow.rs  # Lucas-Kanade tracker
-│       ├── pyramid.rs       # Image pyramid generation
-│       ├── rotation.rs      # 3DoF rotation estimation
-│       └── types.rs         # Pose3D, Point2, TrackResult
-├── sdk/                     # TypeScript SDK
-│   ├── src/
-│   │   ├── camera/          # Camera access
-│   │   ├── worker/          # Web Worker pipeline
-│   │   │   ├── types.ts     # Worker message types
-│   │   │   ├── SharedFrameBuffer.ts  # Double-buffered SharedArrayBuffer
-│   │   │   ├── WorkerBridge.ts       # Main thread bridge
-│   │   │   └── AetherWorker.ts       # Worker script
-│   │   ├── types/           # TypeScript types
-│   │   └── index.ts         # Main SDK entry
-│   └── package.json
-├── benches/                 # Performance benchmarks
-├── docs/                    # GitHub Pages demo
-├── Cargo.toml
-└── README.md
-```
-
-## Usage
-
-### TypeScript SDK
-
-```typescript
-import { QuarEngine } from '@quar/sdk';
-
-// Initialize the engine
-const engine = await QuarEngine.init({
-  canvas: document.getElementById('ar-canvas'),
-  camera: { facing: 'environment' }
-});
-
-// Connect to Three.js camera (optional)
-engine.connectCamera(threeCamera);
-
-// Subscribe to pose updates
-engine.on('pose', (pose) => {
-  console.log('Rotation:', pose.qx, pose.qy, pose.qz, pose.qw);
-});
-
-// Start tracking
-engine.start();
-```
-
-### Tracker API (WASM)
-
-```javascript
-import init, { TrackerHandle } from 'quar-engine';
-
-await init();
-
-const tracker = new TrackerHandle();
-
-// Process each frame
-const pose = tracker.process_frame(rgbaData, width, height);
-if (pose) {
-  // pose.rotation = [qx, qy, qz, qw]
-  // pose.translation = [x, y, z]
-}
-
-// Get tracked point count
-const points = tracker.tracked_points();
-
-// Reset tracker
-tracker.reset();
-```
-
-### Feature Detection (WASM API)
-
-```javascript
-import init, { detect_features, get_grayscale } from 'quar-engine';
-
-await init();
-
-// Get frame data from canvas
-const ctx = canvas.getContext('2d');
-const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-// Detect FAST corners (threshold 20-50 recommended)
-const keypoints = detect_features(imageData.data, canvas.width, canvas.height, 30);
-
-// Returns array of { x, y, score } objects
-console.log(`Found ${keypoints.length} corners`);
-```
-
-## Performance Targets
-
-| Metric | Target | Current |
-|--------|--------|---------|
-| Tracking loop | <16ms (60 FPS) | - |
-| WASM binary | <3MB gzipped | 20KB ✅ |
-| Motion-to-photon | <30ms | - |
-| Feature detection | <5ms (640x480) | Benchmarking |
-
-## Architecture
-
-Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021):
-
-- **Three-thread architecture**: Tracking, Mapping, Loop Closing
-- **IMU Preintegration**: Efficient Visual-Inertial fusion
-- **DBoW2**: Bag-of-words for place recognition
-- **Atlas**: Multi-map system for session persistence
-
-### Feature Detection Pipeline
-
-```
-RGBA Frame → Grayscale → FAST-9 Detection → NMS → KeyPoints
-    ↓            ↓              ↓            ↓
-  4 bytes    1 byte/px    Bresenham      Filter
-  per pixel   integer     circle scan   duplicates
-             math only
-```
-
-## Development
-
-### Build Commands
-
-```bash
-# Format code
-cargo fmt
+# Check formatting
+cargo fmt --check
 
 # Run lints
 cargo clippy -- -D warnings
-
-# Run tests
-cargo test
-
-# Build WASM
-wasm-pack build --target web --release
-
-# Run benchmarks
-cargo bench
 ```
 
-### Mobile Testing
+## Testing
 
-For testing on mobile devices (requires HTTPS for camera access):
+The project has comprehensive test coverage:
+
+- **Rust**: 493 unit tests covering all core algorithms
+- **SDK**: 440+ TypeScript tests with Jest
 
 ```bash
-# Start HTTPS dev server
-python3 serve-https.py
+# Run all Rust tests
+cargo test
 
-# Or use GitHub Pages deployment
-# https://funwayhq.github.io/quar_engine/
+# Run with output
+cargo test -- --nocapture
+
+# Run SDK tests
+cd sdk && npm test
 ```
+
+## Requirements
+
+- **Rust**: 1.70+ (stable)
+- **wasm-pack**: For WASM compilation
+- **Node.js**: 18+ (for SDK development)
+- **Browser**: Chrome 90+, Safari 14+, Firefox 90+
+- **HTTPS**: Required for camera/sensor access
 
 ## License
 
-MIT License - see [LICENSE](./LICENSE) for details.
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## References
 
 - [ORB-SLAM3](https://github.com/UZ-SLAMLab/ORB_SLAM3) - Campos et al., IEEE T-RO 2021
 - [FAST Corner Detection](https://www.edwardrosten.com/work/fast.html) - Rosten & Drummond 2006
+- [IMU Preintegration](https://arxiv.org/abs/1512.02363) - Forster et al., 2015

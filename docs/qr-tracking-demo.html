@@ -245,6 +245,10 @@
         <span class="stat-label">Confidence: </span>
         <span class="stat-value" id="confidence">-</span>
       </div>
+      <div class="stat">
+        <span class="stat-label">Patterns: </span>
+        <span class="stat-value" id="patterns">0</span>
+      </div>
     </div>
 
     <div id="settings-panel" class="hidden">
@@ -594,6 +598,10 @@
 
       // Get frame data
       const imageData = videoCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
+
+      // Debug: Get number of finder patterns detected
+      const patternCount = detector.debug_detect_patterns(imageData.data, videoCanvas.width, videoCanvas.height);
+      document.getElementById('patterns').textContent = patternCount;
 
       // Detect QR codes
       const detections = detector.detect(imageData.data, videoCanvas.width, videoCanvas.height);

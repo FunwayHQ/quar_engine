@@ -366,6 +366,33 @@ impl QrDetectorHandle {
     pub fn get_qr_size(&self) -> f32 {
         self.detector.qr_size_meters
     }
+
+    /// Debug: Get number of finder patterns detected (before QR validation).
+    /// Returns the count of individual finder patterns found in the frame.
+    #[wasm_bindgen]
+    pub fn debug_detect_patterns(&self, rgba: &[u8], width: u32, height: u32) -> usize {
+        let gray = crate::features::rgba_to_grayscale(rgba);
+        let patterns = self.detector.finder_detector.detect_finder_patterns(&gray, width, height);
+        patterns.len()
+    }
+
+    /// Debug: Get detailed pattern info as JSON.
+    #[wasm_bindgen]
+    pub fn debug_get_patterns(&self, rgba: &[u8], width: u32, height: u32) -> JsValue {
+        let gray = crate::features::rgba_to_grayscale(rgba);
+        let patterns = self.detector.finder_detector.detect_finder_patterns(&gray, width, height);
+
+        let pattern_info: Vec<_> = patterns.iter().map(|p| {
+            serde_json::json!({
+                "center_x": p.center.x,
+                "center_y": p.center.y,
+                "module_size": p.module_size,
+                "size": p.size
+            })
+        }).collect();
+
+        serde_wasm_bindgen::to_value(&pattern_info).unwrap_or(JsValue::NULL)
+    }
 }
 
 impl Default for QrDetectorHandle {
