@@ -1908,6 +1908,19 @@ export class QrDetectorHandle {
         return ret;
     }
     /**
+     * Debug: Get the computed threshold value.
+     * @param {Uint8Array} rgba
+     * @param {number} width
+     * @param {number} height
+     * @returns {number}
+     */
+    debug_get_threshold(rgba, width, height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.qrdetectorhandle_debug_get_threshold(this.__wbg_ptr, ptr0, len0, width, height);
+        return ret;
+    }
+    /**
      * Debug: Get number of finder patterns detected (before QR validation).
      * Returns the count of individual finder patterns found in the frame.
      * @param {Uint8Array} rgba

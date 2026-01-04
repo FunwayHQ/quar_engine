@@ -395,6 +395,13 @@ impl QrDetectorHandle {
 
         serde_wasm_bindgen::to_value(&pattern_info).unwrap_or(JsValue::NULL)
     }
+
+    /// Debug: Get the computed threshold value.
+    #[wasm_bindgen]
+    pub fn debug_get_threshold(&self, rgba: &[u8], width: u32, height: u32) -> u8 {
+        let gray = crate::features::rgba_to_grayscale(rgba);
+        self.detector.finder_detector.compute_threshold(&gray, width, height)
+    }
 }
 
 impl Default for QrDetectorHandle {

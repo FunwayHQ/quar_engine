@@ -267,8 +267,10 @@
         <div class="stat">
           <span class="stat-label">FPS: </span>
           <span class="stat-value" id="fps">0</span>
-          <span style="margin-left: 15px;" class="stat-label">Patterns: </span>
+          <span style="margin-left: 10px;" class="stat-label">Ptn: </span>
           <span class="stat-value" id="patterns">0</span>
+          <span style="margin-left: 10px;" class="stat-label">Thr: </span>
+          <span class="stat-value" id="threshold">0</span>
         </div>
         <div class="stat">
           <span class="stat-label">QR Detected: </span>
@@ -648,9 +650,11 @@
       // Get frame data
       const imageData = videoCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
 
-      // Debug: Get number of finder patterns detected
+      // Debug: Get number of finder patterns detected and threshold
       const patternCount = detector.debug_detect_patterns(imageData.data, videoCanvas.width, videoCanvas.height);
       document.getElementById('patterns').textContent = patternCount;
+      const threshold = detector.debug_get_threshold(imageData.data, videoCanvas.width, videoCanvas.height);
+      document.getElementById('threshold').textContent = threshold;
 
       // Detect QR codes
       const detections = detector.detect(imageData.data, videoCanvas.width, videoCanvas.height);

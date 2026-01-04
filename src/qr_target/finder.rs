@@ -76,9 +76,9 @@ pub struct QrFinderConfig {
 impl Default for QrFinderConfig {
     fn default() -> Self {
         Self {
-            ratio_tolerance: 0.6,  // Balanced tolerance for real-world conditions
-            min_module_size: 1.5,  // Allow smaller QR codes
-            max_module_size: 120.0, // Reasonable upper limit
+            ratio_tolerance: 0.8,  // Very permissive for camera conditions
+            min_module_size: 1.0,  // Allow small QR codes
+            max_module_size: 200.0, // Allow large QR codes
             scan_step: 1,          // Scan every line for better detection
         }
     }
@@ -222,13 +222,7 @@ impl QrFinderDetector {
                             // Center X is at middle of the 5 segments
                             let center_x = x as f64 - (total_width as f64 / 2.0);
 
-                            // Boundary rejection: skip patterns within 2% of edges
-                            let margin = width as f64 * 0.02;
-                            if center_x > margin && center_x < (width as f64 - margin)
-                                && (y as f64) > margin && (y as f64) < (height as f64 - margin)
-                            {
-                                candidates.push((center_x, y as f64, module_size));
-                            }
+                            candidates.push((center_x, y as f64, module_size));
                         }
                     }
 
@@ -505,8 +499,8 @@ impl QrFinderDetector {
         None
     }
 
-    /// Compute an adaptive threshold for the image.
-    fn compute_threshold(&self, grayscale: &[u8], width: u32, height: u32) -> u8 {
+    /// Compute an adaptive threshold for the image (public for debugging).
+    pub fn compute_threshold(&self, grayscale: &[u8], width: u32, height: u32) -> u8 {
         // Simple Otsu's method
         let mut histogram = [0u32; 256];
         for &pixel in grayscale.iter() {

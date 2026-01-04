@@ -157,6 +157,7 @@ export const pose3d_quaternion: (a: number) => [number, number];
 export const pose3d_to_matrix4: (a: number) => [number, number];
 export const qrdetectorhandle_debug_detect_patterns: (a: number, b: number, c: number, d: number, e: number) => number;
 export const qrdetectorhandle_debug_get_patterns: (a: number, b: number, c: number, d: number, e: number) => any;
+export const qrdetectorhandle_debug_get_threshold: (a: number, b: number, c: number, d: number, e: number) => number;
 export const qrdetectorhandle_detect: (a: number, b: number, c: number, d: number, e: number) => any;
 export const qrdetectorhandle_get_qr_size: (a: number) => number;
 export const qrdetectorhandle_new: () => number;

@@ -560,6 +560,10 @@ export class QrDetectorHandle {
    */
   debug_get_patterns(rgba: Uint8Array, width: number, height: number): any;
   /**
+   * Debug: Get the computed threshold value.
+   */
+  debug_get_threshold(rgba: Uint8Array, width: number, height: number): number;
+  /**
    * Debug: Get number of finder patterns detected (before QR validation).
    * Returns the count of individual finder patterns found in the frame.
    */
@@ -1182,6 +1186,7 @@ export interface InitOutput {
   readonly pose3d_to_matrix4: (a: number) => [number, number];
   readonly qrdetectorhandle_debug_detect_patterns: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly qrdetectorhandle_debug_get_patterns: (a: number, b: number, c: number, d: number, e: number) => any;
+  readonly qrdetectorhandle_debug_get_threshold: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly qrdetectorhandle_detect: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly qrdetectorhandle_get_qr_size: (a: number) => number;
   readonly qrdetectorhandle_new: () => number;
