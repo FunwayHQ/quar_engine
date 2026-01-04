@@ -76,9 +76,9 @@ pub struct QrFinderConfig {
 impl Default for QrFinderConfig {
     fn default() -> Self {
         Self {
-            ratio_tolerance: 0.5,  // Stricter for fewer false positives
-            min_module_size: 2.0,  // Minimum 2px module for stability
-            max_module_size: 100.0, // Reasonable upper limit
+            ratio_tolerance: 0.6,  // Balanced tolerance for real-world conditions
+            min_module_size: 1.5,  // Allow smaller QR codes
+            max_module_size: 120.0, // Reasonable upper limit
             scan_step: 1,          // Scan every line for better detection
         }
     }
@@ -222,8 +222,8 @@ impl QrFinderDetector {
                             // Center X is at middle of the 5 segments
                             let center_x = x as f64 - (total_width as f64 / 2.0);
 
-                            // Boundary rejection: skip patterns within 5% of edges
-                            let margin = width as f64 * 0.05;
+                            // Boundary rejection: skip patterns within 2% of edges
+                            let margin = width as f64 * 0.02;
                             if center_x > margin && center_x < (width as f64 - margin)
                                 && (y as f64) > margin && (y as f64) < (height as f64 - margin)
                             {
@@ -433,18 +433,18 @@ impl QrFinderDetector {
 
             let cos_angle = dot / (mag1 * mag2);
 
-            // Should be close to 0 (perpendicular) with tighter tolerance
-            if cos_angle.abs() < 0.2 {
+            // Should be close to 0 (perpendicular) with reasonable tolerance
+            if cos_angle.abs() < 0.25 {
                 // Check that distances are similar (square QR code)
                 let ratio = mag1 / mag2;
-                if ratio > 0.8 && ratio < 1.25 {
+                if ratio > 0.75 && ratio < 1.35 {
                     // Check module size consistency across all 3 patterns
                     let m1 = origin.module_size;
                     let m2 = other1.module_size;
                     let m3 = other2.module_size;
                     let avg_m = (m1 + m2 + m3) / 3.0;
                     let max_deviation = ((m1 - avg_m).abs().max((m2 - avg_m).abs()).max((m3 - avg_m).abs())) / avg_m;
-                    if max_deviation > 0.25 {
+                    if max_deviation > 0.35 {
                         continue; // Module sizes too different
                     }
                     // Valid configuration found

@@ -109,7 +109,7 @@ impl QrDetector {
         candidates
             .into_iter()
             .map(|candidate| self.candidate_to_detected(&candidate))
-            .filter(|qr| qr.confidence >= 0.7) // Reject low-confidence detections
+            .filter(|qr| qr.confidence >= 0.5) // Reject very low-confidence detections
             .collect()
     }
 
