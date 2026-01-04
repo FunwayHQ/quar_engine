@@ -1460,9 +1460,14 @@
                 }
 
                 // Run plane detection if we have enough points
-                if (mapPoints3D.length >= 30) {
+                if (mapPoints3D.length >= 15) {  // Lowered threshold
                   const numPlanes = planeDetector.detect_planes(new Float64Array(mapPoints3D));
-                  planeCountEl.textContent = `${numPlanes} (${mapPointCount} pts)`;
+                  planeCountEl.textContent = `${numPlanes} (${Math.floor(mapPoints3D.length/3)} pts)`;
+
+                  // Debug: log plane detection results periodically
+                  if (totalFrames % 60 === 0) {
+                    console.log(`Plane detection: ${numPlanes} planes from ${Math.floor(mapPoints3D.length/3)} points`);
+                  }
 
                   const floor = planeDetector.get_floor_plane();
                   if (floor) {

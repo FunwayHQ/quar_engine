@@ -59,14 +59,14 @@ pub struct PlaneDetectorConfig {
 impl Default for PlaneDetectorConfig {
     fn default() -> Self {
         Self {
-            inlier_threshold: 0.02,       // 2cm tolerance
-            max_iterations: 100,          // RANSAC iterations
-            min_inliers: 10,              // Minimum points for a valid plane
+            inlier_threshold: 0.10,       // 10cm tolerance for noisy reconstruction
+            max_iterations: 150,          // RANSAC iterations
+            min_inliers: 5,               // Minimum points for a valid plane
             max_planes: 5,                // Maximum planes to detect
-            min_inlier_ratio: 0.1,        // At least 10% of points
+            min_inlier_ratio: 0.05,       // At least 5% of points
             random_seed: 42,              // Reproducible results
-            merge_normal_threshold: 0.98, // ~12 degrees difference
-            merge_distance_threshold: 0.05, // 5cm merge distance
+            merge_normal_threshold: 0.95, // ~18 degrees difference
+            merge_distance_threshold: 0.10, // 10cm merge distance
         }
     }
 }
@@ -75,11 +75,11 @@ impl PlaneDetectorConfig {
     /// Create a config optimized for floor detection.
     pub fn floor_detection() -> Self {
         Self {
-            inlier_threshold: 0.03,
+            inlier_threshold: 0.15,       // 15cm tolerance for floor
             max_iterations: 200,
-            min_inliers: 20,
+            min_inliers: 8,               // Need enough points for reliable floor
             max_planes: 1,
-            min_inlier_ratio: 0.15,
+            min_inlier_ratio: 0.08,       // 8% of points
             ..Default::default()
         }
     }
