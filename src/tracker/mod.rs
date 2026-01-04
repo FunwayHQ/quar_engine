@@ -879,6 +879,19 @@ impl Tracker6DoFHandle {
         self.tracker.is_vio_enabled()
     }
 
+    /// Enable or disable keyframe-based translation.
+    /// When enabled, translation uses larger temporal baseline for more reliable estimation.
+    #[wasm_bindgen]
+    pub fn set_keyframe_translation_enabled(&mut self, enabled: bool) {
+        self.tracker.set_keyframe_translation_enabled(enabled);
+    }
+
+    /// Check if keyframe-based translation is enabled.
+    #[wasm_bindgen]
+    pub fn is_keyframe_translation_enabled(&self) -> bool {
+        self.tracker.is_keyframe_translation_enabled()
+    }
+
     /// Check if VIO is initialized (gravity estimated).
     #[wasm_bindgen]
     pub fn is_vio_initialized(&self) -> bool {

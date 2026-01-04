@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v23 Debug)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v24 Keyframe Translation)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -312,7 +312,12 @@
       <div class="stat" style="border-top: 1px solid #333; padding-top: 8px; margin-top: 8px;">
         <span class="stat-label">VIO: </span>
         <span class="stat-value" id="vio-status">OFF</span>
-        <input type="checkbox" id="vio-toggle" style="margin-left: 8px;">
+        <input type="checkbox" id="vio-toggle" style="margin-left: 8px;" checked>
+      </div>
+      <div class="stat">
+        <span class="stat-label">KF Trans: </span>
+        <span class="stat-value" id="kf-trans-status">ON</span>
+        <input type="checkbox" id="kf-trans-toggle" style="margin-left: 8px;" checked>
       </div>
       <div class="stat">
         <span class="stat-label">Gravity: </span>
@@ -574,6 +579,8 @@
     const flowDebugEl = document.getElementById('flow-debug');
     const vioStatusEl = document.getElementById('vio-status');
     const vioToggle = document.getElementById('vio-toggle');
+    const kfTransStatusEl = document.getElementById('kf-trans-status');
+    const kfTransToggle = document.getElementById('kf-trans-toggle');
     const gravityStatusEl = document.getElementById('gravity-status');
     const vioScaleEl = document.getElementById('vio-scale');
     const imuBufferEl = document.getElementById('imu-buffer');
@@ -787,7 +794,7 @@
     // Create Kalman filter instance
     const kalmanFilter = new KalmanFilter3D();
     let useKalmanFilter = true; // Can be toggled
-    let useVIO = false; // VIO mode toggle
+    let useVIO = true; // VIO mode toggle (enabled by default)
     let tracker6dof = null; // 6DoF tracker with VIO support
     let planeDetector = null; // Plane detector for floor/wall detection
     let detectedFloorMesh = null; // Three.js mesh for floor visualization
@@ -856,7 +863,8 @@
       }
     });
 
-    // VIO toggle
+    // VIO toggle (VIO enabled by default now)
+    vioToggle.checked = true;
     vioToggle.addEventListener('change', (e) => {
       useVIO = e.target.checked;
       if (tracker6dof) {
@@ -864,6 +872,18 @@
       }
       vioStatusEl.textContent = useVIO ? 'ON' : 'OFF';
       vioStatusEl.style.color = useVIO ? '#4ade80' : '#888';
+    });
+
+    // Keyframe translation toggle (enabled by default)
+    let useKfTrans = true;
+    kfTransToggle.checked = true;
+    kfTransToggle.addEventListener('change', (e) => {
+      useKfTrans = e.target.checked;
+      if (tracker6dof) {
+        tracker6dof.set_keyframe_translation_enabled(useKfTrans);
+      }
+      kfTransStatusEl.textContent = useKfTrans ? 'ON' : 'OFF';
+      kfTransStatusEl.style.color = useKfTrans ? '#4ade80' : '#888';
     });
 
     // Stabilization toggle
@@ -1432,6 +1452,11 @@
               const vioEnabled = tracker6dof.is_vio_enabled();
               vioStatusEl.textContent = vioEnabled ? (vioInit ? 'READY' : 'INIT') : 'OFF';
               vioStatusEl.style.color = vioEnabled ? (vioInit ? '#4ade80' : '#facc15') : '#888';
+
+              // Update keyframe translation status
+              const kfTransEnabled = tracker6dof.is_keyframe_translation_enabled ? tracker6dof.is_keyframe_translation_enabled() : false;
+              kfTransStatusEl.textContent = kfTransEnabled ? 'ON' : 'OFF';
+              kfTransStatusEl.style.color = kfTransEnabled ? '#4ade80' : '#888';
 
               // Show gravity vector
               const gravity = tracker6dof.get_gravity();

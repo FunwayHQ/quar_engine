@@ -2584,6 +2584,22 @@ export class Tracker6DoFHandle {
         return ret;
     }
     /**
+     * Check if keyframe-based translation is enabled.
+     * @returns {boolean}
+     */
+    is_keyframe_translation_enabled() {
+        const ret = wasm.tracker6dofhandle_is_keyframe_translation_enabled(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * Enable or disable keyframe-based translation.
+     * When enabled, translation uses larger temporal baseline for more reliable estimation.
+     * @param {boolean} enabled
+     */
+    set_keyframe_translation_enabled(enabled) {
+        wasm.tracker6dofhandle_set_keyframe_translation_enabled(this.__wbg_ptr, enabled);
+    }
+    /**
      * Create a new 6DoF tracker.
      * @param {number} width
      * @param {number} height

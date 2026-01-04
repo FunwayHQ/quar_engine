@@ -122,6 +122,19 @@ pub struct Tracker6DoF {
     prev_gray: Option<GrayImage>,
     /// Previously tracked points
     prev_points: Vec<Point2>,
+
+    // ==================== Keyframe-Based Translation ====================
+    /// Last keyframe's grayscale data (for translation with larger baseline)
+    keyframe_gray: Option<GrayImage>,
+    /// Last keyframe's feature points
+    keyframe_points: Vec<Point2>,
+    /// Frame count when keyframe was captured
+    keyframe_frame: u32,
+    /// Accumulated pose from keyframe to current
+    keyframe_pose: Pose3D,
+    /// Whether to use keyframe-based translation (more reliable)
+    use_keyframe_translation: bool,
+
     /// Lucas-Kanade tracker
     lk_tracker: LucasKanadeTracker,
     /// FAST detector for finding new features
@@ -219,6 +232,14 @@ impl Tracker6DoF {
         Self {
             prev_gray: None,
             prev_points: Vec::new(),
+
+            // Keyframe-based translation
+            keyframe_gray: None,
+            keyframe_points: Vec::new(),
+            keyframe_frame: 0,
+            keyframe_pose: Pose3D::identity(),
+            use_keyframe_translation: true, // Enable keyframe-based translation by default
+
             lk_tracker: LucasKanadeTracker::new(
                 config.base.window_size,
                 config.base.pyramid_levels,
@@ -237,7 +258,7 @@ impl Tracker6DoF {
             imu_buffer: ImuBuffer::new(500),
             scale_estimator: ScaleEstimator::new(),
             gravity_estimator: GravityEstimator::new(),
-            vio_enabled: false,
+            vio_enabled: true, // VIO enabled by default for better translation
             last_preintegration: None,
             vio_initialized: false,
             accel_integrator: AccelIntegrator::new(),
@@ -279,16 +300,23 @@ impl Tracker6DoF {
         let gray_data = rgba_to_grayscale(rgba);
         let curr_gray = GrayImage::new(gray_data, width, height);
 
-        // First frame - just detect features
+        // First frame - initialize keyframe and detect features
         if self.prev_gray.is_none() {
             self.detect_features(&curr_gray);
+            // Initialize keyframe with first frame
+            if self.use_keyframe_translation {
+                self.keyframe_gray = Some(curr_gray.clone());
+                self.keyframe_points = self.prev_points.clone();
+                self.keyframe_frame = self.frame_count;
+                self.keyframe_pose = Pose3D::identity();
+            }
             self.prev_gray = Some(curr_gray);
             return Some(self.current_pose);
         }
 
         let prev_gray = self.prev_gray.as_ref().unwrap();
 
-        // Track points if we have any
+        // Track points from previous frame (for rotation estimation)
         if !self.prev_points.is_empty() {
             let track_results = self.lk_tracker.track(prev_gray, &curr_gray, &self.prev_points);
 
@@ -305,15 +333,32 @@ impl Tracker6DoF {
 
             // Estimate pose if we have enough points
             if curr_points.len() >= self.config.base.min_tracked_points {
-                self.estimate_pose(&prev_matched, &curr_points);
+                // Use keyframe-based translation if enabled
+                if self.use_keyframe_translation && self.keyframe_gray.is_some() {
+                    self.estimate_pose_with_keyframe(&prev_matched, &curr_points, &curr_gray);
+                } else {
+                    self.estimate_pose(&prev_matched, &curr_points);
+                }
                 self.prev_points = curr_points;
             } else {
-                // Lost tracking - re-detect features
+                // Lost tracking - re-detect features and reset keyframe
                 self.detect_features(&curr_gray);
+                if self.use_keyframe_translation {
+                    self.keyframe_gray = Some(curr_gray.clone());
+                    self.keyframe_points = self.prev_points.clone();
+                    self.keyframe_frame = self.frame_count;
+                    self.keyframe_pose = self.current_pose;
+                }
             }
         } else {
-            // No points to track - detect new features
+            // No points to track - detect new features and initialize keyframe
             self.detect_features(&curr_gray);
+            if self.use_keyframe_translation {
+                self.keyframe_gray = Some(curr_gray.clone());
+                self.keyframe_points = self.prev_points.clone();
+                self.keyframe_frame = self.frame_count;
+                self.keyframe_pose = self.current_pose;
+            }
         }
 
         // Periodically refresh features
@@ -504,6 +549,222 @@ impl Tracker6DoF {
         // For now, scale stays constant
     }
 
+    /// Estimate pose using keyframe-based translation.
+    ///
+    /// Uses prev-to-current for rotation (responsive) and
+    /// keyframe-to-current for translation (more parallax).
+    fn estimate_pose_with_keyframe(
+        &mut self,
+        prev_points: &[Point2],
+        curr_points: &[Point2],
+        curr_gray: &GrayImage,
+    ) {
+        // 1. Estimate rotation from previous frame (responsive)
+        let prev_norm: Vec<Vec2> = prev_points
+            .iter()
+            .map(|p| self.camera.normalize_point(p.x as f64, p.y as f64))
+            .collect();
+
+        let curr_norm: Vec<Vec2> = curr_points
+            .iter()
+            .map(|p| self.camera.normalize_point(p.x as f64, p.y as f64))
+            .collect();
+
+        // Try RANSAC for rotation from prev->curr
+        let rotation_result: Option<(Mat3, Vec<usize>)> = if self.config.use_5point {
+            compute_essential_5pt_ransac(
+                &prev_norm,
+                &curr_norm,
+                self.config.ransac_iterations,
+                self.config.ransac_threshold,
+            )
+        } else {
+            compute_essential_ransac(
+                &prev_norm,
+                &curr_norm,
+                self.config.ransac_threshold,
+                self.config.ransac_iterations,
+                0.99,
+            ).map(|(e, inliers)| {
+                let indices: Vec<usize> = inliers.iter()
+                    .enumerate()
+                    .filter_map(|(i, &is_inlier)| if is_inlier { Some(i) } else { None })
+                    .collect();
+                (e, indices)
+            })
+        };
+
+        if let Some((e, inlier_indices)) = rotation_result {
+            let inlier_prev: Vec<Vec2> = inlier_indices.iter()
+                .filter_map(|&i| prev_norm.get(i).copied())
+                .collect();
+            let inlier_curr: Vec<Vec2> = inlier_indices.iter()
+                .filter_map(|&i| curr_norm.get(i).copied())
+                .collect();
+
+            let min_inliers = if self.config.use_5point { 5 } else { 8 };
+            if inlier_prev.len() >= min_inliers {
+                let solutions = decompose_essential(&e);
+                let best = choose_valid_pose(&solutions, &inlier_prev, &inlier_curr);
+
+                // Apply rotation from consecutive frames (responsive)
+                let rotation_quat = rotation_matrix_to_quaternion(&best.rotation);
+                self.current_pose.apply_rotation(&rotation_quat);
+                self.last_rotation = Some(best.rotation);
+            }
+        }
+
+        // 2. Track keyframe points to current frame for translation
+        if let Some(ref kf_gray) = self.keyframe_gray {
+            if !self.keyframe_points.is_empty() {
+                let kf_track_results = self.lk_tracker.track(kf_gray, curr_gray, &self.keyframe_points);
+
+                // Filter successfully tracked points
+                let mut kf_matched = Vec::new();
+                let mut curr_kf_points = Vec::new();
+
+                for (i, result) in kf_track_results.iter().enumerate() {
+                    if result.status && result.error < self.config.base.max_error * 2.0 {
+                        // Allow higher error for longer baseline
+                        kf_matched.push(self.keyframe_points[i]);
+                        curr_kf_points.push(result.point);
+                    }
+                }
+
+                // Need enough points for translation estimation
+                let min_kf_points = if self.config.use_5point { 8 } else { 12 };
+                if kf_matched.len() >= min_kf_points {
+                    // Normalize keyframe and current points
+                    let kf_norm: Vec<Vec2> = kf_matched
+                        .iter()
+                        .map(|p| self.camera.normalize_point(p.x as f64, p.y as f64))
+                        .collect();
+                    let curr_kf_norm: Vec<Vec2> = curr_kf_points
+                        .iter()
+                        .map(|p| self.camera.normalize_point(p.x as f64, p.y as f64))
+                        .collect();
+
+                    // Compute Essential matrix from keyframe to current
+                    let trans_result: Option<(Mat3, Vec<usize>)> = if self.config.use_5point {
+                        compute_essential_5pt_ransac(
+                            &kf_norm,
+                            &curr_kf_norm,
+                            self.config.ransac_iterations,
+                            self.config.ransac_threshold,
+                        )
+                    } else {
+                        compute_essential_ransac(
+                            &kf_norm,
+                            &curr_kf_norm,
+                            self.config.ransac_threshold,
+                            self.config.ransac_iterations,
+                            0.99,
+                        ).map(|(e, inliers)| {
+                            let indices: Vec<usize> = inliers.iter()
+                                .enumerate()
+                                .filter_map(|(i, &is_inlier)| if is_inlier { Some(i) } else { None })
+                                .collect();
+                            (e, indices)
+                        })
+                    };
+
+                    if let Some((e_kf, kf_inlier_indices)) = trans_result {
+                        let inlier_kf: Vec<Vec2> = kf_inlier_indices.iter()
+                            .filter_map(|&i| kf_norm.get(i).copied())
+                            .collect();
+                        let inlier_curr_kf: Vec<Vec2> = kf_inlier_indices.iter()
+                            .filter_map(|&i| curr_kf_norm.get(i).copied())
+                            .collect();
+
+                        let min_inliers = if self.config.use_5point { 5 } else { 8 };
+                        if inlier_kf.len() >= min_inliers {
+                            let solutions = decompose_essential(&e_kf);
+                            let best = choose_valid_pose(&solutions, &inlier_kf, &inlier_curr_kf);
+
+                            // Compute parallax from keyframe to current
+                            let mut max_parallax: f64 = 0.0;
+                            for (p1, p2) in inlier_kf.iter().zip(inlier_curr_kf.iter()).take(10) {
+                                let parallax = super::essential_pure::compute_parallax(p1, p2, &best.rotation);
+                                if parallax > max_parallax {
+                                    max_parallax = parallax;
+                                }
+                            }
+
+                            // Store for debugging
+                            self.last_max_parallax = max_parallax;
+
+                            // Apply translation if parallax is sufficient
+                            // Lower threshold since we have larger baseline
+                            let kf_min_parallax = self.config.min_parallax * 0.5;
+                            if max_parallax > kf_min_parallax {
+                                let t = &best.translation;
+                                // Scale based on frames since keyframe for smoother motion
+                                let frames_factor = ((self.frame_count - self.keyframe_frame) as f32).max(1.0);
+                                let scale_factor = self.scale / frames_factor;
+                                let scaled_t = [
+                                    (t.x * scale_factor as f64) as f32,
+                                    (t.y * scale_factor as f64) as f32,
+                                    (t.z * scale_factor as f64) as f32,
+                                ];
+
+                                // Apply translation
+                                self.current_pose.apply_translation_local(&scaled_t);
+                                self.last_translation = Some(best.translation);
+
+                                // Triangulate map points with the larger baseline
+                                if max_parallax > kf_min_parallax * 2.0 {
+                                    let valid_points = triangulate_valid_points(
+                                        &inlier_kf,
+                                        &inlier_curr_kf,
+                                        &best.rotation,
+                                        &best.translation,
+                                    );
+
+                                    for (_idx, point_cam) in valid_points.iter() {
+                                        let scaled_point = Vec3::new(
+                                            point_cam.x * self.scale as f64,
+                                            point_cam.y * self.scale as f64,
+                                            point_cam.z * self.scale as f64,
+                                        );
+
+                                        let depth = scaled_point.z;
+                                        if depth > 0.1 && depth < 20.0 {
+                                            if self.map_points_3d.len() >= self.max_map_points {
+                                                self.map_points_3d.remove(0);
+                                            }
+                                            self.map_points_3d.push(scaled_point);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Update keyframe if:
+                            // 1. We have good parallax (translation detected)
+                            // 2. Too many frames since last keyframe (30 frames)
+                            // 3. Too few tracked points remain
+                            let should_update_keyframe = max_parallax > kf_min_parallax * 3.0
+                                || (self.frame_count - self.keyframe_frame) > 30
+                                || kf_matched.len() < min_kf_points * 2;
+
+                            if should_update_keyframe {
+                                self.keyframe_gray = Some(curr_gray.clone());
+                                self.keyframe_points = curr_points.to_vec();
+                                self.keyframe_frame = self.frame_count;
+                                self.keyframe_pose = self.current_pose;
+                            }
+                        }
+                    }
+                } else {
+                    // Lost keyframe tracking - reset keyframe
+                    self.keyframe_gray = Some(curr_gray.clone());
+                    self.keyframe_points = curr_points.to_vec();
+                    self.keyframe_frame = self.frame_count;
+                    self.keyframe_pose = self.current_pose;
+                }
+            }
+        }
+    }
+
     /// Detect new features in the image.
     fn detect_features(&mut self, gray: &GrayImage) {
         let keypoints = self
@@ -546,6 +807,10 @@ impl Tracker6DoF {
     pub fn reset(&mut self) {
         self.prev_gray = None;
         self.prev_points.clear();
+        self.keyframe_gray = None;
+        self.keyframe_points.clear();
+        self.keyframe_frame = 0;
+        self.keyframe_pose = Pose3D::identity();
         self.current_pose = Pose3D::identity();
         self.frame_count = 0;
         self.last_rotation = None;
@@ -1173,6 +1438,19 @@ impl Tracker6DoF {
         self.keyframe_interval = interval.max(1);
     }
 
+    /// Enable or disable keyframe-based translation.
+    ///
+    /// When enabled, translation is estimated from keyframes (larger baseline)
+    /// instead of consecutive frames, providing more reliable translation.
+    pub fn set_keyframe_translation_enabled(&mut self, enabled: bool) {
+        self.use_keyframe_translation = enabled;
+    }
+
+    /// Check if keyframe-based translation is enabled.
+    pub fn is_keyframe_translation_enabled(&self) -> bool {
+        self.use_keyframe_translation
+    }
+
     /// Get the number of keyframes stored.
     pub fn keyframe_count(&self) -> usize {
         self.keyframes.len()
@@ -1472,11 +1750,12 @@ mod tests {
     fn test_vio_enable_disable() {
         let mut tracker = Tracker6DoF::new(640, 480);
 
-        assert!(!tracker.is_vio_enabled());
-        tracker.set_vio_enabled(true);
+        // VIO is enabled by default now
         assert!(tracker.is_vio_enabled());
         tracker.set_vio_enabled(false);
         assert!(!tracker.is_vio_enabled());
+        tracker.set_vio_enabled(true);
+        assert!(tracker.is_vio_enabled());
     }
 
     #[test]
@@ -1601,6 +1880,18 @@ mod tests {
         // Can't set to 0
         tracker.set_keyframe_interval(0);
         assert_eq!(tracker.keyframe_interval, 1);
+    }
+
+    #[test]
+    fn test_keyframe_translation_enabled() {
+        let mut tracker = Tracker6DoF::new(640, 480);
+
+        // Keyframe translation is enabled by default
+        assert!(tracker.is_keyframe_translation_enabled());
+        tracker.set_keyframe_translation_enabled(false);
+        assert!(!tracker.is_keyframe_translation_enabled());
+        tracker.set_keyframe_translation_enabled(true);
+        assert!(tracker.is_keyframe_translation_enabled());
     }
 
     #[test]
