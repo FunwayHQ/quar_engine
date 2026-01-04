@@ -301,8 +301,8 @@
 
         <div class="slider-row">
           <label>Smoothing:</label>
-          <input type="range" id="smooth-slider" min="0" max="0.95" step="0.05" value="0.7">
-          <span class="value" id="smooth-value">0.70</span>
+          <input type="range" id="smooth-slider" min="0" max="0.95" step="0.05" value="0.85">
+          <span class="value" id="smooth-value">0.85</span>
         </div>
 
         <label style="font-size: 12px; color: #888; display: block; margin-top: 15px;">3D Model:</label>
@@ -366,14 +366,15 @@
     let wireframeMode = false;
     let animationEnabled = true;
 
-    // Smoothing
+    // Smoothing - higher value = more stable but slower response
     let smoothedPosition = null;
     let smoothedQuaternion = null;
-    let smoothingFactor = 0.7;
+    let smoothingFactor = 0.85;
 
-    // Detection persistence - keep object visible briefly after losing detection
+    // Detection persistence - keep object visible after losing detection
     let lastDetectionTime = 0;
-    const detectionPersistenceMs = 500; // Keep visible for 500ms after losing QR
+    const detectionPersistenceMs = 1500; // Keep visible for 1.5s after losing QR
+    let consecutiveDetections = 0; // Track stable detections
 
     // Camera intrinsics for projection
     let focalLength = 0;
@@ -668,10 +669,11 @@
       if (detections && detections.length > 0) {
         const qr = detections[0];
         lastDetectionTime = timestamp;
+        consecutiveDetections++;
 
         // Update HUD
-        qrDetectedEl.textContent = 'Yes';
-        qrDetectedEl.style.color = '#4ade80';
+        qrDetectedEl.textContent = consecutiveDetections > 3 ? 'Yes' : 'Locking...';
+        qrDetectedEl.style.color = consecutiveDetections > 3 ? '#4ade80' : '#fbbf24';
         confidenceEl.textContent = (qr.confidence * 100).toFixed(0) + '%';
 
         if (qr.has_pose) {
@@ -692,16 +694,22 @@
         // Check if we should keep showing the object (persistence)
         const timeSinceDetection = timestamp - lastDetectionTime;
 
+        // Decay consecutive detections slowly
+        if (consecutiveDetections > 0) {
+          consecutiveDetections = Math.max(0, consecutiveDetections - 0.5);
+        }
+
         if (timeSinceDetection < detectionPersistenceMs && smoothedPosition !== null) {
           // Keep object visible at last known position
           arObject.visible = true;
-          qrDetectedEl.textContent = 'Tracking...';
+          qrDetectedEl.textContent = 'Holding...';
           qrDetectedEl.style.color = '#fbbf24';
         } else {
           // Really lost - hide object
           qrDetectedEl.textContent = 'No';
           qrDetectedEl.style.color = '#888';
           arObject.visible = false;
+          consecutiveDetections = 0;
 
           // Reset smoothing when truly lost
           if (timeSinceDetection > detectionPersistenceMs * 2) {
