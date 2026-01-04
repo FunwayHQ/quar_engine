@@ -540,7 +540,8 @@ impl QrFinderDetector {
             }
         }
 
-        threshold
+        // Ensure threshold is reasonable (never 0 or 255)
+        threshold.clamp(10, 245)
     }
 }
 

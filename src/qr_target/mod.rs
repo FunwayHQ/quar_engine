@@ -402,6 +402,29 @@ impl QrDetectorHandle {
         let gray = crate::features::rgba_to_grayscale(rgba);
         self.detector.finder_detector.compute_threshold(&gray, width, height)
     }
+
+    /// Debug: Get image stats (min, max, mean) to verify grayscale conversion.
+    #[wasm_bindgen]
+    pub fn debug_get_image_stats(&self, rgba: &[u8], _width: u32, _height: u32) -> JsValue {
+        let gray = crate::features::rgba_to_grayscale(rgba);
+        if gray.is_empty() {
+            return serde_wasm_bindgen::to_value(&serde_json::json!({
+                "error": "empty grayscale"
+            })).unwrap_or(JsValue::NULL);
+        }
+
+        let min = *gray.iter().min().unwrap_or(&0);
+        let max = *gray.iter().max().unwrap_or(&0);
+        let sum: u64 = gray.iter().map(|&x| x as u64).sum();
+        let mean = sum as f64 / gray.len() as f64;
+
+        serde_wasm_bindgen::to_value(&serde_json::json!({
+            "min": min,
+            "max": max,
+            "mean": mean,
+            "len": gray.len()
+        })).unwrap_or(JsValue::NULL)
+    }
 }
 
 impl Default for QrDetectorHandle {

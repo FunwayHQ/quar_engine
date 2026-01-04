@@ -1935,6 +1935,19 @@ export class QrDetectorHandle {
         return ret >>> 0;
     }
     /**
+     * Debug: Get image stats (min, max, mean) to verify grayscale conversion.
+     * @param {Uint8Array} rgba
+     * @param {number} _width
+     * @param {number} _height
+     * @returns {any}
+     */
+    debug_get_image_stats(rgba, _width, _height) {
+        const ptr0 = passArray8ToWasm0(rgba, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.qrdetectorhandle_debug_get_image_stats(this.__wbg_ptr, ptr0, len0, _width, _height);
+        return ret;
+    }
+    /**
      * Create a new QR code detector.
      */
     constructor() {

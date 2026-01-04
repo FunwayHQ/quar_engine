@@ -656,6 +656,12 @@
       const threshold = detector.debug_get_threshold(imageData.data, videoCanvas.width, videoCanvas.height);
       document.getElementById('threshold').textContent = threshold;
 
+      // Log image stats every 2 seconds for debugging
+      if (Math.floor(timestamp / 2000) !== Math.floor((timestamp - 16) / 2000)) {
+        const stats = detector.debug_get_image_stats(imageData.data, videoCanvas.width, videoCanvas.height);
+        console.log('Image stats:', stats, 'Threshold:', threshold, 'Patterns:', patternCount);
+      }
+
       // Detect QR codes
       const detections = detector.detect(imageData.data, videoCanvas.width, videoCanvas.height);
 

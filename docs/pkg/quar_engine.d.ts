@@ -569,6 +569,10 @@ export class QrDetectorHandle {
    */
   debug_detect_patterns(rgba: Uint8Array, width: number, height: number): number;
   /**
+   * Debug: Get image stats (min, max, mean) to verify grayscale conversion.
+   */
+  debug_get_image_stats(rgba: Uint8Array, _width: number, _height: number): any;
+  /**
    * Create a new QR code detector.
    */
   constructor();
@@ -1185,6 +1189,7 @@ export interface InitOutput {
   readonly pose3d_quaternion: (a: number) => [number, number];
   readonly pose3d_to_matrix4: (a: number) => [number, number];
   readonly qrdetectorhandle_debug_detect_patterns: (a: number, b: number, c: number, d: number, e: number) => number;
+  readonly qrdetectorhandle_debug_get_image_stats: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly qrdetectorhandle_debug_get_patterns: (a: number, b: number, c: number, d: number, e: number) => any;
   readonly qrdetectorhandle_debug_get_threshold: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly qrdetectorhandle_detect: (a: number, b: number, c: number, d: number, e: number) => any;
