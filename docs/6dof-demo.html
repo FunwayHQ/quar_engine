@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v20 World-Locked Planes)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v21 Fixed World-Lock)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -478,7 +478,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF VIO Demo v20 (World-Locked Planes)</p>
+      <p>6DoF VIO Demo v21 (Fixed World-Lock)</p>
       <div class="features">
         <span>Plane Detection</span>
         <span>Hit Testing</span>
@@ -1443,31 +1443,22 @@
                 }
 
                 // Use real triangulated points if we have any
+                // IMPORTANT: Use raw Rust points (camera-relative) for detection
+                // We'll transform to world coordinates ONLY when placing the floor mesh
                 if (realMapPoints && realMapPoints.length >= 30) {
-                  // Points are camera-relative (gravity-aligned frame centered at camera)
-                  // Transform to scene coordinates by adding current camera position
-                  const transformedPoints = [];
-                  for (let i = 0; i < realMapPoints.length; i += 3) {
-                    // Camera-relative to scene: add current camera position
-                    transformedPoints.push(
-                      realMapPoints[i] + camPosX,
-                      realMapPoints[i + 1] + camPosY,
-                      realMapPoints[i + 2] + camPosZ
-                    );
-                  }
+                  // Use Rust points directly (camera-relative, gravity-aligned)
+                  mapPoints3D = Array.from(realMapPoints);
 
-                  // Use transformed points for plane detection
-                  mapPoints3D = transformedPoints;
-
-                  // Update point cloud visualization
-                  // NOTE: Point cloud is approximate because Rust accumulates points
-                  // in camera frame across multiple frames. We transform by current
-                  // camera position, which is only accurate for the most recent points.
-                  // The floor detection uses this for initial detection, then locks.
+                  // Update point cloud visualization (in camera-relative coords)
+                  // Point cloud will follow camera - that's expected since points are camera-relative
                   if (mapPointsCloud && mapPointsPositions) {
                     const numPoints = Math.min(Math.floor(mapPoints3D.length / 3), 500);
                     for (let i = 0; i < numPoints * 3 && i < mapPoints3D.length; i++) {
-                      mapPointsPositions[i] = mapPoints3D[i];
+                      // Transform for visualization: add camera position
+                      const idx = Math.floor(i / 3) * 3;
+                      if (i % 3 === 0) mapPointsPositions[i] = mapPoints3D[i] + camPosX;
+                      else if (i % 3 === 1) mapPointsPositions[i] = mapPoints3D[i] + camPosY;
+                      else mapPointsPositions[i] = mapPoints3D[i] + camPosZ;
                     }
                     mapPointsCloud.geometry.attributes.position.needsUpdate = true;
                     mapPointsCloud.geometry.setDrawRange(0, numPoints);
@@ -1478,17 +1469,16 @@
                   mapPointCountEl.style.color = mapPoints3D.length > 150 ? '#4ade80' : (mapPoints3D.length > 60 ? '#facc15' : '#888');
 
                   if (totalFrames % 60 === 0) {
-                    console.log(`Map points: ${Math.floor(mapPoints3D.length/3)} pts, camera at [${camPosX.toFixed(2)}, ${camPosY.toFixed(2)}, ${camPosZ.toFixed(2)}]`);
+                    console.log(`Map points: ${Math.floor(mapPoints3D.length/3)} pts (camera-relative)`);
                   }
                 } else {
                   // No real map points yet - generate simulated floor points
-                  // Create a clear horizontal floor plane at Y = 0 (below camera at Y ~= 1)
+                  // These are in camera-relative coordinates (floor ~1m below camera)
                   if (mapPoints3D.length < 150) {
-                    // Add grid of floor points spread around camera position
                     for (let i = 0; i < 20; i++) {
                       const px = (Math.random() - 0.5) * 4.0;  // Spread on X
-                      const py = 0.0 + (Math.random() - 0.5) * 0.02;  // Nearly flat at Y=0
-                      const pz = 3 + (Math.random() - 0.5) * 4.0;  // Spread on Z around camera Z
+                      const py = -1.0 + (Math.random() - 0.5) * 0.02;  // Floor ~1m below camera (at Y=0 in world)
+                      const pz = (Math.random() - 0.5) * 4.0;  // Spread on Z
                       mapPoints3D.push(px, py, pz);
                     }
                     if (totalFrames % 60 === 0) {
@@ -1529,26 +1519,32 @@
 
                   const floor = planeDetector.get_floor_plane();
                   if (floor) {
-                    // Floor position from RANSAC is already in scene coordinates
-                    // (we transformed points by camera position before detection)
-                    floorStatusEl.textContent = `y=${floor.center_y.toFixed(2)}`;
+                    // Floor center is in CAMERA-RELATIVE coordinates
+                    // Show the camera-relative Y for debugging
+                    floorStatusEl.textContent = `y=${floor.center_y.toFixed(2)} (cam-rel)`;
                     floorStatusEl.style.color = '#4ade80';
 
                     // Update floor mesh position ONLY if not already placed
-                    // This "locks" the plane in scene/world space
+                    // Transform from camera-relative to WORLD coordinates when locking
                     if (detectedFloorMesh && !detectedFloorMesh.userData.locked) {
-                      // Floor center is already in scene coordinates (transformed above)
-                      detectedFloorMesh.position.set(floor.center_x, floor.center_y, floor.center_z);
+                      // CRITICAL: Transform camera-relative floor position to world position
+                      // World position = camera position + camera-relative offset
+                      const worldX = camPosX + floor.center_x;
+                      const worldY = camPosY + floor.center_y;
+                      const worldZ = camPosZ + floor.center_z;
+
+                      detectedFloorMesh.position.set(worldX, worldY, worldZ);
                       detectedFloorMesh.visible = true;
-                      detectedFloorMesh.userData.locked = true; // Lock it in place
-                      floorLockedPosition = new THREE.Vector3(floor.center_x, floor.center_y, floor.center_z);
-                      console.log(`Floor LOCKED at scene position: [${floor.center_x.toFixed(2)}, ${floor.center_y.toFixed(2)}, ${floor.center_z.toFixed(2)}]`);
-                      console.log(`  Camera at lock time: [${camPosX.toFixed(2)}, ${camPosY.toFixed(2)}, ${camPosZ.toFixed(2)}]`);
+                      detectedFloorMesh.userData.locked = true; // Lock it in place forever
+                      floorLockedPosition = new THREE.Vector3(worldX, worldY, worldZ);
+
+                      console.log(`Floor LOCKED at WORLD position: [${worldX.toFixed(2)}, ${worldY.toFixed(2)}, ${worldZ.toFixed(2)}]`);
+                      console.log(`  Camera at lock: [${camPosX.toFixed(2)}, ${camPosY.toFixed(2)}, ${camPosZ.toFixed(2)}]`);
+                      console.log(`  Floor offset (cam-rel): [${floor.center_x.toFixed(2)}, ${floor.center_y.toFixed(2)}, ${floor.center_z.toFixed(2)}]`);
                     } else if (detectedFloorMesh && detectedFloorMesh.userData.locked && totalFrames % 120 === 0) {
-                      // Debug: verify floor isn't drifting
-                      console.log(`Floor still at: [${detectedFloorMesh.position.x.toFixed(2)}, ${detectedFloorMesh.position.y.toFixed(2)}, ${detectedFloorMesh.position.z.toFixed(2)}]`);
+                      // Debug: verify floor stays fixed
+                      console.log(`Floor FIXED at: [${detectedFloorMesh.position.x.toFixed(2)}, ${detectedFloorMesh.position.y.toFixed(2)}, ${detectedFloorMesh.position.z.toFixed(2)}]`);
                       console.log(`  Camera now: [${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}]`);
-                      console.log(`  Detected floor (scene): [${floor.center_x.toFixed(2)}, ${floor.center_y.toFixed(2)}, ${floor.center_z.toFixed(2)}]`);
                     }
                   } else {
                     floorStatusEl.textContent = 'NONE';
