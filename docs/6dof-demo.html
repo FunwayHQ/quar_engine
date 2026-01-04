@@ -1257,7 +1257,7 @@
         videoCtx.drawImage(video, ox, oy, dw, dh);
 
         // Process frame with 6DoF tracker
-        if (trackerHandle) {
+        if (tracker6dof) {
           // Downscale for processing
           const pCanvas = document.createElement('canvas');
           pCanvas.width = 640;
