@@ -698,9 +698,11 @@ impl Tracker6DoF {
                             let kf_min_parallax = self.config.min_parallax * 0.5;
                             if max_parallax > kf_min_parallax {
                                 let t = &best.translation;
-                                // Scale based on frames since keyframe for smoother motion
-                                let frames_factor = ((self.frame_count - self.keyframe_frame) as f32).max(1.0);
-                                let scale_factor = self.scale / frames_factor;
+                                // Translation magnitude scales with parallax (proxy for movement)
+                                // More parallax = more movement since keyframe
+                                // Use parallax-based scaling: parallax in degrees * scale factor
+                                let parallax_scale = (max_parallax as f32 / 10.0).clamp(0.01, 1.0);
+                                let scale_factor = self.scale * parallax_scale;
                                 let scaled_t = [
                                     (t.x * scale_factor as f64) as f32,
                                     (t.y * scale_factor as f64) as f32,
