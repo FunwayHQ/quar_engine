@@ -33,44 +33,75 @@
       pointer-events: none;
     }
 
-    /* HUD Panel */
-    #hud {
+    /* Collapsible Panel Base */
+    .panel {
       position: absolute;
-      top: 20px; left: 20px;
       background: rgba(0,0,0,0.85);
-      padding: 15px 20px;
       border-radius: 8px;
       font-family: monospace;
       font-size: 13px;
       z-index: 100;
       min-width: 180px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 15px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .panel-header:hover {
+      background: rgba(255,255,255,0.05);
+    }
+    .panel-header h2, .panel-header h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .panel-toggle {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 14px;
+      padding: 0;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .panel-content {
+      padding: 0 15px 15px 15px;
+      max-height: 500px;
+      overflow-y: auto;
+      transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.2s ease;
+    }
+    .panel-content.collapsed {
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      opacity: 0;
+    }
+    .panel-toggle.collapsed {
+      transform: rotate(-90deg);
     }
 
-    #hud h2 {
+    /* HUD Panel */
+    #hud {
+      top: 20px; left: 20px;
+    }
+    #hud .panel-header h2 {
       color: #22c55e;
-      margin-bottom: 10px;
-      font-size: 16px;
     }
-
     .stat { margin: 5px 0; }
     .stat-label { color: #888; }
     .stat-value { color: #4ade80; }
 
     /* Settings Panel */
     #settings-panel {
-      position: absolute;
       top: 20px; right: 20px;
-      background: rgba(0,0,0,0.85);
-      padding: 15px 20px;
-      border-radius: 8px;
-      z-index: 100;
       min-width: 200px;
     }
-
-    #settings-panel h3 {
+    #settings-panel .panel-header h3 {
       color: #60a5fa;
-      margin-bottom: 12px;
-      font-size: 14px;
     }
 
     .slider-row {
@@ -227,55 +258,64 @@
 
     <button id="start-btn">Start QR AR Tracking</button>
 
-    <div id="hud" class="hidden">
-      <h2>QR AR Tracking</h2>
-      <div class="stat">
-        <span class="stat-label">FPS: </span>
-        <span class="stat-value" id="fps">0</span>
-        <span style="margin-left: 15px;" class="stat-label">Patterns: </span>
-        <span class="stat-value" id="patterns">0</span>
+    <div id="hud" class="panel hidden">
+      <div class="panel-header" onclick="togglePanel('hud')">
+        <h2>QR AR Tracking</h2>
+        <button class="panel-toggle" id="hud-toggle">▼</button>
       </div>
-      <div class="stat">
-        <span class="stat-label">QR Detected: </span>
-        <span class="stat-value" id="qr-detected">No</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Distance: </span>
-        <span class="stat-value" id="distance">-</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Confidence: </span>
-        <span class="stat-value" id="confidence">-</span>
+      <div class="panel-content" id="hud-content">
+        <div class="stat">
+          <span class="stat-label">FPS: </span>
+          <span class="stat-value" id="fps">0</span>
+          <span style="margin-left: 15px;" class="stat-label">Patterns: </span>
+          <span class="stat-value" id="patterns">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">QR Detected: </span>
+          <span class="stat-value" id="qr-detected">No</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Distance: </span>
+          <span class="stat-value" id="distance">-</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Confidence: </span>
+          <span class="stat-value" id="confidence">-</span>
+        </div>
       </div>
     </div>
 
-    <div id="settings-panel" class="hidden">
-      <h3>AR Settings</h3>
-
-      <div class="slider-row">
-        <label>Object Scale:</label>
-        <input type="range" id="scale-slider" min="0.1" max="2" step="0.1" value="0.5">
-        <span class="value" id="scale-value">0.5</span>
+    <div id="settings-panel" class="panel hidden">
+      <div class="panel-header" onclick="togglePanel('settings-panel')">
+        <h3>AR Settings</h3>
+        <button class="panel-toggle" id="settings-panel-toggle">▼</button>
       </div>
+      <div class="panel-content" id="settings-panel-content">
+        <div class="slider-row">
+          <label>Object Scale:</label>
+          <input type="range" id="scale-slider" min="0.1" max="2" step="0.1" value="0.5">
+          <span class="value" id="scale-value">0.5</span>
+        </div>
 
-      <div class="slider-row">
-        <label>Smoothing:</label>
-        <input type="range" id="smooth-slider" min="0" max="0.95" step="0.05" value="0.7">
-        <span class="value" id="smooth-value">0.70</span>
-      </div>
+        <div class="slider-row">
+          <label>Smoothing:</label>
+          <input type="range" id="smooth-slider" min="0" max="0.95" step="0.05" value="0.7">
+          <span class="value" id="smooth-value">0.70</span>
+        </div>
 
-      <label style="font-size: 12px; color: #888; display: block; margin-top: 15px;">3D Model:</label>
-      <div class="model-options">
-        <div class="model-option active" data-model="cube">Cube</div>
-        <div class="model-option" data-model="sphere">Sphere</div>
-        <div class="model-option" data-model="torus">Torus</div>
-        <div class="model-option" data-model="cone">Cone</div>
-        <div class="model-option" data-model="axes">Axes</div>
-      </div>
+        <label style="font-size: 12px; color: #888; display: block; margin-top: 15px;">3D Model:</label>
+        <div class="model-options">
+          <div class="model-option active" data-model="cube">Cube</div>
+          <div class="model-option" data-model="sphere">Sphere</div>
+          <div class="model-option" data-model="torus">Torus</div>
+          <div class="model-option" data-model="cone">Cone</div>
+          <div class="model-option" data-model="axes">Axes</div>
+        </div>
 
-      <div class="btn-row">
-        <button class="btn btn-secondary" id="toggle-wireframe">Wireframe</button>
-        <button class="btn btn-secondary" id="toggle-animation">Animate</button>
+        <div class="btn-row">
+          <button class="btn btn-secondary" id="toggle-wireframe">Wireframe</button>
+          <button class="btn btn-secondary" id="toggle-animation">Animate</button>
+        </div>
       </div>
     </div>
 
@@ -284,6 +324,18 @@
       <span id="tracking-text">Scanning for QR...</span>
     </div>
   </div>
+
+  <script>
+    // Panel toggle function (must be in global scope for onclick handlers)
+    function togglePanel(panelId) {
+      const content = document.getElementById(panelId + '-content');
+      const toggle = document.getElementById(panelId + '-toggle');
+      if (content && toggle) {
+        content.classList.toggle('collapsed');
+        toggle.classList.toggle('collapsed');
+      }
+    }
+  </script>
 
   <script type="importmap">
     {
