@@ -859,6 +859,12 @@ impl Tracker6DoFHandle {
         self.tracker.set_scale(scale);
     }
 
+    /// Get the last computed max parallax (for debugging translation issues).
+    #[wasm_bindgen]
+    pub fn get_last_parallax(&self) -> f64 {
+        self.tracker.get_last_parallax()
+    }
+
     // ==================== VIO Methods ====================
 
     /// Enable or disable VIO (Visual-Inertial Odometry) mode.

@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v21 Fixed World-Lock)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v23 Debug)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -284,6 +284,10 @@
         <span class="stat-value" id="confidence">--</span>
       </div>
       <div class="stat">
+        <span class="stat-label">Parallax: </span>
+        <span class="stat-value" id="parallax">--</span>°
+      </div>
+      <div class="stat">
         <span class="stat-label">State: </span>
         <span class="stat-value" id="state">initializing</span>
       </div>
@@ -454,8 +458,8 @@
           </div>
           <div class="slider-row">
             <label>Rot Filter:</label>
-            <input type="range" id="rot-filter-slider" min="0" max="5" step="0.1" value="0.5">
-            <span class="value" id="rot-filter-val">0.5</span>
+            <input type="range" id="rot-filter-slider" min="0" max="5" step="0.1" value="0.1">
+            <span class="value" id="rot-filter-val">0.1</span>
           </div>
           <div class="slider-row">
             <label>Invert Z:</label>
@@ -478,7 +482,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF VIO Demo v21 (Fixed World-Lock)</p>
+      <p>6DoF VIO Demo v22 (Translation Fix)</p>
       <div class="features">
         <span>Plane Detection</span>
         <span>Hit Testing</span>
@@ -548,6 +552,7 @@
     const featuresEl = document.getElementById('features');
     const inliersEl = document.getElementById('inliers');
     const confidenceEl = document.getElementById('confidence');
+    const parallaxEl = document.getElementById('parallax');
     const stateEl = document.getElementById('state');
     const scaleDisplay = document.getElementById('scale-display');
     const scaleSlider = document.getElementById('scale-slider');
@@ -619,7 +624,7 @@
     let zScale = 10.0;        // Z axis multiplier
     let smoothing = 0.3;     // Smoothing factor (0-1, lower = smoother)
     let deadzone = 0.001;    // Dead zone threshold (was 0.05 - too high for small deltas)
-    let rotFilter = 0.5;     // Rotation suppression multiplier (lowered from 2.0)
+    let rotFilter = 0.1;     // Rotation suppression multiplier (reduced to allow translation during movement)
     let invertZ = false;     // Invert Z direction
 
     // IMU Fusion state (from advanced-demo.html)
@@ -1281,13 +1286,35 @@
           // Debug: log pose every 60 frames (about 1 second)
           if (totalFrames % 60 === 0 && pose) {
             const t = pose.translation;
-            console.log(`Frame ${totalFrames}: trans=[${t[0].toFixed(3)}, ${t[1].toFixed(3)}, ${t[2].toFixed(3)}] pts=${tracked} inliers=${inliers} conf=${confidenceNames[confidenceLevel]}`);
+            const para = tracker6dof.get_last_parallax ? tracker6dof.get_last_parallax() : 0;
+            console.log(`Frame ${totalFrames}: trans=[${t[0].toFixed(4)}, ${t[1].toFixed(4)}, ${t[2].toFixed(4)}] pts=${tracked} inliers=${inliers} conf=${confidenceNames[confidenceLevel]} parallax=${para.toFixed(2)}°`);
+          }
+
+          // Extra debug: log any frame where translation changed significantly
+          if (pose && pose.translation) {
+            const t = pose.translation;
+            const magnitude = Math.sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+            if (magnitude > 0.001 && totalFrames % 30 === 0) {
+              console.log(`>>> Frame ${totalFrames}: Non-zero trans! [${t[0].toFixed(4)}, ${t[1].toFixed(4)}, ${t[2].toFixed(4)}] mag=${magnitude.toFixed(4)}`);
+            }
           }
 
           featuresEl.textContent = tracked;
           inliersEl.textContent = inliers;
           confidenceEl.textContent = confidenceNames[confidenceLevel];
           confidenceEl.style.color = confidenceColors[confidenceLevel];
+
+          // Show parallax - the key metric for translation detection
+          const parallax = tracker6dof.get_last_parallax ? tracker6dof.get_last_parallax() : 0;
+          parallaxEl.textContent = parallax.toFixed(2);
+          // Color code: green if above threshold (0.3°), yellow if close, red if too low
+          if (parallax >= 0.3) {
+            parallaxEl.style.color = '#4ade80'; // green - sufficient for translation
+          } else if (parallax >= 0.1) {
+            parallaxEl.style.color = '#facc15'; // yellow - borderline
+          } else {
+            parallaxEl.style.color = '#f87171'; // red - too low
+          }
 
           if (pose && tracked >= 8) {
             // Get rotation from optical flow and update visual orientation
@@ -1382,8 +1409,22 @@
             const gyroCompEnabled = tracker6dof.is_gyro_compensation_enabled ? tracker6dof.is_gyro_compensation_enabled() : false;
             gyroCompEl.textContent = gyroCompEnabled ? 'ON' : 'OFF';
             gyroCompEl.style.color = gyroCompEnabled ? '#4ade80' : '#888';
-            // Show delta and accumulated values for debugging
-            flowDebugEl.textContent = `d:[${dzX.toFixed(3)},${dzY.toFixed(3)},${dzZ.toFixed(3)}] cam:[${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}]`;
+            // Show translation debug - raw pose from Rust vs accumulated in JS
+            // t[] is the raw translation from Rust, acc[] is our JS accumulation
+            const rotSupp = rotationSuppress.toFixed(2);
+            flowDebugEl.textContent = `t:[${t[0].toFixed(3)},${t[2].toFixed(3)}] d:[${deltaX.toFixed(4)},${deltaZ.toFixed(4)}] acc:[${accumulatedPosition.x.toFixed(2)},${accumulatedPosition.z.toFixed(2)}]`;
+
+            // Log translation chain periodically for debugging
+            if (totalFrames % 120 === 0) {
+              console.log('=== Translation Debug ===');
+              console.log(`Raw from tracker: [${rawX.toFixed(4)}, ${rawY.toFixed(4)}, ${rawZ.toFixed(4)}]`);
+              console.log(`Delta: [${deltaX.toFixed(4)}, ${deltaY.toFixed(4)}, ${deltaZ.toFixed(4)}]`);
+              console.log(`After deadzone: [${dzX.toFixed(4)}, ${dzY.toFixed(4)}, ${dzZ.toFixed(4)}]`);
+              console.log(`Gyro rate: ${currentGyroRate.toFixed(3)}, rotSuppress: ${rotationSuppress.toFixed(3)}`);
+              console.log(`Scaled: [${scaledX.toFixed(4)}, ${scaledY.toFixed(4)}, ${scaledZ.toFixed(4)}]`);
+              console.log(`Accumulated: [${accumulatedPosition.x.toFixed(3)}, ${accumulatedPosition.y.toFixed(3)}, ${accumulatedPosition.z.toFixed(3)}]`);
+              console.log(`Camera pos: [${camera.position.x.toFixed(3)}, ${camera.position.y.toFixed(3)}, ${camera.position.z.toFixed(3)}]`);
+            }
 
             // Update VIO status display
             if (tracker6dof) {

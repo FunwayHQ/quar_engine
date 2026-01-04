@@ -60,8 +60,8 @@ impl Default for Tracker6DoFConfig {
             base: TrackerConfig::default(),
             ransac_threshold: 0.001,
             ransac_iterations: 100,
-            min_parallax: 1.0, // 1 degree minimum parallax
-            scale_method: ScaleMethod::Fixed(0.01), // 1cm per unit by default
+            min_parallax: 0.3, // 0.3 degree minimum parallax (lowered for better translation)
+            scale_method: ScaleMethod::Fixed(0.1), // 10cm per unit by default (increased for better translation)
             use_5point: true, // 5-point is more robust than 8-point
         }
     }
@@ -198,6 +198,8 @@ pub struct Tracker6DoF {
     last_loop_closure: Option<LoopClosureResult>,
     /// Number of loop closures detected
     loop_closure_count: u32,
+    /// Last computed maximum parallax (for debugging)
+    last_max_parallax: f64,
 }
 
 impl Tracker6DoF {
@@ -211,7 +213,7 @@ impl Tracker6DoF {
         let camera = CameraIntrinsics::default_webcam(width, height);
         let scale = match config.scale_method {
             ScaleMethod::Fixed(s) => s,
-            _ => 0.01, // Default scale
+            _ => 0.1, // Default scale (10cm per unit)
         };
 
         Self {
@@ -260,6 +262,7 @@ impl Tracker6DoF {
             keyframe_interval: 15, // Insert keyframe every 15 frames
             last_loop_closure: None,
             loop_closure_count: 0,
+            last_max_parallax: 0.0,
         }
     }
 
@@ -390,6 +393,9 @@ impl Tracker6DoF {
                     max_parallax = parallax;
                 }
             }
+
+            // Store for debugging
+            self.last_max_parallax = max_parallax;
 
             // Only use translation if parallax is sufficient
             let use_translation = max_parallax > self.config.min_parallax;
@@ -581,6 +587,11 @@ impl Tracker6DoF {
     /// Get the current scale estimate.
     pub fn get_scale(&self) -> f32 {
         self.scale
+    }
+
+    /// Get the last computed max parallax (for debugging translation issues).
+    pub fn get_last_parallax(&self) -> f64 {
+        self.last_max_parallax
     }
 
     /// Set the scale manually (useful for known scene dimensions).

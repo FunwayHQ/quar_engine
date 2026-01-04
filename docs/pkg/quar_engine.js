@@ -2449,6 +2449,14 @@ export class Tracker6DoFHandle {
         wasm.tracker6dofhandle_reset_stabilizer(this.__wbg_ptr);
     }
     /**
+     * Get the last computed max parallax (for debugging translation issues).
+     * @returns {number}
+     */
+    get_last_parallax() {
+        const ret = wasm.tracker6dofhandle_get_last_parallax(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Process a frame with VIO fusion.
      * Returns the pose as JSON.
      * @param {Uint8Array} rgba
