@@ -325,6 +325,11 @@
     let smoothedQuaternion = null;
     let smoothingFactor = 0.7;
 
+    // Camera intrinsics for projection
+    let focalLength = 0;
+    let principalX = 0;
+    let principalY = 0;
+
     // Canvas refs
     const videoCanvas = document.getElementById('video-canvas');
     const threeCanvas = document.getElementById('three-canvas');
@@ -399,13 +404,11 @@
     function initThreeJS(width, height) {
       scene = new THREE.Scene();
 
-      // Orthographic camera for screen-space positioning
-      camera = new THREE.OrthographicCamera(
-        0, width,
-        0, height,
-        0.1, 1000
-      );
-      camera.position.z = 500;
+      // Use PerspectiveCamera for proper 3D AR tracking
+      // FOV derived from focal length: fov = 2 * atan(height / (2 * fy))
+      const fovY = 2 * Math.atan(height / (2 * focalLength)) * (180 / Math.PI);
+      camera = new THREE.PerspectiveCamera(fovY, width / height, 0.01, 100);
+      camera.position.set(0, 0, 0);
 
       renderer = new THREE.WebGLRenderer({
         canvas: threeCanvas,
@@ -443,7 +446,8 @@
       }
 
       const scale = parseFloat(scaleSlider.value);
-      const size = 40; // Base size in pixels
+      // Base size in meters (3cm cube for a 5cm QR code)
+      const size = 0.03;
 
       let geometry, material;
 
@@ -487,32 +491,34 @@
 
         case 'axes':
           arObject = new THREE.Group();
+          const axisRadius = size * 0.05;
+          const axisLength = size;
 
           // X axis (red)
-          const xGeom = new THREE.CylinderGeometry(2, 2, size, 8);
+          const xGeom = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8);
           const xMat = new THREE.MeshPhongMaterial({ color: 0xef4444 });
           const xAxis = new THREE.Mesh(xGeom, xMat);
           xAxis.rotation.z = -Math.PI / 2;
-          xAxis.position.x = size / 2;
+          xAxis.position.x = axisLength / 2;
           arObject.add(xAxis);
 
           // Y axis (green)
-          const yGeom = new THREE.CylinderGeometry(2, 2, size, 8);
+          const yGeom = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8);
           const yMat = new THREE.MeshPhongMaterial({ color: 0x22c55e });
           const yAxis = new THREE.Mesh(yGeom, yMat);
-          yAxis.position.y = size / 2;
+          yAxis.position.y = axisLength / 2;
           arObject.add(yAxis);
 
           // Z axis (blue)
-          const zGeom = new THREE.CylinderGeometry(2, 2, size, 8);
+          const zGeom = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8);
           const zMat = new THREE.MeshPhongMaterial({ color: 0x3b82f6 });
           const zAxis = new THREE.Mesh(zGeom, zMat);
           zAxis.rotation.x = Math.PI / 2;
-          zAxis.position.z = size / 2;
+          zAxis.position.z = axisLength / 2;
           arObject.add(zAxis);
 
           // Origin sphere
-          const originGeom = new THREE.SphereGeometry(4, 16, 16);
+          const originGeom = new THREE.SphereGeometry(axisRadius * 2, 16, 16);
           const originMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
           const origin = new THREE.Mesh(originGeom, originMat);
           arObject.add(origin);
@@ -563,6 +569,11 @@
         const cx = width / 2;
         const cy = height / 2;
         detector.set_intrinsics(fx, fy, cx, cy);
+
+        // Store intrinsics for Three.js camera
+        focalLength = fy;
+        principalX = cx;
+        principalY = cy;
 
         // Initialize Three.js
         initThreeJS(width, height);
@@ -647,75 +658,96 @@
     }
 
     function updateARObject(qr, timestamp) {
-      // Get QR center position
-      const targetX = qr.center_x;
-      const targetY = qr.center_y;
-
-      // Calculate size based on QR size in frame
-      const qrSizePixels = qr.size_pixels;
-
-      // Apply smoothing
-      if (smoothedPosition === null) {
-        smoothedPosition = { x: targetX, y: targetY };
-      } else {
-        smoothedPosition.x = smoothedPosition.x * smoothingFactor + targetX * (1 - smoothingFactor);
-        smoothedPosition.y = smoothedPosition.y * smoothingFactor + targetY * (1 - smoothingFactor);
-      }
-
-      // Position the AR object at QR center
-      // Note: Three.js Y is inverted compared to canvas Y
-      arObject.position.x = smoothedPosition.x;
-      arObject.position.y = videoCanvas.height - smoothedPosition.y;
-      arObject.position.z = 0;
-
-      // Scale based on QR size
-      const baseScale = parseFloat(scaleSlider.value);
-      const sizeScale = qrSizePixels / 100; // Normalize
-      arObject.scale.setScalar(baseScale * sizeScale);
-
-      // Calculate rotation from QR corners
-      const corners = [
-        { x: qr.corner_tl_x, y: qr.corner_tl_y },
-        { x: qr.corner_tr_x, y: qr.corner_tr_y },
-        { x: qr.corner_br_x, y: qr.corner_br_y },
-        { x: qr.corner_bl_x, y: qr.corner_bl_y }
-      ];
-
-      // Calculate rotation angle from top edge
-      const dx = corners[1].x - corners[0].x;
-      const dy = corners[1].y - corners[0].y;
-      const angle = Math.atan2(dy, dx);
-
-      // Apply rotation with smoothing
-      if (animationEnabled) {
-        // Add spinning animation
-        arObject.rotation.y = timestamp * 0.002;
-        arObject.rotation.x = Math.sin(timestamp * 0.001) * 0.3;
-      } else {
-        arObject.rotation.z = -angle;
-        arObject.rotation.x = 0;
-        arObject.rotation.y = 0;
-      }
-
-      // If we have pose, use it for more accurate 3D orientation
+      // Use 3D pose from homography decomposition if available
       if (qr.has_pose) {
-        // Convert quaternion to Euler for display
-        // The pose quaternion is [x, y, z, w]
-        const quat = new THREE.Quaternion(
-          qr.pose_qx,
-          qr.pose_qy,
-          qr.pose_qz,
-          qr.pose_qw
-        );
+        // Get 3D translation from pose (in meters)
+        // Apply CV-to-Three.js coordinate conversion:
+        // CV: X right, Y down, Z forward
+        // Three.js: X right, Y up, Z backward (toward viewer)
+        const targetX = qr.pose_tx;
+        const targetY = -qr.pose_ty;  // Flip Y
+        const targetZ = -qr.pose_tz;  // Flip Z (negative = in front of camera)
 
-        if (!animationEnabled) {
-          // Apply pose rotation
+        // Apply smoothing to 3D position
+        if (smoothedPosition === null) {
+          smoothedPosition = { x: targetX, y: targetY, z: targetZ };
+        } else {
+          const alpha = 1 - smoothingFactor;
+          smoothedPosition.x = smoothedPosition.x * smoothingFactor + targetX * alpha;
+          smoothedPosition.y = smoothedPosition.y * smoothingFactor + targetY * alpha;
+          smoothedPosition.z = smoothedPosition.z * smoothingFactor + targetZ * alpha;
+        }
+
+        // Position the AR object using 3D pose
+        arObject.position.set(smoothedPosition.x, smoothedPosition.y, smoothedPosition.z);
+
+        // Scale based on user setting (object is already in meters)
+        const baseScale = parseFloat(scaleSlider.value);
+        arObject.scale.setScalar(baseScale);
+
+        // Apply rotation with smoothing
+        if (animationEnabled) {
+          // Add spinning animation on top of base pose
+          arObject.rotation.y = timestamp * 0.002;
+          arObject.rotation.x = Math.sin(timestamp * 0.001) * 0.3;
+        } else {
+          // Apply CV-to-Three.js coordinate conversion for quaternion:
+          // Negate Y and Z components to convert from CV to Three.js frame
+          const quat = new THREE.Quaternion(
+            qr.pose_qx,      // X stays same
+            -qr.pose_qy,     // Y negated
+            -qr.pose_qz,     // Z negated
+            qr.pose_qw       // W stays same
+          );
+
+          // Apply pose rotation with smoothing
           if (smoothedQuaternion === null) {
             smoothedQuaternion = quat.clone();
           } else {
             smoothedQuaternion.slerp(quat, 1 - smoothingFactor);
           }
           arObject.quaternion.copy(smoothedQuaternion);
+        }
+      } else {
+        // Fallback: use 2D pixel position if no 3D pose available
+        const targetX = qr.center_x;
+        const targetY = qr.center_y;
+        const qrSizePixels = qr.size_pixels;
+
+        // Estimate depth from QR size (larger = closer)
+        // Assuming QR is 5cm and focal length ~0.8*width
+        const qrSizeMeters = parseFloat(sizeSlider.value) / 100;
+        const estimatedZ = -(focalLength * qrSizeMeters) / qrSizePixels;
+
+        // Convert 2D pixel position to 3D using pinhole camera model
+        const x3d = (targetX - principalX) * (-estimatedZ) / focalLength;
+        const y3d = -(targetY - principalY) * (-estimatedZ) / focalLength;
+
+        if (smoothedPosition === null) {
+          smoothedPosition = { x: x3d, y: y3d, z: estimatedZ };
+        } else {
+          const alpha = 1 - smoothingFactor;
+          smoothedPosition.x = smoothedPosition.x * smoothingFactor + x3d * alpha;
+          smoothedPosition.y = smoothedPosition.y * smoothingFactor + y3d * alpha;
+          smoothedPosition.z = smoothedPosition.z * smoothingFactor + estimatedZ * alpha;
+        }
+
+        arObject.position.set(smoothedPosition.x, smoothedPosition.y, smoothedPosition.z);
+
+        // Scale based on user setting
+        const baseScale = parseFloat(scaleSlider.value);
+        arObject.scale.setScalar(baseScale);
+
+        // Calculate 2D rotation from QR corners
+        const dx = qr.corner_tr_x - qr.corner_tl_x;
+        const dy = qr.corner_tr_y - qr.corner_tl_y;
+        const angle = Math.atan2(dy, dx);
+
+        if (animationEnabled) {
+          arObject.rotation.y = timestamp * 0.002;
+          arObject.rotation.x = Math.sin(timestamp * 0.001) * 0.3;
+        } else {
+          arObject.rotation.set(0, 0, -angle);
         }
       }
     }

@@ -66,6 +66,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Debug output in demo**: HUD shows `d:[x,y,z]` (deltas) and `a:[x,y,z]` (accumulated). Console logs detailed chain every ~2 seconds.
 - **Tunable parameters**: Master scale, per-axis scales (X/Y/Z), smoothing, deadzone, rotation filter - all adjustable via sliders in demo.
 
+### CV-to-Three.js Coordinate Conversion (Critical)
+When applying poses from WASM tracker to Three.js, coordinate conversion is required:
+- **CV coordinates**: X right, Y down, Z forward (into scene)
+- **Three.js coordinates**: X right, Y up, Z backward (toward viewer)
+
+**Translation conversion:**
+```javascript
+camera.position.set(t[0], -t[1], -t[2]);  // Flip Y and Z
+```
+
+**Quaternion conversion:**
+```javascript
+const quat = new THREE.Quaternion(q[0], -q[1], -q[2], q[3]);  // Negate Y and Z
+```
+
+**World-locked objects**: Add directly to `scene`, NOT to any transformed group. Objects in `arGroup` that gets transformed will follow the camera.
+
 ## Technology Stack
 
 - **Core Language:** Rust (Stable)
@@ -202,8 +219,9 @@ if (pose) {
   const q = pose.rotation; // [x, y, z, w] quaternion
   const t = pose.translation; // [x, y, z]
 
-  camera.quaternion.set(q[0], q[1], q[2], q[3]);
-  camera.position.set(t[0], t[1], t[2]);
+  // Apply CV-to-Three.js coordinate conversion (Y and Z negated)
+  camera.quaternion.set(q[0], -q[1], -q[2], q[3]);
+  camera.position.set(t[0], -t[1], -t[2]);
 }
 ```
 
