@@ -319,6 +319,10 @@
     let smoothedQuaternion = null;
     let smoothingFactor = 0.7;
 
+    // Detection persistence - keep object visible briefly after losing detection
+    let lastDetectionTime = 0;
+    const detectionPersistenceMs = 500; // Keep visible for 500ms after losing QR
+
     // Camera intrinsics for projection
     let focalLength = 0;
     let principalX = 0;
@@ -603,6 +607,7 @@
 
       if (detections && detections.length > 0) {
         const qr = detections[0];
+        lastDetectionTime = timestamp;
 
         // Update HUD
         qrDetectedEl.textContent = 'Yes';
@@ -624,17 +629,33 @@
         arObject.visible = true;
 
       } else {
-        qrDetectedEl.textContent = 'No';
-        qrDetectedEl.style.color = '#888';
+        // Check if we should keep showing the object (persistence)
+        const timeSinceDetection = timestamp - lastDetectionTime;
+
+        if (timeSinceDetection < detectionPersistenceMs && smoothedPosition !== null) {
+          // Keep object visible at last known position
+          arObject.visible = true;
+          qrDetectedEl.textContent = 'Tracking...';
+          qrDetectedEl.style.color = '#fbbf24';
+        } else {
+          // Really lost - hide object
+          qrDetectedEl.textContent = 'No';
+          qrDetectedEl.style.color = '#888';
+          arObject.visible = false;
+
+          // Reset smoothing when truly lost
+          if (timeSinceDetection > detectionPersistenceMs * 2) {
+            smoothedPosition = null;
+            smoothedQuaternion = null;
+          }
+        }
+
         confidenceEl.textContent = '-';
         distanceEl.textContent = '-';
 
         // Update tracking indicator
         trackingIndicator.classList.remove('tracking');
         trackingText.textContent = 'Scanning for QR...';
-
-        // Hide AR object
-        arObject.visible = false;
       }
 
       // Render Three.js scene
@@ -650,7 +671,8 @@
         // Three.js: X right, Y up, Z backward (toward viewer)
         const targetX = qr.pose_tx;
         const targetY = -qr.pose_ty;  // Flip Y
-        const targetZ = -qr.pose_tz;  // Flip Z (negative = in front of camera)
+        // Bring object closer to camera (reduce Z distance by 30%)
+        const targetZ = -qr.pose_tz * 0.7;  // Flip Z and reduce distance
 
         // Apply smoothing to 3D position
         if (smoothedPosition === null) {
@@ -703,7 +725,8 @@
         // Estimate depth from QR size (larger = closer)
         // Assume default QR size of 5cm (0.05m)
         const qrSizeMeters = 0.05;
-        const estimatedZ = -(focalLength * qrSizeMeters) / qrSizePixels;
+        // Reduce depth by 30% to bring object closer to camera
+        const estimatedZ = -(focalLength * qrSizeMeters) / qrSizePixels * 0.7;
 
         // Convert 2D pixel position to 3D using pinhole camera model
         const x3d = (targetX - principalX) * (-estimatedZ) / focalLength;
