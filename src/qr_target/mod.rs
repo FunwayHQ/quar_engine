@@ -105,9 +105,11 @@ impl QrDetector {
         let candidates = self.finder_detector.find_qr_candidates(&patterns);
 
         // Convert to DetectedQr with pose estimation
+        // Filter by minimum confidence threshold
         candidates
             .into_iter()
             .map(|candidate| self.candidate_to_detected(&candidate))
+            .filter(|qr| qr.confidence >= 0.7) // Reject low-confidence detections
             .collect()
     }
 
