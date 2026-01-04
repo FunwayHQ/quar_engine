@@ -320,8 +320,17 @@ impl PlaneDetector {
             return None;
         }
 
-        let normal = [nx / len, ny / len, nz / len];
-        let distance = -(normal[0] * p1[0] + normal[1] * p1[1] + normal[2] * p1[2]);
+        let mut normal = [nx / len, ny / len, nz / len];
+        let mut distance = -(normal[0] * p1[0] + normal[1] * p1[1] + normal[2] * p1[2]);
+
+        // For nearly-horizontal planes (|ny| > 0.5), ensure normal points up (positive Y)
+        // This ensures floors are classified as HorizontalUp, not HorizontalDown
+        if normal[1].abs() > 0.5 && normal[1] < 0.0 {
+            normal[0] = -normal[0];
+            normal[1] = -normal[1];
+            normal[2] = -normal[2];
+            distance = -distance;
+        }
 
         Some((normal, distance))
     }
@@ -367,9 +376,18 @@ impl PlaneDetector {
 
         // Find eigenvector with smallest eigenvalue using power iteration on inverse
         // For small matrices, we can use a simpler approach
-        let normal = Self::smallest_eigenvector(&cov)?;
+        let mut normal = Self::smallest_eigenvector(&cov)?;
 
-        let distance = -(normal[0] * cx + normal[1] * cy + normal[2] * cz);
+        let mut distance = -(normal[0] * cx + normal[1] * cy + normal[2] * cz);
+
+        // For nearly-horizontal planes (|ny| > 0.5), ensure normal points up (positive Y)
+        // This ensures floors are classified as HorizontalUp, not HorizontalDown
+        if normal[1].abs() > 0.5 && normal[1] < 0.0 {
+            normal[0] = -normal[0];
+            normal[1] = -normal[1];
+            normal[2] = -normal[2];
+            distance = -distance;
+        }
 
         Some((normal, distance))
     }

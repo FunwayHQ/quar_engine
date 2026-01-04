@@ -58,12 +58,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Gravity-aligned world frame for proper floor detection
 
 ### Known Issues / Debug Notes
-- **Gravity-aligned coordinates (v19)**: Map points stored in camera frame, transformed to world frame via `get_map_points_world()` using accelerometer-derived gravity. Device-to-camera frame conversion applied (Y and Z flipped for rear camera). IMU data always pushed for gravity estimation.
+- **World-locked planes (v20)**: Map points are in camera frame, transformed to scene coordinates by adding current camera position before plane detection. Floor mesh locks in place once detected (`userData.locked = true`).
+- **Normal direction fix**: RANSAC plane fitting now ensures normals point up (+Y) for horizontal planes, so floors are classified as `HorizontalUp` instead of `HorizontalDown`.
+- **Map point visualization**: Point cloud is approximate since Rust accumulates points in camera frame across multiple frames. Floor detection uses transformed points but visualization may drift.
 - **Real Map Points**: Plane detection uses real triangulated 3D points from Essential matrix decomposition. Points triangulated when parallax >2° and stored with FIFO management (max 500 points).
-- **Plane detection**: Planes detected in gravity-aligned world frame (Y up) for proper horizontal/vertical classification. Floor mesh added to scene directly (not arGroup) to stay fixed.
+- **PlaneType thresholds**: Relaxed for noisy reconstruction: HorizontalUp/Down requires |ny| > 0.7 (was 0.9), Vertical requires |ny| < 0.3 (was 0.1).
 - **Translation tuning**: Per-frame translation deltas are very small (~0.003 units). Default deadzone (0.05) was too aggressive. Fixed to 0.001.
 - **Rotation vs Translation**: Camera rotation (tilting) works via gyro fusion. Translation (panning) works via optical flow deltas accumulated over time.
-- **Debug output in demo**: HUD shows `d:[x,y,z]` (deltas) and `a:[x,y,z]` (accumulated). Console logs detailed chain every ~2 seconds.
+- **Debug output in demo**: HUD shows `d:[x,y,z]` (deltas) and `cam:[x,y,z]` (camera position). Console logs plane detection debug every ~1 second.
 - **Tunable parameters**: Master scale, per-axis scales (X/Y/Z), smoothing, deadzone, rotation filter - all adjustable via sliders in demo.
 
 ### CV-to-Three.js Coordinate Conversion (Critical)

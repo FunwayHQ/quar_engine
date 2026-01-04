@@ -25,16 +25,16 @@ impl PlaneType {
     /// Classify a plane based on its normal vector.
     ///
     /// Uses a threshold to determine horizontal/vertical:
-    /// - Horizontal if |normal.y| > 0.9 (within ~25° of vertical axis)
-    /// - Vertical if |normal.y| < 0.1 (within ~6° of horizontal)
+    /// - Horizontal if |normal.y| > 0.7 (within ~45° of vertical axis)
+    /// - Vertical if |normal.y| < 0.3 (within ~17° of horizontal)
     pub fn from_normal(normal: [f64; 3]) -> Self {
         let ny = normal[1];
 
-        if ny > 0.9 {
+        if ny > 0.7 {
             PlaneType::HorizontalUp
-        } else if ny < -0.9 {
+        } else if ny < -0.7 {
             PlaneType::HorizontalDown
-        } else if ny.abs() < 0.1 {
+        } else if ny.abs() < 0.3 {
             PlaneType::Vertical
         } else {
             PlaneType::Arbitrary
@@ -255,9 +255,11 @@ mod tests {
         // Wall (pointing in Z)
         assert_eq!(PlaneType::from_normal([0.0, 0.0, 1.0]), PlaneType::Vertical);
 
-        // Arbitrary (45 degree tilt)
-        let n = 1.0 / 2.0_f64.sqrt();
-        assert_eq!(PlaneType::from_normal([n, n, 0.0]), PlaneType::Arbitrary);
+        // Arbitrary (60 degree tilt from vertical - ny = 0.5 is between 0.3 and 0.7)
+        // Using 30 degrees from horizontal: cos(30) ≈ 0.866, sin(30) = 0.5
+        let nx = 0.866;
+        let ny = 0.5;
+        assert_eq!(PlaneType::from_normal([nx, ny, 0.0]), PlaneType::Arbitrary);
     }
 
     #[test]

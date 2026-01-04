@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v19 Gravity-Aligned Planes)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v20 World-Locked Planes)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -478,7 +478,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF VIO Demo v19 (Gravity-Aligned Planes)</p>
+      <p>6DoF VIO Demo v20 (World-Locked Planes)</p>
       <div class="features">
         <span>Plane Detection</span>
         <span>Hit Testing</span>
@@ -787,9 +787,11 @@
     let planeDetector = null; // Plane detector for floor/wall detection
     let detectedFloorMesh = null; // Three.js mesh for floor visualization
     let placedObjects = []; // Objects placed via hit testing
-    let mapPoints3D = []; // Accumulated 3D map points for plane detection
+    let mapPoints3D = []; // Accumulated 3D map points for plane detection (in TRUE world frame)
     let mapPointsCloud = null; // Three.js Points for visualizing triangulated points
     let mapPointsPositions = null; // Float32Array for point positions
+    let lastMapPointCameraPos = new THREE.Vector3(); // Camera position when last map points were added
+    let floorLockedPosition = null; // Store floor position when locked
 
     // Tuning sliders
     scaleSlider.addEventListener('input', (e) => {
@@ -1154,10 +1156,10 @@
 
       const mapPointsMat = new THREE.PointsMaterial({
         color: 0xf472b6, // Pink color to match HUD theme
-        size: 0.02,
+        size: 0.015,
         sizeAttenuation: true,
         transparent: true,
-        opacity: 0.8
+        opacity: 0.5  // More transparent since visualization is approximate
       });
       mapPointsCloud = new THREE.Points(mapPointsGeo, mapPointsMat);
       scene.add(mapPointsCloud);
@@ -1424,38 +1426,74 @@
 
               // Plane detection - run every 30 frames (~0.5 sec at 60fps)
               if (planeDetector && totalFrames % 30 === 0) {
-                // Get REAL triangulated map points in gravity-aligned world frame
-                // World frame has Y pointing up (opposite to gravity)
+                // Get triangulated map points from Rust
+                // IMPORTANT: Points are in CAMERA FRAME (gravity-aligned but relative to camera)
+                // See tracker_6dof.rs line 459: "Store triangulated points in camera frame"
                 const realMapPoints = tracker6dof.get_map_points_world();
                 const mapPointCount = tracker6dof.map_point_count();
 
+                // Current camera position in scene
+                const camPosX = camera.position.x;
+                const camPosY = camera.position.y;
+                const camPosZ = camera.position.z;
+
+                // Debug: Log what we get from Rust
+                if (totalFrames % 60 === 0) {
+                  console.log(`Rust map points: ${realMapPoints ? realMapPoints.length/3 : 0} pts, mapPointCount=${mapPointCount}`);
+                }
+
                 // Use real triangulated points if we have any
                 if (realMapPoints && realMapPoints.length >= 30) {
-                  mapPoints3D = Array.from(realMapPoints);
+                  // Points are camera-relative (gravity-aligned frame centered at camera)
+                  // Transform to scene coordinates by adding current camera position
+                  const transformedPoints = [];
+                  for (let i = 0; i < realMapPoints.length; i += 3) {
+                    // Camera-relative to scene: add current camera position
+                    transformedPoints.push(
+                      realMapPoints[i] + camPosX,
+                      realMapPoints[i + 1] + camPosY,
+                      realMapPoints[i + 2] + camPosZ
+                    );
+                  }
+
+                  // Use transformed points for plane detection
+                  mapPoints3D = transformedPoints;
 
                   // Update point cloud visualization
+                  // NOTE: Point cloud is approximate because Rust accumulates points
+                  // in camera frame across multiple frames. We transform by current
+                  // camera position, which is only accurate for the most recent points.
+                  // The floor detection uses this for initial detection, then locks.
                   if (mapPointsCloud && mapPointsPositions) {
-                    const numPoints = Math.min(Math.floor(realMapPoints.length / 3), 500);
-                    for (let i = 0; i < numPoints * 3 && i < realMapPoints.length; i++) {
-                      mapPointsPositions[i] = realMapPoints[i];
+                    const numPoints = Math.min(Math.floor(mapPoints3D.length / 3), 500);
+                    for (let i = 0; i < numPoints * 3 && i < mapPoints3D.length; i++) {
+                      mapPointsPositions[i] = mapPoints3D[i];
                     }
                     mapPointsCloud.geometry.attributes.position.needsUpdate = true;
                     mapPointsCloud.geometry.setDrawRange(0, numPoints);
                   }
 
                   // Update map point count display
-                  mapPointCountEl.textContent = mapPointCount.toString();
-                  mapPointCountEl.style.color = mapPointCount > 50 ? '#4ade80' : (mapPointCount > 20 ? '#facc15' : '#888');
+                  mapPointCountEl.textContent = Math.floor(mapPoints3D.length / 3).toString();
+                  mapPointCountEl.style.color = mapPoints3D.length > 150 ? '#4ade80' : (mapPoints3D.length > 60 ? '#facc15' : '#888');
 
-                  console.log(`Using ${mapPointCount} real triangulated points for plane detection`);
-                } else if (mapPoints3D.length < 300) {
-                  // Fallback: Generate simulated floor points only if no real points yet
-                  // This ensures the demo works while waiting for enough triangulation
-                  for (let i = 0; i < 10; i++) {
-                    const px = (Math.random() - 0.5) * 3.0;
-                    const py = -0.5 + (Math.random() - 0.5) * 0.02;
-                    const pz = (Math.random() - 0.5) * 3.0;
-                    mapPoints3D.push(px, py, pz);
+                  if (totalFrames % 60 === 0) {
+                    console.log(`Map points: ${Math.floor(mapPoints3D.length/3)} pts, camera at [${camPosX.toFixed(2)}, ${camPosY.toFixed(2)}, ${camPosZ.toFixed(2)}]`);
+                  }
+                } else {
+                  // No real map points yet - generate simulated floor points
+                  // Create a clear horizontal floor plane at Y = 0 (below camera at Y ~= 1)
+                  if (mapPoints3D.length < 150) {
+                    // Add grid of floor points spread around camera position
+                    for (let i = 0; i < 20; i++) {
+                      const px = (Math.random() - 0.5) * 4.0;  // Spread on X
+                      const py = 0.0 + (Math.random() - 0.5) * 0.02;  // Nearly flat at Y=0
+                      const pz = 3 + (Math.random() - 0.5) * 4.0;  // Spread on Z around camera Z
+                      mapPoints3D.push(px, py, pz);
+                    }
+                    if (totalFrames % 60 === 0) {
+                      console.log(`Added simulated floor points, total: ${Math.floor(mapPoints3D.length/3)}`);
+                    }
                   }
                 }
 
@@ -1466,25 +1504,68 @@
 
                   // Debug: log plane detection results periodically
                   if (totalFrames % 60 === 0) {
-                    console.log(`Plane detection: ${numPlanes} planes from ${Math.floor(mapPoints3D.length/3)} points`);
+                    console.log(`=== Plane Detection Debug ===`);
+                    console.log(`Points: ${Math.floor(mapPoints3D.length/3)}, Planes detected: ${numPlanes}`);
+
+                    // Show point distribution (sample first 5 points)
+                    if (mapPoints3D.length >= 15) {
+                      console.log(`Sample points (first 5):`);
+                      for (let i = 0; i < Math.min(5, Math.floor(mapPoints3D.length/3)); i++) {
+                        const px = mapPoints3D[i*3].toFixed(2);
+                        const py = mapPoints3D[i*3+1].toFixed(2);
+                        const pz = mapPoints3D[i*3+2].toFixed(2);
+                        console.log(`  Point ${i}: [${px}, ${py}, ${pz}]`);
+                      }
+                    }
+
+                    // Log each plane's info
+                    for (let i = 0; i < numPlanes; i++) {
+                      const p = planeDetector.get_plane(i);
+                      if (p) {
+                        console.log(`  Plane ${i}: type=${p.plane_type}, normal=[${p.normal_x.toFixed(2)},${p.normal_y.toFixed(2)},${p.normal_z.toFixed(2)}], center=[${p.center_x.toFixed(2)},${p.center_y.toFixed(2)},${p.center_z.toFixed(2)}], inliers=${p.inlier_count}`);
+                      }
+                    }
                   }
 
                   const floor = planeDetector.get_floor_plane();
                   if (floor) {
+                    // Floor position from RANSAC is already in scene coordinates
+                    // (we transformed points by camera position before detection)
                     floorStatusEl.textContent = `y=${floor.center_y.toFixed(2)}`;
                     floorStatusEl.style.color = '#4ade80';
 
                     // Update floor mesh position ONLY if not already placed
-                    // This "locks" the plane in world space
+                    // This "locks" the plane in scene/world space
                     if (detectedFloorMesh && !detectedFloorMesh.userData.locked) {
+                      // Floor center is already in scene coordinates (transformed above)
                       detectedFloorMesh.position.set(floor.center_x, floor.center_y, floor.center_z);
                       detectedFloorMesh.visible = true;
                       detectedFloorMesh.userData.locked = true; // Lock it in place
-                      console.log(`Floor locked at world position: [${floor.center_x.toFixed(2)}, ${floor.center_y.toFixed(2)}, ${floor.center_z.toFixed(2)}]`);
+                      floorLockedPosition = new THREE.Vector3(floor.center_x, floor.center_y, floor.center_z);
+                      console.log(`Floor LOCKED at scene position: [${floor.center_x.toFixed(2)}, ${floor.center_y.toFixed(2)}, ${floor.center_z.toFixed(2)}]`);
+                      console.log(`  Camera at lock time: [${camPosX.toFixed(2)}, ${camPosY.toFixed(2)}, ${camPosZ.toFixed(2)}]`);
+                    } else if (detectedFloorMesh && detectedFloorMesh.userData.locked && totalFrames % 120 === 0) {
+                      // Debug: verify floor isn't drifting
+                      console.log(`Floor still at: [${detectedFloorMesh.position.x.toFixed(2)}, ${detectedFloorMesh.position.y.toFixed(2)}, ${detectedFloorMesh.position.z.toFixed(2)}]`);
+                      console.log(`  Camera now: [${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}]`);
+                      console.log(`  Detected floor (scene): [${floor.center_x.toFixed(2)}, ${floor.center_y.toFixed(2)}, ${floor.center_z.toFixed(2)}]`);
                     }
                   } else {
                     floorStatusEl.textContent = 'NONE';
                     floorStatusEl.style.color = '#888';
+
+                    // Debug: why no floor?
+                    if (totalFrames % 60 === 0 && numPlanes > 0) {
+                      console.log(`No floor found, but ${numPlanes} planes detected. Checking types...`);
+                      for (let i = 0; i < numPlanes; i++) {
+                        const p = planeDetector.get_plane(i);
+                        if (p) {
+                          // plane_type: 0=HorizontalUp, 1=HorizontalDown, 2=Vertical, 3=Arbitrary
+                          const typeNames = ['HorizontalUp', 'HorizontalDown', 'Vertical', 'Arbitrary'];
+                          console.log(`  Plane ${i}: type=${p.plane_type} (${typeNames[p.plane_type] || 'unknown'}), ny=${p.normal_y.toFixed(3)}`);
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -1604,6 +1685,7 @@
         planeDetector.reset();
       }
       mapPoints3D = [];
+      floorLockedPosition = null;
       if (detectedFloorMesh) {
         detectedFloorMesh.visible = false;
         detectedFloorMesh.userData.locked = false; // Allow re-detection after reset
