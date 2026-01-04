@@ -255,15 +255,9 @@
       <h3>AR Settings</h3>
 
       <div class="slider-row">
-        <label>QR Size (cm):</label>
-        <input type="range" id="size-slider" min="1" max="30" step="1" value="5">
-        <span class="value" id="size-value">5</span>
-      </div>
-
-      <div class="slider-row">
-        <label>Model Scale:</label>
-        <input type="range" id="scale-slider" min="0.1" max="3" step="0.1" value="1">
-        <span class="value" id="scale-value">1.0</span>
+        <label>Object Scale:</label>
+        <input type="range" id="scale-slider" min="0.1" max="2" step="0.1" value="0.5">
+        <span class="value" id="scale-value">0.5</span>
       </div>
 
       <div class="slider-row">
@@ -340,8 +334,6 @@
     const hud = document.getElementById('hud');
     const settingsPanel = document.getElementById('settings-panel');
     const trackingIndicator = document.getElementById('tracking-indicator');
-    const sizeSlider = document.getElementById('size-slider');
-    const sizeValue = document.getElementById('size-value');
     const scaleSlider = document.getElementById('scale-slider');
     const scaleValue = document.getElementById('scale-value');
     const smoothSlider = document.getElementById('smooth-slider');
@@ -358,14 +350,6 @@
     startBtn.addEventListener('click', async () => {
       startBtn.classList.add('hidden');
       await startDemo();
-    });
-
-    sizeSlider.addEventListener('input', () => {
-      const sizeCm = parseInt(sizeSlider.value);
-      sizeValue.textContent = sizeCm;
-      if (detector) {
-        detector.set_qr_size(sizeCm / 100);
-      }
     });
 
     scaleSlider.addEventListener('input', () => {
@@ -681,9 +665,11 @@
         // Position the AR object using 3D pose
         arObject.position.set(smoothedPosition.x, smoothedPosition.y, smoothedPosition.z);
 
-        // Scale based on user setting (object is already in meters)
+        // Scale object relative to detected QR size in pixels
+        // Larger QR = closer = larger apparent object
         const baseScale = parseFloat(scaleSlider.value);
-        arObject.scale.setScalar(baseScale);
+        const sizeScale = qr.size_pixels / 100; // Normalize: 100px QR = 1x scale
+        arObject.scale.setScalar(baseScale * sizeScale);
 
         // Apply rotation with smoothing
         if (animationEnabled) {
@@ -715,8 +701,8 @@
         const qrSizePixels = qr.size_pixels;
 
         // Estimate depth from QR size (larger = closer)
-        // Assuming QR is 5cm and focal length ~0.8*width
-        const qrSizeMeters = parseFloat(sizeSlider.value) / 100;
+        // Assume default QR size of 5cm (0.05m)
+        const qrSizeMeters = 0.05;
         const estimatedZ = -(focalLength * qrSizeMeters) / qrSizePixels;
 
         // Convert 2D pixel position to 3D using pinhole camera model
@@ -734,9 +720,11 @@
 
         arObject.position.set(smoothedPosition.x, smoothedPosition.y, smoothedPosition.z);
 
-        // Scale based on user setting
+        // Scale object relative to detected QR size in pixels
+        // Larger QR = closer = larger scale
         const baseScale = parseFloat(scaleSlider.value);
-        arObject.scale.setScalar(baseScale);
+        const sizeScale = qrSizePixels / 100; // Normalize: 100px QR = 1x scale
+        arObject.scale.setScalar(baseScale * sizeScale);
 
         // Calculate 2D rotation from QR corners
         const dx = qr.corner_tr_x - qr.corner_tl_x;
