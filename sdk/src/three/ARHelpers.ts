@@ -228,6 +228,9 @@ export class ARSession {
       this.emit('trackingLost');
     } else if (isTracking && this._tracker.confidence === 'low') {
       this.setState('limited');
+    } else if (isTracking && this._lastTrackingState && this._state === 'limited' && this._tracker.confidence !== 'low') {
+      // Recover from 'limited' to 'tracking' when confidence improves
+      this.setState('tracking');
     }
 
     this._lastTrackingState = isTracking;

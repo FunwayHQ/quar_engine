@@ -98,7 +98,11 @@ export class Anchor {
 
   constructor(options: AnchorOptions) {
     this.id = options.id ?? this.generateId();
-    this._pose = { ...options.pose };
+    // Deep copy pose to avoid shared references to nested objects
+    this._pose = {
+      position: { ...options.pose.position },
+      rotation: { ...options.pose.rotation },
+    };
     this.label = options.label;
     this.persistent = options.persistent ?? false;
     this.createdAt = Date.now();
@@ -108,7 +112,10 @@ export class Anchor {
    * Get current anchor pose.
    */
   get pose(): AnchorPose {
-    return { ...this._pose };
+    return {
+      position: { ...this._pose.position },
+      rotation: { ...this._pose.rotation },
+    };
   }
 
   /**
@@ -187,7 +194,10 @@ export class Anchor {
    * Called by AnchorManager when tracking refines the anchor position.
    */
   updatePose(pose: AnchorPose): void {
-    this._pose = { ...pose };
+    this._pose = {
+      position: { ...pose.position },
+      rotation: { ...pose.rotation },
+    };
     this.updateObject3DPose();
     this.emit('poseUpdated', this);
   }
@@ -242,6 +252,14 @@ export class Anchor {
       persistent: true,
     });
     return anchor;
+  }
+
+  /**
+   * Notify listeners that this anchor has been removed.
+   * Called by AnchorManager when removing the anchor.
+   */
+  notifyRemoved(): void {
+    this.emit('removed', this);
   }
 
   // Private methods
@@ -379,6 +397,7 @@ export class AnchorManager {
     const anchor = this.anchors.get(id);
     if (anchor) {
       anchor.updateState('lost');
+      anchor.notifyRemoved();
       this.anchors.delete(id);
       return true;
     }

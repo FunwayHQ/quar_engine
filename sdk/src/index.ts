@@ -51,12 +51,12 @@ export * as CoordinateUtils from './utils';
 // WASM module type definitions
 interface WasmModule {
   default: () => Promise<void>;
-  TrackerHandle: new () => TrackerHandle;
+  Tracker6DoFHandle: new (width: number, height: number) => Tracker6DoFHandle;
   detect_features: (data: Uint8ClampedArray, width: number, height: number, threshold: number) => KeyPoint[];
   version: () => string;
 }
 
-interface TrackerHandle {
+interface Tracker6DoFHandle {
   process_frame(data: Uint8ClampedArray, width: number, height: number): TrackerPose | null;
   reset(): void;
   tracked_points(): number;
@@ -115,7 +115,7 @@ export class QuarEngine {
   private eventHandlers: Map<keyof QuarEvents, Set<(...args: unknown[]) => void>> = new Map();
   private animationFrameId: number | null = null;
   private wasmModule: WasmModule | null = null;
-  private trackerHandle: TrackerHandle | null = null;
+  private trackerHandle: Tracker6DoFHandle | null = null;
   private isRunning = false;
 
   // Camera and frame capture
@@ -427,14 +427,20 @@ export class QuarEngine {
       await module.default();
 
       this.wasmModule = module;
-      this.trackerHandle = new module.TrackerHandle();
+      const { width, height } = this.canvas;
+      this.trackerHandle = new module.Tracker6DoFHandle(width || 640, height || 480);
 
       this.log('info', `WASM loaded (v${module.version()})`);
     } catch (error) {
-      // Fallback: continue without WASM for basic camera functionality
+      // Emit error event so users know WASM failed, then continue in camera-only mode
       this.log('warn', `WASM not available: ${error}. Running in camera-only mode.`);
       this.wasmModule = null;
       this.trackerHandle = null;
+      this.emit('error', new QuarError(
+        `WASM module failed to load: ${error}`,
+        QuarErrorCode.WASM_LOAD_FAILED,
+        true // recoverable - camera-only mode still works
+      ));
     }
   }
 

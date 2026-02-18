@@ -390,7 +390,10 @@ export class HitTester {
     if (info.is_floor()) {
       type = 'floor';
     } else if (info.is_horizontal()) {
-      type = 'ceiling';
+      // HorizontalDown (normal pointing down) - classify based on Y position
+      // Planes above camera-level are likely ceilings, others could be table-height surfaces
+      // Use normal_y to distinguish: negative normal_y = facing down = ceiling
+      type = info.normal_y < 0 ? 'ceiling' : 'floor';
     } else if (info.is_vertical()) {
       type = 'wall';
     } else {

@@ -18,6 +18,10 @@ export interface InitMessage {
   type: 'init';
   wasmPath: string;
   config: WorkerConfig;
+  /** Frame width for tracker initialization */
+  width?: number;
+  /** Frame height for tracker initialization */
+  height?: number;
 }
 
 export interface FrameMessage {

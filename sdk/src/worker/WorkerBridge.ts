@@ -75,6 +75,7 @@ export class WorkerBridge {
   private initReject: ((error: Error) => void) | null = null;
   private frameCount = 0;
   private lastFrameTime = 0;
+  private blobUrl: string | null = null;
 
   constructor(config: WorkerBridgeConfig) {
     this.config = config;
@@ -89,13 +90,28 @@ export class WorkerBridge {
       throw new Error('Web Workers are not available');
     }
 
-    // Create initialization promise
+    // Create initialization promise with timeout
+    let initTimeout: ReturnType<typeof setTimeout>;
     this.initPromise = new Promise((resolve, reject) => {
       this.initResolve = resolve;
       this.initReject = reject;
+
+      // Timeout after 10 seconds if worker never responds
+      initTimeout = setTimeout(() => {
+        reject(new Error('Worker initialization timed out after 10 seconds'));
+        this.initResolve = null;
+        this.initReject = null;
+      }, 10000);
     });
 
+    // Store timeout cleanup for when init succeeds/fails
+    const origResolve = this.initResolve;
+    const origReject = this.initReject;
+    this.initResolve = (...args: any[]) => { clearTimeout(initTimeout); origResolve?.(...args); };
+    this.initReject = (...args: any[]) => { clearTimeout(initTimeout); origReject?.(...args); };
+
     // Create worker
+    let blobUrl: string | null = null;
     try {
       if (this.config.workerUrl) {
         // Use provided worker URL (for bundled builds)
@@ -104,11 +120,13 @@ export class WorkerBridge {
         // Create inline worker from the AetherWorker module
         const workerCode = await this.getWorkerCode();
         const blob = new Blob([workerCode], { type: 'application/javascript' });
-        const workerUrl = URL.createObjectURL(blob);
-        this.worker = new Worker(workerUrl);
-        URL.revokeObjectURL(workerUrl);
+        blobUrl = URL.createObjectURL(blob);
+        this.worker = new Worker(blobUrl);
+        // Store blob URL for deferred revocation (immediate revocation breaks Firefox)
+        this.blobUrl = blobUrl;
       }
     } catch (error) {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
       throw new Error(`Failed to create worker: ${error}`);
     }
 
@@ -136,6 +154,8 @@ export class WorkerBridge {
       type: 'init',
       wasmPath: this.config.wasmPath,
       config: { ...DEFAULT_WORKER_CONFIG, ...this.config.workerConfig },
+      width: this.config.width,
+      height: this.config.height,
     };
 
     if (this.useSharedBuffer && this.sharedBuffer) {
@@ -297,6 +317,12 @@ export class WorkerBridge {
     this.transferableBuffer?.destroy();
     this.transferableBuffer = null;
     this.status = 'terminated';
+
+    // Revoke blob URL if still held
+    if (this.blobUrl) {
+      URL.revokeObjectURL(this.blobUrl);
+      this.blobUrl = null;
+    }
   }
 
   /**
@@ -308,6 +334,11 @@ export class WorkerBridge {
     switch (message.type) {
       case 'ready':
         this.status = 'ready';
+        // Worker is loaded, safe to revoke blob URL now
+        if (this.blobUrl) {
+          URL.revokeObjectURL(this.blobUrl);
+          this.blobUrl = null;
+        }
         this.callbacks.onReady?.(message.version);
         this.callbacks.onStatusChange?.(this.status);
         this.initResolve?.();

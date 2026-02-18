@@ -21,7 +21,7 @@ import { SharedFrameBuffer } from './SharedFrameBuffer';
 
 // Worker-scoped state
 let wasmModule: WasmModule | null = null;
-let trackerHandle: TrackerHandle | null = null;
+let trackerHandle: Tracker6DoFHandle | null = null;
 let config: WorkerConfig = { ...DEFAULT_WORKER_CONFIG };
 let sharedBuffers: SharedArrayBuffer[] = [];
 let isProcessing = false;
@@ -37,11 +37,11 @@ let lastTrackedPoints = 0;
 // WASM types (matching the Rust exports)
 interface WasmModule {
   default: () => Promise<void>;
-  TrackerHandle: new () => TrackerHandle;
+  Tracker6DoFHandle: new (width: number, height: number) => Tracker6DoFHandle;
   version: () => string;
 }
 
-interface TrackerHandle {
+interface Tracker6DoFHandle {
   process_frame(data: Uint8ClampedArray, width: number, height: number): TrackerPose | null;
   reset(): void;
   tracked_points(): number;
@@ -69,14 +69,14 @@ function reportError(code: WorkerErrorCode, message: string): void {
 /**
  * Initialize the WASM module.
  */
-async function initWasm(wasmPath: string): Promise<boolean> {
+async function initWasm(wasmPath: string, width = 640, height = 480): Promise<boolean> {
   try {
     // Dynamic import of the WASM module
     const module = await import(/* webpackIgnore: true */ wasmPath) as WasmModule;
     await module.default();
 
     wasmModule = module;
-    trackerHandle = new module.TrackerHandle();
+    trackerHandle = new module.Tracker6DoFHandle(width, height);
 
     return true;
   } catch (error) {
@@ -91,10 +91,10 @@ async function initWasm(wasmPath: string): Promise<boolean> {
 /**
  * Handle initialization message.
  */
-async function handleInit(wasmPath: string, initConfig: WorkerConfig): Promise<void> {
+async function handleInit(wasmPath: string, initConfig: WorkerConfig, width?: number, height?: number): Promise<void> {
   config = { ...DEFAULT_WORKER_CONFIG, ...initConfig };
 
-  const success = await initWasm(wasmPath);
+  const success = await initWasm(wasmPath, width, height);
 
   if (success && wasmModule) {
     postToMain({
@@ -334,7 +334,7 @@ self.onmessage = async (event: MessageEvent<MainToWorkerMessage & { buffers?: Sh
   switch (message.type) {
     case 'init':
       postToMain({ type: 'status', status: 'initializing' });
-      await handleInit(message.wasmPath, message.config);
+      await handleInit(message.wasmPath, message.config, message.width, message.height);
       break;
 
     case 'frame':

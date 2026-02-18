@@ -93,7 +93,8 @@ export class SharedFrameBuffer {
     const writeIndex = this.currentWriteIndex;
     const controlView = this.controlViews[writeIndex];
 
-    // Check if buffer is available (empty or already processed)
+    // Atomically check and claim the buffer to avoid TOCTOU race.
+    // Try to transition EMPTY → FILLED. If the buffer is PROCESSING, skip.
     const currentControl = Atomics.load(controlView, 0);
     if (currentControl === BUFFER_CONTROL_PROCESSING) {
       // Worker is still processing this buffer, skip this frame
@@ -108,11 +109,16 @@ export class SharedFrameBuffer {
       throw new Error(`Invalid frame size: expected ${this.width * this.height * 4}, got ${data.length}`);
     }
 
-    // Write frame data
+    // Write frame data first, then atomically mark as filled
     this.dataViews[writeIndex].set(data);
 
-    // Mark buffer as filled
-    Atomics.store(controlView, 0, BUFFER_CONTROL_FILLED);
+    // Use compareExchange to atomically transition to FILLED only if still in expected state.
+    // If the worker claimed it between our load and now, the exchange fails and we skip.
+    const prev = Atomics.compareExchange(controlView, 0, currentControl, BUFFER_CONTROL_FILLED);
+    if (prev !== currentControl) {
+      // Buffer state changed between load and exchange - worker claimed it
+      return -1;
+    }
 
     // Notify waiting worker
     Atomics.notify(controlView, 0);
@@ -149,8 +155,20 @@ export class SharedFrameBuffer {
    */
   static waitForFrame(buffer: SharedArrayBuffer, timeout: number): boolean {
     const controlView = new Int32Array(buffer, 0, 1);
-    const result = Atomics.wait(controlView, 0, BUFFER_CONTROL_EMPTY, timeout);
-    return result === 'ok' || Atomics.load(controlView, 0) === BUFFER_CONTROL_FILLED;
+
+    // Atomics.wait is only available in worker threads (throws on main thread).
+    // Fall back to polling if wait is not available.
+    if (typeof Atomics.wait !== 'function') {
+      return Atomics.load(controlView, 0) === BUFFER_CONTROL_FILLED;
+    }
+
+    try {
+      const result = Atomics.wait(controlView, 0, BUFFER_CONTROL_EMPTY, timeout);
+      return result === 'ok' || Atomics.load(controlView, 0) === BUFFER_CONTROL_FILLED;
+    } catch {
+      // Atomics.wait throws TypeError on main thread in some browsers
+      return Atomics.load(controlView, 0) === BUFFER_CONTROL_FILLED;
+    }
   }
 
   /**
