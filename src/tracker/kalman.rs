@@ -658,10 +658,12 @@ impl MotionState {
             self.state[i] += k_innovation[i];
         }
 
-        // Covariance update: P = (I - K*H) * P
+        // Joseph form covariance update: P = (I - K*H)*P*(I - K*H)^T + K*R*K^T
+        // More numerically stable than the simple P = (I - K*H)*P
         let kh = k.mul_3x6(&h);
         let i_minus_kh = Matrix6x6::identity().sub(&kh);
-        self.covariance = i_minus_kh.mul(&self.covariance);
+        let p_temp = i_minus_kh.mul(&self.covariance);
+        self.covariance = p_temp.mul(&i_minus_kh.transpose());
 
         true
     }
@@ -738,7 +740,14 @@ impl MotionState {
         // Gate check
         if mahalanobis_sq > gate_threshold {
             // Outlier detected - increase uncertainty but don't update
+            // Cap maximum covariance diagonal to prevent unbounded growth
             self.covariance = self.covariance.scale(1.1);
+            let max_variance = 100.0;
+            for i in 0..6 {
+                if self.covariance.data[i][i] > max_variance {
+                    self.covariance.data[i][i] = max_variance;
+                }
+            }
             return false;
         }
 

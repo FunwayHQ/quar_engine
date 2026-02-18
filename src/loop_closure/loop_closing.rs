@@ -6,9 +6,9 @@
 use super::bow::FeatureVector;
 use super::place_recognition::{KeyFrameId, PlaceMatch, PlaceRecognitionDB};
 use super::vocabulary::Vocabulary;
-use crate::features::OrbDescriptor;
+use crate::features::{match_cross_check, OrbDescriptor, DEFAULT_MAX_DISTANCE};
 use crate::tracker::linalg::{Mat3, Vec3};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Configuration for loop closure.
 #[derive(Debug, Clone)]
@@ -75,6 +75,8 @@ pub struct LoopCloser {
     config: LoopConfig,
     /// Recently added keyframe IDs (to skip in queries)
     recent_keyframes: Vec<KeyFrameId>,
+    /// Stored descriptors per keyframe for feature matching
+    keyframe_descriptors: HashMap<KeyFrameId, Vec<OrbDescriptor>>,
 }
 
 impl LoopCloser {
@@ -84,6 +86,7 @@ impl LoopCloser {
             db: PlaceRecognitionDB::with_defaults(),
             config,
             recent_keyframes: Vec::new(),
+            keyframe_descriptors: HashMap::new(),
         }
     }
 
@@ -98,12 +101,16 @@ impl LoopCloser {
             db: PlaceRecognitionDB::new(vocab),
             config,
             recent_keyframes: Vec::new(),
+            keyframe_descriptors: HashMap::new(),
         }
     }
 
     /// Add a keyframe to the database.
     pub fn add_keyframe(&mut self, kf_id: KeyFrameId, descriptors: &[OrbDescriptor]) {
         self.db.add(kf_id, descriptors);
+
+        // Store descriptors for later feature matching
+        self.keyframe_descriptors.insert(kf_id, descriptors.to_vec());
 
         // Track recent keyframes
         self.recent_keyframes.push(kf_id);
@@ -134,19 +141,27 @@ impl LoopCloser {
         // Build feature vector for query
         let query_fv = FeatureVector::from_descriptors(query_descriptors, self.db.vocabulary());
 
-        // Convert to candidates with feature matches
+        // Convert to candidates with feature matches from stored descriptors
         matches
             .into_iter()
             .filter_map(|m| {
-                // Get match keyframe's feature vector
-                // (In a full implementation, we'd store these with keyframes)
-                // For now, we return empty matches - geometric verification would need
-                // access to the actual keyframe features
+                // Match query descriptors against stored keyframe descriptors
+                let feature_matches = if let Some(match_descs) = self.keyframe_descriptors.get(&m.keyframe_id) {
+                    let raw_matches = match_cross_check(
+                        query_descriptors,
+                        match_descs,
+                        DEFAULT_MAX_DISTANCE,
+                    );
+                    raw_matches.iter().map(|dm| (dm.query_idx, dm.train_idx)).collect()
+                } else {
+                    vec![]
+                };
+
                 Some(LoopCandidate {
                     query_kf: 0, // Will be set by caller
                     match_kf: m.keyframe_id,
                     bow_score: m.score,
-                    feature_matches: vec![], // Would be filled from stored features
+                    feature_matches,
                 })
             })
             .collect()
@@ -278,7 +293,7 @@ impl PoseGraph {
 
     /// Optimize the pose graph.
     ///
-    /// Uses Gauss-Newton to minimize the sum of squared constraint errors.
+    /// Uses iterative relaxation to minimize the sum of squared constraint errors.
     /// Returns the optimized poses.
     pub fn optimize(&mut self, max_iterations: usize) -> Vec<PoseGraphNode> {
         // Simplified pose graph optimization
@@ -286,23 +301,31 @@ impl PoseGraph {
 
         for _ in 0..max_iterations {
             // For each edge, compute error and update poses
-            for edge in &self.edges {
-                let from_idx = self.nodes.iter().position(|n| n.kf_id == edge.from_kf);
-                let to_idx = self.nodes.iter().position(|n| n.kf_id == edge.to_kf);
+            for edge_idx in 0..self.edges.len() {
+                let from_kf = self.edges[edge_idx].from_kf;
+                let to_kf = self.edges[edge_idx].to_kf;
 
-                if let (Some(_from_idx), Some(to_idx)) = (from_idx, to_idx) {
-                    // Apply a small correction based on the constraint
-                    // This is a very simplified update
-                    let correction_factor = 0.1 * edge.weight / (1.0 + edge.weight);
+                let from_idx = self.nodes.iter().position(|n| n.kf_id == from_kf);
+                let to_idx = self.nodes.iter().position(|n| n.kf_id == to_kf);
 
-                    // Update translation towards constraint
-                    let target_t = &edge.relative_translation;
+                if let (Some(from_idx), Some(to_idx)) = (from_idx, to_idx) {
+                    let correction_factor = 0.1 * self.edges[edge_idx].weight / (1.0 + self.edges[edge_idx].weight);
+
+                    // Compute expected position of 'to' node from 'from' node + relative translation
+                    let from_t = &self.nodes[from_idx].translation;
+                    let rel_t = &self.edges[edge_idx].relative_translation;
+                    let expected_t = Vec3::new(
+                        from_t.x + rel_t.x,
+                        from_t.y + rel_t.y,
+                        from_t.z + rel_t.z,
+                    );
+
+                    // Error = expected - actual
                     let current_t = &self.nodes[to_idx].translation;
-
                     self.nodes[to_idx].translation = Vec3::new(
-                        current_t.x + correction_factor * (target_t.x - current_t.x),
-                        current_t.y + correction_factor * (target_t.y - current_t.y),
-                        current_t.z + correction_factor * (target_t.z - current_t.z),
+                        current_t.x + correction_factor * (expected_t.x - current_t.x),
+                        current_t.y + correction_factor * (expected_t.y - current_t.y),
+                        current_t.z + correction_factor * (expected_t.z - current_t.z),
                     );
                 }
             }

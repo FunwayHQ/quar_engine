@@ -65,7 +65,7 @@ impl FeatureQuality {
 }
 
 /// Simple affine motion model fitted by RANSAC.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct AffineModel {
     /// Rotation angle in radians
     pub rotation: f32,
@@ -75,6 +75,17 @@ pub struct AffineModel {
     pub tx: f32,
     /// Translation Y
     pub ty: f32,
+}
+
+impl Default for AffineModel {
+    fn default() -> Self {
+        Self {
+            rotation: 0.0,
+            scale: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        }
+    }
 }
 
 impl AffineModel {
@@ -194,10 +205,13 @@ pub fn ransac_flow_filter(
     let mut best_model = AffineModel::default();
 
     // Simple RANSAC: sample 2 points, fit model, count inliers
-    for iter in 0..iterations {
-        // Deterministic sampling based on iteration
-        let idx1 = (iter * 7) % n;
-        let idx2 = (iter * 13 + 5) % n;
+    let mut seed: u64 = 12345;
+    for _iter in 0..iterations {
+        // Deterministic sampling via LCG
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        let idx1 = ((seed >> 16) as usize) % n;
+        seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+        let idx2 = ((seed >> 16) as usize) % n;
         if idx1 == idx2 {
             continue;
         }

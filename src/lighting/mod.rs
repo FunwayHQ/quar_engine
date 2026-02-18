@@ -175,14 +175,21 @@ impl LightingEstimator {
             ],
             directional_intensity: self.last_estimate.directional_intensity * s
                 + new.directional_intensity * ns,
-            directional_direction: [
-                self.last_estimate.directional_direction[0] * s
-                    + new.directional_direction[0] * ns,
-                self.last_estimate.directional_direction[1] * s
-                    + new.directional_direction[1] * ns,
-                self.last_estimate.directional_direction[2] * s
-                    + new.directional_direction[2] * ns,
-            ],
+            directional_direction: {
+                let dx = self.last_estimate.directional_direction[0] * s
+                    + new.directional_direction[0] * ns;
+                let dy = self.last_estimate.directional_direction[1] * s
+                    + new.directional_direction[1] * ns;
+                let dz = self.last_estimate.directional_direction[2] * s
+                    + new.directional_direction[2] * ns;
+                // Re-normalize after interpolation to maintain unit length
+                let len = (dx * dx + dy * dy + dz * dz).sqrt();
+                if len > 1e-6 {
+                    [dx / len, dy / len, dz / len]
+                } else {
+                    [0.0, -1.0, 0.0] // Default downward
+                }
+            },
             color_temperature: self.last_estimate.color_temperature * s
                 + new.color_temperature * ns,
             confidence: self.last_estimate.confidence * s + new.confidence * ns,

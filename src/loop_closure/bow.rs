@@ -42,7 +42,7 @@ impl BowVector {
         // Compute TF-IDF weights
         let total_words = descriptors.len() as f64;
         let mut words: HashMap<usize, f64> = HashMap::new();
-        let mut norm_sq = 0.0;
+        let mut norm_l1 = 0.0;
 
         for (word_id, count) in word_counts {
             let tf = count as f64 / total_words;
@@ -51,11 +51,11 @@ impl BowVector {
 
             if weight > 0.0 {
                 words.insert(word_id, weight);
-                norm_sq += weight * weight;
+                norm_l1 += weight; // L1 norm for L1-distance scoring
             }
         }
 
-        let norm = norm_sq.sqrt().max(1e-10);
+        let norm = norm_l1.max(1e-10);
 
         Self { words, norm }
     }

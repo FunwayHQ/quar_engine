@@ -819,7 +819,7 @@ impl Tracker6DoF {
         self.last_translation = None;
         self.scale = match self.config.scale_method {
             ScaleMethod::Fixed(s) => s,
-            _ => 0.01,
+            _ => 0.1,
         };
         self.motion_state.reset();
         self.last_frame_time = 0.0;

@@ -181,6 +181,12 @@ impl QrFinderDetector {
         threshold: u8,
         candidates: &mut Vec<(f64, f64, f32)>,
     ) {
+        // Validate buffer length to prevent out-of-bounds access from malformed input
+        let expected_len = (height as usize) * (width as usize);
+        if grayscale.len() < expected_len || y >= height {
+            return;
+        }
+
         // State machine: count consecutive dark/light pixels
         // Pattern: black, white, black (3x), white, black = 1:1:3:1:1
         let mut counts = [0u32; 5];
@@ -298,7 +304,13 @@ impl QrFinderDetector {
         threshold: u8,
         expected_module: f32,
     ) -> bool {
-        if x >= width {
+        if x >= width || y >= height {
+            return false;
+        }
+
+        // Validate buffer length
+        let expected_len = (height as usize) * (width as usize);
+        if grayscale.len() < expected_len {
             return false;
         }
 

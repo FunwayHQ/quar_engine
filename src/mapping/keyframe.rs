@@ -182,10 +182,11 @@ impl KeyFrame {
         let ty = t[1] as f64;
         let tz = t[2] as f64;
 
+        // C = -R^T * t: each row of R^T dotted with t
         [
-            -(r00 * tx + r10 * ty + r20 * tz),
-            -(r01 * tx + r11 * ty + r21 * tz),
-            -(r02 * tx + r12 * ty + r22 * tz),
+            -(r00 * tx + r01 * ty + r02 * tz),
+            -(r10 * tx + r11 * ty + r12 * tz),
+            -(r20 * tx + r21 * ty + r22 * tz),
         ]
     }
 

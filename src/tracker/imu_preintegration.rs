@@ -335,11 +335,7 @@ impl PreintegratedImu {
             delta_t: 0.0,
             j_rotation_gyro: [[0.0; 3]; 3],
             j_velocity_gyro: [[0.0; 3]; 3],
-            j_velocity_accel: [
-                [-1.0, 0.0, 0.0],
-                [0.0, -1.0, 0.0],
-                [0.0, 0.0, -1.0],
-            ],
+            j_velocity_accel: [[0.0; 3]; 3],
             j_position_gyro: [[0.0; 3]; 3],
             j_position_accel: [[0.0; 3]; 3],
             covariance: [[0.0; 9]; 9],
@@ -404,10 +400,14 @@ impl PreintegratedImu {
         self.delta_velocity[1] += accel_rotated[1] * dt;
         self.delta_velocity[2] += accel_rotated[2] * dt;
 
+        // Save pre-update rotation for Jacobian computation (Forster et al.)
+        let delta_rotation_prev = self.delta_rotation.clone();
+
         // ΔR = ΔR * dR
         self.delta_rotation = self.delta_rotation.mul(&d_rotation);
 
         // Update Jacobians (simplified first-order approximation)
+        // Use delta_rotation_prev (pre-update) per Forster et al.
         // J_R^g += -Jr * dt
         for i in 0..3 {
             for j in 0..3 {
@@ -415,23 +415,23 @@ impl PreintegratedImu {
             }
         }
 
-        // J_v^g += -ΔR * skew(a) * J_R^g * dt
+        // J_v^g += -ΔR_prev * skew(a) * J_R^g * dt
         let accel_skew = skew(accel_corrected);
         for i in 0..3 {
             for j in 0..3 {
                 for k in 0..3 {
                     for l in 0..3 {
                         self.j_velocity_gyro[i][j] -=
-                            self.delta_rotation.data[i][k] * accel_skew[k][l] * self.j_rotation_gyro[l][j] * dt;
+                            delta_rotation_prev.data[i][k] * accel_skew[k][l] * self.j_rotation_gyro[l][j] * dt;
                     }
                 }
             }
         }
 
-        // J_v^a += -ΔR * dt
+        // J_v^a += -ΔR_prev * dt
         for i in 0..3 {
             for j in 0..3 {
-                self.j_velocity_accel[i][j] -= self.delta_rotation.data[i][j] * dt;
+                self.j_velocity_accel[i][j] -= delta_rotation_prev.data[i][j] * dt;
             }
         }
 

@@ -137,11 +137,17 @@ pub fn rgb_to_cct(r: f32, g: f32, b: f32) -> f32 {
 
     // McCamy's formula: n = (x - 0.3320) / (0.1858 - y)
     // CCT = 449n³ + 3525n² + 6823.3n + 5520.33
-    let n = (xc - 0.3320) / (0.1858 - yc);
+    let denom = 0.1858 - yc;
+    if denom.abs() < 1e-6 {
+        return 6500.0; // Default for near-singularity
+    }
+    let n = (xc - 0.3320) / denom;
     let n2 = n * n;
     let n3 = n2 * n;
 
-    449.0 * n3 + 3525.0 * n2 + 6823.3 * n + 5520.33
+    let cct = 449.0 * n3 + 3525.0 * n2 + 6823.3 * n + 5520.33;
+    // Clamp to physically meaningful range
+    cct.clamp(1000.0, 40000.0)
 }
 
 /// Convert sRGB gamma-corrected value to linear.

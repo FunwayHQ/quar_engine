@@ -96,8 +96,22 @@ pub fn compute_essential_matrix(points1: &[Vec2], points2: &[Vec2]) -> Option<Ma
 /// Decompose Essential matrix into 4 possible (R, t) solutions.
 pub fn decompose_essential(e: &Mat3) -> [EssentialSolution; 4] {
     let svd_result = linalg::svd_3x3(&e.to_matrix3x3());
-    let u = Mat3::from_matrix3x3(&svd_result.u);
-    let v_t = Mat3::from_matrix3x3(&svd_result.v_t);
+    let mut u = Mat3::from_matrix3x3(&svd_result.u);
+    let mut v_t = Mat3::from_matrix3x3(&svd_result.v_t);
+
+    // Ensure U and V are proper rotations (det = +1).
+    // If det < 0, negate last column of U / last row of V^T.
+    // This avoids producing rotoreflections (det(R) = -1) from R = U*W*V^T.
+    if u.determinant() < 0.0 {
+        for i in 0..3 {
+            u.data[i][2] = -u.data[i][2];
+        }
+    }
+    if v_t.determinant() < 0.0 {
+        for j in 0..3 {
+            v_t.data[2][j] = -v_t.data[2][j];
+        }
+    }
 
     // W matrix (90 degree rotation)
     let w = Mat3::new(
@@ -109,18 +123,10 @@ pub fn decompose_essential(e: &Mat3) -> [EssentialSolution; 4] {
 
     // Two possible rotations: R1 = U * W * V^T, R2 = U * W^T * V^T
     let uw = u.mul(&w);
-    let mut r1 = uw.mul(&v_t);
+    let r1 = uw.mul(&v_t);
 
     let uwt = u.mul(&w_t);
-    let mut r2 = uwt.mul(&v_t);
-
-    // Ensure proper rotation (det = +1)
-    if r1.determinant() < 0.0 {
-        r1 = r1.neg();
-    }
-    if r2.determinant() < 0.0 {
-        r2 = r2.neg();
-    }
+    let r2 = uwt.mul(&v_t);
 
     // Translation is ±u3 (third column of U)
     let t = Vec3::new(u.data[0][2], u.data[1][2], u.data[2][2]).normalize();

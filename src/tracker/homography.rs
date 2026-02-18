@@ -110,7 +110,10 @@ pub fn compute_homography_ransac(
 
     for _ in 0..max_iterations {
         // Select 4 random points
-        let indices = random_sample_4(&mut seed, n);
+        let indices = match random_sample_4(&mut seed, n) {
+            Some(idx) => idx,
+            None => continue,
+        };
 
         let sample_src: Vec<Vec2> = indices.iter().map(|&i| src_points[i]).collect();
         let sample_dst: Vec<Vec2> = indices.iter().map(|&i| dst_points[i]).collect();
@@ -455,14 +458,22 @@ fn invert_3x3(m: &Mat3) -> Option<Mat3> {
 }
 
 /// Deterministic random sample of 4 distinct indices.
-fn random_sample_4(seed: &mut u64, n: usize) -> [usize; 4] {
+/// Returns None if n < 4 (not enough points to sample).
+fn random_sample_4(seed: &mut u64, n: usize) -> Option<[usize; 4]> {
+    if n < 4 {
+        return None;
+    }
+
     let mut indices = [0usize; 4];
     let mut count = 0;
+    let mut attempts = 0;
+    let max_attempts = 100; // Prevent infinite loop for pathological cases
 
-    while count < 4 {
+    while count < 4 && attempts < max_attempts {
         // LCG random number generator
         *seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
         let idx = ((*seed >> 16) as usize) % n;
+        attempts += 1;
 
         // Check for duplicates
         let mut duplicate = false;
@@ -479,7 +490,11 @@ fn random_sample_4(seed: &mut u64, n: usize) -> [usize; 4] {
         }
     }
 
-    indices
+    if count == 4 {
+        Some(indices)
+    } else {
+        None
+    }
 }
 
 /// Helper to construct rotation matrix from cos/sin theta around axis.
