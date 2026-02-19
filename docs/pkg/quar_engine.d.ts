@@ -769,6 +769,10 @@ export class Tracker6DoFHandle {
    */
   reset_stabilizer(): void;
   /**
+   * Get the last computed max parallax (for debugging translation issues).
+   */
+  get_last_parallax(): number;
+  /**
    * Process a frame with VIO fusion.
    * Returns the pose as JSON.
    */
@@ -830,6 +834,15 @@ export class Tracker6DoFHandle {
    * Get stationary duration from stabilizer (seconds).
    */
   stabilizer_stationary_duration(): number;
+  /**
+   * Check if keyframe-based translation is enabled.
+   */
+  is_keyframe_translation_enabled(): boolean;
+  /**
+   * Enable or disable keyframe-based translation.
+   * When enabled, translation uses larger temporal baseline for more reliable estimation.
+   */
+  set_keyframe_translation_enabled(enabled: boolean): void;
   /**
    * Create a new 6DoF tracker.
    */
@@ -1211,6 +1224,7 @@ export interface InitOutput {
   readonly tracker6dofhandle_get_accel_velocity: (a: number) => [number, number];
   readonly tracker6dofhandle_get_gravity: (a: number) => [number, number];
   readonly tracker6dofhandle_get_gravity_rotation: (a: number) => [number, number];
+  readonly tracker6dofhandle_get_last_parallax: (a: number) => number;
   readonly tracker6dofhandle_get_map_points: (a: number) => [number, number];
   readonly tracker6dofhandle_get_map_points_world: (a: number) => [number, number];
   readonly tracker6dofhandle_get_pose: (a: number) => any;
@@ -1218,6 +1232,7 @@ export interface InitOutput {
   readonly tracker6dofhandle_get_scale_confidence: (a: number) => number;
   readonly tracker6dofhandle_get_vio_scale: (a: number) => number;
   readonly tracker6dofhandle_imu_buffer_len: (a: number) => number;
+  readonly tracker6dofhandle_is_keyframe_translation_enabled: (a: number) => number;
   readonly tracker6dofhandle_is_stabilization_enabled: (a: number) => number;
   readonly tracker6dofhandle_is_stabilized_stationary: (a: number) => number;
   readonly tracker6dofhandle_is_stationary: (a: number) => number;
@@ -1231,6 +1246,7 @@ export interface InitOutput {
   readonly tracker6dofhandle_reset: (a: number) => void;
   readonly tracker6dofhandle_reset_accel_position: (a: number) => void;
   readonly tracker6dofhandle_reset_stabilizer: (a: number) => void;
+  readonly tracker6dofhandle_set_keyframe_translation_enabled: (a: number, b: number) => void;
   readonly tracker6dofhandle_set_scale: (a: number, b: number) => void;
   readonly tracker6dofhandle_set_stabilization_enabled: (a: number, b: number) => void;
   readonly tracker6dofhandle_set_vio_enabled: (a: number, b: number) => void;
