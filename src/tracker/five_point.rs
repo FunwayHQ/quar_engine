@@ -36,10 +36,10 @@ pub fn compute_essential_5pt(points1: &[Vec2], points2: &[Vec2]) -> Option<FiveP
     // Each row: [x2*x1, x2*y1, x2, y2*x1, y2*y1, y2, x1, y1, 1]
     let mut a = [[0.0f64; 9]; 5];
     for i in 0..n {
-        let x1 = points1[i].x as f64;
-        let y1 = points1[i].y as f64;
-        let x2 = points2[i].x as f64;
-        let y2 = points2[i].y as f64;
+        let x1 = points1[i].x;
+        let y1 = points1[i].y;
+        let x2 = points2[i].x;
+        let y2 = points2[i].y;
 
         a[i] = [
             x2 * x1, x2 * y1, x2,
@@ -90,13 +90,14 @@ pub fn compute_essential_5pt(points1: &[Vec2], points2: &[Vec2]) -> Option<FiveP
 }
 
 /// Compute 4-dimensional nullspace of 5x9 matrix using SVD
+#[allow(clippy::needless_range_loop)]
 fn compute_nullspace_5x9(a: &[[f64; 9]; 5]) -> Option<[[f64; 9]; 4]> {
     // Compute A^T * A (9x9 matrix)
     let mut ata = [[0.0f64; 9]; 9];
     for i in 0..9 {
         for j in 0..9 {
-            for k in 0..5 {
-                ata[i][j] += a[k][i] * a[k][j];
+            for a_row in a.iter() {
+                ata[i][j] += a_row[i] * a_row[j];
             }
         }
     }
@@ -139,8 +140,8 @@ fn find_smallest_eigenvectors_9x9(m: &[[f64; 9]; 9], k: usize) -> Option<Vec<[f6
 fn inverse_power_iteration_9x9(m: &[[f64; 9]; 9], max_iter: usize) -> Option<([f64; 9], f64)> {
     // Add small regularization for invertibility
     let mut m_reg = *m;
-    for i in 0..9 {
-        m_reg[i][i] += 1e-10;
+    for (i, row) in m_reg.iter_mut().enumerate() {
+        row[i] += 1e-10;
     }
 
     // Initial vector
@@ -176,6 +177,7 @@ fn inverse_power_iteration_9x9(m: &[[f64; 9]; 9], max_iter: usize) -> Option<([f
 }
 
 /// Solve 9x9 linear system using Gaussian elimination
+#[allow(clippy::needless_range_loop)]
 fn solve_9x9(a: &[[f64; 9]; 9], b: &[f64; 9]) -> Option<[f64; 9]> {
     let mut aug = [[0.0f64; 10]; 9];
     for i in 0..9 {
@@ -238,6 +240,7 @@ fn reshape_to_mat3(v: &[f64; 9]) -> [[f64; 3]; 3] {
 }
 
 /// Combine 4 basis matrices with coefficients: E = x*E1 + y*E2 + z*E3 + w*E4
+#[allow(clippy::too_many_arguments)]
 fn combine_essential(
     e1: &[[f64; 3]; 3],
     e2: &[[f64; 3]; 3],
@@ -368,6 +371,7 @@ fn refine_solution(
 }
 
 /// Compute residual of Essential matrix constraints
+#[allow(clippy::needless_range_loop)]
 fn constraint_residual(e: &[[f64; 3]; 3]) -> f64 {
     // Compute E * E^T
     let mut eet = [[0.0f64; 3]; 3];
@@ -412,6 +416,7 @@ fn constraint_residual(e: &[[f64; 3]; 3]) -> f64 {
 }
 
 /// Enforce rank-2 constraint on Essential matrix via SVD
+#[allow(clippy::needless_range_loop)]
 fn enforce_rank2(e: &[[f64; 3]; 3]) -> Option<Mat3> {
     // Convert to our Mat3 type for SVD
     let mat = super::linalg::Matrix3x3 { data: *e };
@@ -509,8 +514,8 @@ pub fn compute_essential_5pt_ransac(
 /// Compute Sampson distance (first-order geometric error)
 fn sampson_distance(e: &Mat3, p1: &Vec2, p2: &Vec2) -> f64 {
     // x2^T * E * x1
-    let x1 = [p1.x as f64, p1.y as f64, 1.0];
-    let x2 = [p2.x as f64, p2.y as f64, 1.0];
+    let x1 = [p1.x, p1.y, 1.0];
+    let x2 = [p2.x, p2.y, 1.0];
 
     // E * x1
     let ex1 = [

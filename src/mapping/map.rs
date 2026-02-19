@@ -7,9 +7,6 @@
 //! - Methods for adding, removing, and querying map elements
 
 use std::collections::HashMap;
-use crate::features::OrbDescriptor;
-use crate::camera::CameraIntrinsics;
-use crate::tracker::Pose3D;
 use super::keyframe::KeyFrame;
 use super::map_point::{KeyFrameId, MapPoint, MapPointId};
 
@@ -103,7 +100,7 @@ impl Map {
             }
 
             // Update covisibility in other keyframes
-            for (&other_id, _) in &kf.covisible {
+            for &other_id in kf.covisible.keys() {
                 if let Some(other_kf) = self.keyframes.get_mut(&other_id) {
                     other_kf.covisible.remove(&id);
                 }
@@ -154,10 +151,9 @@ impl Map {
         feat2_idx: usize,
     ) -> Option<MapPointId> {
         // Get descriptor from first keyframe
-        let descriptor = self.keyframes
+        let descriptor = *self.keyframes
             .get(&kf1_id)?
-            .get_descriptor(feat1_idx)?
-            .clone();
+            .get_descriptor(feat1_idx)?;
 
         // Create map point
         let mut mp = MapPoint::new(self.next_mp_id, position, kf1_id, feat1_idx, descriptor);
@@ -319,7 +315,8 @@ pub struct MapStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::{Feature, KeyPoint};
+    use crate::features::{Feature, KeyPoint, OrbDescriptor};
+    use crate::tracker::Pose3D;
 
     fn make_feature(x: u32, y: u32) -> Feature {
         Feature {

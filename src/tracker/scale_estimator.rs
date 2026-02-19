@@ -15,7 +15,7 @@
 //! 2. Refined scale from velocity matching
 //! 3. Robust estimation with outlier rejection
 
-use super::imu_preintegration::{PreintegratedImu, ImuBias, GRAVITY_MAGNITUDE};
+use super::imu_preintegration::{PreintegratedImu, GRAVITY_MAGNITUDE};
 
 /// Scale estimation result
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +59,7 @@ struct VelocitySample {
     /// IMU-derived velocity magnitude (metric)
     imu_speed: f64,
     /// Timestamp
+    #[allow(dead_code)]
     timestamp: f64,
     /// Sample weight based on motion quality
     weight: f64,

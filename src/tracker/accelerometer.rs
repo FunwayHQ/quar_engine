@@ -500,7 +500,7 @@ impl TranslationFusion {
         visual_delta: [f64; 3],
         visual_confidence: f64,
         accel_velocity: [f64; 3],
-        accel_position: [f64; 3],
+        _accel_position: [f64; 3],
         dt: f64,
     ) -> FusedTranslation {
         // Scale visual delta to metric

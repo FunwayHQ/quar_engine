@@ -5,6 +5,8 @@
 //!
 //! Uses pure-Rust linear algebra types (Vec2, Vec3, Mat3) for full WASM compatibility.
 
+use std::collections::VecDeque;
+
 use crate::camera::CameraIntrinsics;
 use crate::features::{non_maximum_suppression, rgba_to_grayscale, FastDetector, KeyPoint, OrbDescriptor, compute_descriptors_filtered};
 
@@ -23,8 +25,8 @@ use super::types::{Point2, Pose3D, TrackerConfig};
 use super::{GrayImage, LucasKanadeTracker};
 
 // Bundle Adjustment and Loop Closure integration
-use crate::optimization::{LocalBA, BAConfig, BAObservation};
-use crate::loop_closure::{LoopCloser, LoopConfig, LoopClosure};
+use crate::optimization::{LocalBA, BAObservation};
+use crate::loop_closure::LoopCloser;
 
 /// Configuration specific to 6DoF tracking.
 #[derive(Debug, Clone)]
@@ -85,6 +87,7 @@ pub struct TrackerKeyFrame {
     /// ORB descriptors for loop closure
     pub descriptors: Vec<OrbDescriptor>,
     /// Frame timestamp
+    #[allow(dead_code)]
     pub timestamp: f64,
 }
 
@@ -176,7 +179,7 @@ pub struct Tracker6DoF {
     /// Position stabilizer for drift correction
     stabilizer: PositionStabilizer,
     /// Triangulated 3D map points (in world/first-camera frame)
-    map_points_3d: Vec<Vec3>,
+    map_points_3d: VecDeque<Vec3>,
     /// Maximum number of map points to store
     max_map_points: usize,
 
@@ -263,7 +266,7 @@ impl Tracker6DoF {
             vio_initialized: false,
             accel_integrator: AccelIntegrator::new(),
             stabilizer: PositionStabilizer::new(),
-            map_points_3d: Vec::new(),
+            map_points_3d: VecDeque::new(),
             max_map_points: 500, // Keep up to 500 map points
 
             // Bundle Adjustment
@@ -362,7 +365,7 @@ impl Tracker6DoF {
         }
 
         // Periodically refresh features
-        if self.frame_count % self.config.base.redetect_interval == 0 {
+        if self.frame_count.is_multiple_of(self.config.base.redetect_interval) {
             self.refresh_features(&curr_gray);
         }
 
@@ -524,9 +527,9 @@ impl Tracker6DoF {
                         // Add to map points, maintaining max size
                         if self.map_points_3d.len() >= self.max_map_points {
                             // Remove oldest point (FIFO)
-                            self.map_points_3d.remove(0);
+                            self.map_points_3d.pop_front();
                         }
-                        self.map_points_3d.push(scaled_point);
+                        self.map_points_3d.push_back(scaled_point);
                     }
                 }
             }
@@ -732,9 +735,9 @@ impl Tracker6DoF {
                                         let depth = scaled_point.z;
                                         if depth > 0.1 && depth < 20.0 {
                                             if self.map_points_3d.len() >= self.max_map_points {
-                                                self.map_points_3d.remove(0);
+                                                self.map_points_3d.pop_front();
                                             }
-                                            self.map_points_3d.push(scaled_point);
+                                            self.map_points_3d.push_back(scaled_point);
                                         }
                                     }
                                 }
@@ -978,6 +981,7 @@ impl Tracker6DoF {
     }
 
     /// Push IMU from separate components (convenience for JS interop).
+    #[allow(clippy::too_many_arguments)]
     pub fn push_imu_components(
         &mut self,
         ax: f64, ay: f64, az: f64,
@@ -1348,16 +1352,17 @@ impl Tracker6DoF {
         }
 
         // Run BA
+        let map_points_slice = self.map_points_3d.make_contiguous();
         let result = self.local_ba.optimize(
             &rotations,
             &translations,
-            &self.map_points_3d,
+            map_points_slice,
             &observations,
         );
 
         // Update map points with optimized positions
         if result.converged && result.points.len() == self.map_points_3d.len() {
-            self.map_points_3d = result.points;
+            self.map_points_3d = VecDeque::from(result.points);
 
             // Update keyframe poses
             for (i, kf) in self.keyframes.iter_mut().enumerate() {
@@ -1562,15 +1567,11 @@ impl Tracker6DoF {
         // Find the matched keyframe
         let match_kf = self.keyframes.iter().find(|kf| kf.id == best.match_kf)?;
 
-        // Create a simple pose correction based on the relative pose
-        // In a full implementation, we would do geometric verification here
+        // Store the matched keyframe's pose as the correction target.
+        // apply_loop_closure() will blend the current pose toward this target.
         let correction = Pose3D {
             rotation: match_kf.pose.rotation,
-            translation: [
-                match_kf.pose.translation[0] - self.current_pose.translation[0],
-                match_kf.pose.translation[1] - self.current_pose.translation[1],
-                match_kf.pose.translation[2] - self.current_pose.translation[2],
-            ],
+            translation: match_kf.pose.translation,
         };
 
         let result = LoopClosureResult {
@@ -1588,19 +1589,32 @@ impl Tracker6DoF {
 
     /// Apply loop closure correction to the current pose.
     pub fn apply_loop_closure(&mut self, closure: &LoopClosureResult) {
-        // Find the matched keyframe's pose
-        if let Some(match_kf) = self.keyframes.iter().find(|kf| kf.id == closure.match_kf_id) {
-            // Blend current pose with match keyframe pose based on confidence
-            let alpha = (closure.confidence * 0.5).clamp(0.0, 0.5) as f32;
+        // Blend current pose toward the correction target based on confidence
+        let alpha = (closure.confidence * 0.5).clamp(0.0, 0.5) as f32;
+        let target = &closure.pose_correction;
 
-            for i in 0..3 {
-                self.current_pose.translation[i] =
-                    (1.0 - alpha) * self.current_pose.translation[i] +
-                    alpha * match_kf.pose.translation[i];
+        for i in 0..3 {
+            self.current_pose.translation[i] =
+                (1.0 - alpha) * self.current_pose.translation[i] +
+                alpha * target.translation[i];
+        }
+
+        // Blend rotation quaternions (simple linear interpolation + normalize)
+        for i in 0..4 {
+            self.current_pose.rotation[i] =
+                (1.0 - alpha) * self.current_pose.rotation[i] +
+                alpha * target.rotation[i];
+        }
+        // Normalize quaternion
+        let len = (self.current_pose.rotation[0] * self.current_pose.rotation[0]
+            + self.current_pose.rotation[1] * self.current_pose.rotation[1]
+            + self.current_pose.rotation[2] * self.current_pose.rotation[2]
+            + self.current_pose.rotation[3] * self.current_pose.rotation[3])
+            .sqrt();
+        if len > 1e-10 {
+            for i in 0..4 {
+                self.current_pose.rotation[i] /= len;
             }
-
-            // For rotation, we could slerp but for now just note the correction happened
-            // Full implementation would do proper pose graph optimization
         }
     }
 
@@ -1842,8 +1856,8 @@ mod tests {
         let mut tracker = Tracker6DoF::new(640, 480);
 
         // Add some map points but no keyframes
-        tracker.map_points_3d.push(Vec3::new(0.0, 0.0, 5.0));
-        tracker.map_points_3d.push(Vec3::new(1.0, 0.0, 5.0));
+        tracker.map_points_3d.push_back(Vec3::new(0.0, 0.0, 5.0));
+        tracker.map_points_3d.push_back(Vec3::new(1.0, 0.0, 5.0));
 
         // BA should not run
         let result = tracker.run_local_ba();

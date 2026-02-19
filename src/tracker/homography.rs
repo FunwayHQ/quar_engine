@@ -187,11 +187,9 @@ pub fn symmetric_transfer_error(h: &Mat3, src: &Vec2, dst: &Vec2) -> f64 {
 
     let proj_x = proj.x / proj.z;
     let proj_y = proj.y / proj.z;
-    let forward_err = (proj_x - dst.x).powi(2) + (proj_y - dst.y).powi(2);
-
     // For symmetric error, we'd need H^-1
     // Approximate with just forward error for speed
-    forward_err
+    (proj_x - dst.x).powi(2) + (proj_y - dst.y).powi(2)
 }
 
 /// Forward transfer error only (faster, no inverse needed).
@@ -477,8 +475,8 @@ fn random_sample_4(seed: &mut u64, n: usize) -> Option<[usize; 4]> {
 
         // Check for duplicates
         let mut duplicate = false;
-        for i in 0..count {
-            if indices[i] == idx {
+        for item in indices.iter().take(count) {
+            if *item == idx {
                 duplicate = true;
                 break;
             }

@@ -259,7 +259,6 @@ impl KeyFrameSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::features::{Feature, KeyPoint, OrbDescriptor};
 
     fn make_pose(tx: f32, ty: f32, tz: f32) -> Pose3D {
         Pose3D {

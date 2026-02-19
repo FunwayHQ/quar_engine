@@ -61,7 +61,7 @@ impl PlaceRecognitionDB {
         for word_id in bow.word_ids() {
             self.inverted_index
                 .entry(*word_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(kf_id);
         }
 

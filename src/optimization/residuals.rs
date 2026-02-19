@@ -81,6 +81,7 @@ pub fn reprojection_residual(
 /// * `observation_pixel` - Observed 2D point (pixel coordinates)
 /// * `fx`, `fy` - Focal lengths
 /// * `cx`, `cy` - Principal point
+#[allow(dead_code, clippy::too_many_arguments)]
 pub fn reprojection_residual_pixel(
     point_world: &Vec3,
     rotation: &Mat3,
@@ -154,6 +155,7 @@ pub fn huber_weight(residual: &ReprojectionError, delta: f64) -> f64 {
 ///
 /// # Returns
 /// Sum of squared reprojection errors
+#[allow(dead_code)]
 pub fn total_reprojection_error(
     points_world: &[Vec3],
     observations: &[Vec2],
@@ -172,6 +174,7 @@ pub fn total_reprojection_error(
 }
 
 /// Compute mean reprojection error (RMSE).
+#[allow(dead_code)]
 pub fn mean_reprojection_error(
     points_world: &[Vec3],
     observations: &[Vec2],

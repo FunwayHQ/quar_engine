@@ -206,12 +206,8 @@ pub fn extract_features(
 
             // Compute descriptor if requested
             if config.compute_descriptors {
-                if let Some(desc) = OrbDescriptor::compute(grayscale, width, height, &kp) {
-                    Some(Feature::complete(kp, orientation, desc))
-                } else {
-                    // Skip features near border (no descriptor)
-                    None
-                }
+                OrbDescriptor::compute(grayscale, width, height, &kp)
+                    .map(|desc| Feature::complete(kp, orientation, desc))
             } else {
                 Some(Feature::with_orientation(kp, orientation))
             }

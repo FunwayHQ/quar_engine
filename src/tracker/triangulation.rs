@@ -49,6 +49,7 @@ pub fn triangulate_point(
     a_data[1][2] = p1.y;
 
     // Camera 2: P2 = [R | t]
+    #[allow(clippy::needless_range_loop)]
     for j in 0..3 {
         a_data[2][j] = p2.x * r.data[2][j] - r.data[0][j];
         a_data[3][j] = p2.y * r.data[2][j] - r.data[1][j];
@@ -57,16 +58,20 @@ pub fn triangulate_point(
     a_data[3][3] = p2.y * t.z - t.y;
 
     // Compute A^T * A
-    let mut ata_data = [[0.0f64; 4]; 4];
-    for i in 0..4 {
-        for j in 0..4 {
-            let mut sum = 0.0;
-            for k in 0..4 {
-                sum += a_data[k][i] * a_data[k][j]; // A^T[i,k] * A[k,j]
+    #[allow(clippy::needless_range_loop)]
+    let ata_data = {
+        let mut ata_data = [[0.0f64; 4]; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                let mut sum = 0.0;
+                for k in 0..4 {
+                    sum += a_data[k][i] * a_data[k][j]; // A^T[i,k] * A[k,j]
+                }
+                ata_data[i][j] = sum;
             }
-            ata_data[i][j] = sum;
         }
-    }
+        ata_data
+    };
 
     // Find smallest eigenvector using pure-Rust implementation
     let ata_pure = linalg::Matrix4x4 { data: ata_data };

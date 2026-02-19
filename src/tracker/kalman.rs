@@ -40,8 +40,8 @@ impl Matrix6x6 {
     /// Create a diagonal matrix from values.
     pub fn from_diagonal(diag: &[f64; 6]) -> Self {
         let mut m = Self::zeros();
-        for i in 0..6 {
-            m.data[i][i] = diag[i];
+        for (i, &d) in diag.iter().enumerate() {
+            m.data[i][i] = d;
         }
         m
     }
@@ -94,6 +94,7 @@ impl Matrix6x6 {
     }
 
     /// Multiply by a 6D vector.
+    #[allow(clippy::needless_range_loop)]
     pub fn mul_vec(&self, v: &[f64; 6]) -> [f64; 6] {
         let mut result = [0.0; 6];
         for i in 0..6 {
@@ -204,6 +205,7 @@ impl Matrix3x6 {
     }
 
     /// Multiply by 6D vector to get 3D vector.
+    #[allow(clippy::needless_range_loop)]
     pub fn mul_vec(&self, v: &[f64; 6]) -> [f64; 3] {
         let mut result = [0.0; 3];
         for i in 0..3 {
@@ -267,6 +269,7 @@ impl Matrix6x3 {
     }
 
     /// Multiply by 3D vector to get 6D vector.
+    #[allow(clippy::needless_range_loop)]
     pub fn mul_vec(&self, v: &[f64; 3]) -> [f64; 6] {
         let mut result = [0.0; 6];
         for i in 0..6 {
@@ -315,8 +318,8 @@ impl Matrix3x3 {
     /// Create a diagonal matrix.
     pub fn from_diagonal(diag: &[f64; 3]) -> Self {
         let mut m = Self::zeros();
-        for i in 0..3 {
-            m.data[i][i] = diag[i];
+        for (i, &d) in diag.iter().enumerate() {
+            m.data[i][i] = d;
         }
         m
     }
@@ -434,6 +437,7 @@ pub struct MotionState {
     motion_model: MotionModel,
 
     /// Last update timestamp (for dt calculation)
+    #[allow(dead_code)]
     last_update_time: f64,
 
     /// Whether filter has been initialized with a measurement
@@ -654,8 +658,8 @@ impl MotionState {
 
         // State update: x = x + K * y
         let k_innovation = k.mul_vec(&innovation);
-        for i in 0..6 {
-            self.state[i] += k_innovation[i];
+        for (i, &ki) in k_innovation.iter().enumerate() {
+            self.state[i] += ki;
         }
 
         // Joseph form covariance update: P = (I - K*H)*P*(I - K*H)^T + K*R*K^T

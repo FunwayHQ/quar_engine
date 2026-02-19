@@ -124,7 +124,7 @@ pub fn rgb_to_cct(r: f32, g: f32, b: f32) -> f32 {
     // Convert to CIE XYZ using sRGB matrix
     let x = 0.4124564 * r_lin + 0.3575761 * g_lin + 0.1804375 * b_lin;
     let y = 0.2126729 * r_lin + 0.7151522 * g_lin + 0.0721750 * b_lin;
-    let z = 0.0193339 * r_lin + 0.1191920 * g_lin + 0.9503041 * b_lin;
+    let z = 0.0193339 * r_lin + 0.119_192 * g_lin + 0.9503041 * b_lin;
 
     // Convert to chromaticity coordinates
     let sum = x + y + z;
@@ -171,35 +171,31 @@ fn srgb_to_linear(c: f32) -> f32 {
 pub fn cct_to_rgb(kelvin: f32) -> [f32; 3] {
     let temp = (kelvin / 100.0).clamp(10.0, 400.0);
 
-    let r: f32;
-    let g: f32;
-    let b: f32;
-
     // Red
-    if temp <= 66.0 {
-        r = 255.0;
+    let r = if temp <= 66.0 {
+        255.0
     } else {
         let r_val = temp - 60.0;
-        r = (329.698727446 * r_val.powf(-0.1332047592)).clamp(0.0, 255.0);
-    }
+        (329.698_73 * r_val.powf(-0.133_204_76)).clamp(0.0, 255.0)
+    };
 
     // Green
-    if temp <= 66.0 {
-        g = (99.4708025861 * temp.ln() - 161.1195681661).clamp(0.0, 255.0);
+    let g = if temp <= 66.0 {
+        (99.470_8 * temp.ln() - 161.119_57).clamp(0.0, 255.0)
     } else {
         let g_val = temp - 60.0;
-        g = (288.1221695283 * g_val.powf(-0.0755148492)).clamp(0.0, 255.0);
-    }
+        (288.122_16 * g_val.powf(-0.075_514_846)).clamp(0.0, 255.0)
+    };
 
     // Blue
-    if temp >= 66.0 {
-        b = 255.0;
+    let b = if temp >= 66.0 {
+        255.0
     } else if temp <= 19.0 {
-        b = 0.0;
+        0.0
     } else {
         let b_val = temp - 10.0;
-        b = (138.5177312231 * b_val.ln() - 305.0447927307).clamp(0.0, 255.0);
-    }
+        (138.517_73 * b_val.ln() - 305.044_8).clamp(0.0, 255.0)
+    };
 
     [r / 255.0, g / 255.0, b / 255.0]
 }

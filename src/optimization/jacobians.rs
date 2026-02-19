@@ -34,6 +34,7 @@ impl JacobianPose {
     }
 
     /// Transpose: 6x2 matrix
+    #[allow(clippy::needless_range_loop)]
     pub fn transpose(&self) -> [[f64; 2]; 6] {
         let mut t = [[0.0; 2]; 6];
         for i in 0..2 {
@@ -71,6 +72,7 @@ impl JacobianPoint {
     }
 
     /// Transpose: 3x2 matrix
+    #[allow(clippy::needless_range_loop)]
     pub fn transpose(&self) -> [[f64; 2]; 3] {
         let mut t = [[0.0; 2]; 3];
         for i in 0..2 {
@@ -163,6 +165,7 @@ pub fn jacobian_wrt_pose(point_cam: &Vec3) -> JacobianPose {
 ///
 /// # Returns
 /// 2x3 Jacobian matrix
+#[allow(clippy::needless_range_loop)]
 pub fn jacobian_wrt_point(point_cam: &Vec3, rotation: &Mat3) -> JacobianPoint {
     let z = point_cam.z;
 
@@ -201,6 +204,7 @@ pub fn jacobian_wrt_point(point_cam: &Vec3, rotation: &Mat3) -> JacobianPoint {
 }
 
 /// Compute both Jacobians efficiently (shares common computations).
+#[allow(dead_code)]
 pub fn jacobians_full(
     point_world: &Vec3,
     rotation: &Mat3,
@@ -216,6 +220,8 @@ pub fn jacobians_full(
 }
 
 /// Numerical Jacobian for testing (finite differences).
+#[allow(dead_code)]
+#[allow(clippy::needless_range_loop)]
 pub fn jacobian_wrt_pose_numerical(
     point_world: &Vec3,
     rotation: &Mat3,
@@ -273,6 +279,8 @@ pub fn jacobian_wrt_pose_numerical(
 }
 
 /// Numerical Jacobian for point (finite differences).
+#[allow(dead_code)]
+#[allow(clippy::needless_range_loop)]
 pub fn jacobian_wrt_point_numerical(
     point_world: &Vec3,
     rotation: &Mat3,
@@ -306,6 +314,7 @@ pub fn jacobian_wrt_point_numerical(
 }
 
 // Helper functions for rotation matrices
+#[allow(dead_code)]
 fn rotation_x(angle: f64) -> Mat3 {
     let c = angle.cos();
     let s = angle.sin();
@@ -316,6 +325,7 @@ fn rotation_x(angle: f64) -> Mat3 {
     )
 }
 
+#[allow(dead_code)]
 fn rotation_y(angle: f64) -> Mat3 {
     let c = angle.cos();
     let s = angle.sin();
@@ -326,6 +336,7 @@ fn rotation_y(angle: f64) -> Mat3 {
     )
 }
 
+#[allow(dead_code)]
 fn rotation_z(angle: f64) -> Mat3 {
     let c = angle.cos();
     let s = angle.sin();
@@ -336,6 +347,8 @@ fn rotation_z(angle: f64) -> Mat3 {
     )
 }
 
+#[allow(dead_code)]
+#[allow(clippy::needless_range_loop)]
 fn mat_mul(a: &Mat3, b: &Mat3) -> Mat3 {
     let mut result = [[0.0; 3]; 3];
     for i in 0..3 {

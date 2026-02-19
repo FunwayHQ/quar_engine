@@ -106,7 +106,7 @@ impl LightingEstimator {
         self.frame_count = self.frame_count.wrapping_add(1);
 
         // Skip analysis on non-interval frames, return smoothed last estimate
-        if self.frame_count % self.analysis_interval != 0 {
+        if !self.frame_count.is_multiple_of(self.analysis_interval) {
             return self.last_estimate.clone();
         }
 

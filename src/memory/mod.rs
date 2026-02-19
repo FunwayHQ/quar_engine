@@ -70,8 +70,8 @@ impl MemoryConfig {
 
         for _ in 0..self.max_pyramid_levels {
             size += (w * h) as usize;
-            w = (w + 1) / 2;
-            h = (h + 1) / 2;
+            w = w.div_ceil(2);
+            h = h.div_ceil(2);
         }
 
         size

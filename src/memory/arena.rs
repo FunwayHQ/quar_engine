@@ -22,8 +22,7 @@ pub struct FrameArena {
 impl FrameArena {
     /// Create a new arena with the given capacity.
     pub fn new(capacity: usize) -> Self {
-        let mut buffer = Vec::with_capacity(capacity);
-        buffer.resize(capacity, 0);
+        let buffer = vec![0u8; capacity];
         Self {
             buffer: RefCell::new(buffer),
             offset: RefCell::new(0),
@@ -107,6 +106,7 @@ impl Default for FrameArena {
 /// that don't need to outlive the current frame.
 pub struct ArenaVec<T> {
     /// Start offset in the arena buffer
+    #[allow(dead_code)]
     start: usize,
     /// Current number of elements
     len: usize,

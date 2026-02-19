@@ -18,6 +18,7 @@
 //! }
 //! ```
 
+#[allow(clippy::module_inception)]
 pub mod plane;
 pub mod ransac;
 pub mod hit_test;
@@ -28,7 +29,7 @@ pub use hit_test::{HitResult, hit_test_planes, hit_test_plane};
 
 // WASM bindings
 use wasm_bindgen::prelude::*;
-use serde::{Deserialize, Serialize};
+
 
 /// JavaScript-friendly hit test result.
 #[wasm_bindgen]
@@ -151,7 +152,7 @@ impl PlaneDetectorHandle {
 
     /// Detect planes from a flat array of 3D points [x1,y1,z1, x2,y2,z2, ...].
     pub fn detect_planes(&mut self, points: &[f64]) -> usize {
-        if points.len() < 9 || points.len() % 3 != 0 {
+        if points.len() < 9 || !points.len().is_multiple_of(3) {
             return 0;
         }
 
@@ -229,6 +230,7 @@ impl PlaneDetectorHandle {
     ///
     /// # Returns
     /// The closest hit result, or None if no hit.
+    #[allow(clippy::too_many_arguments)]
     pub fn hit_test(
         &self,
         origin_x: f64,
@@ -256,6 +258,7 @@ impl PlaneDetectorHandle {
     }
 
     /// Perform a hit test on horizontal planes only (floors/tables).
+    #[allow(clippy::too_many_arguments)]
     pub fn hit_test_horizontal(
         &self,
         origin_x: f64,
@@ -283,6 +286,7 @@ impl PlaneDetectorHandle {
     }
 
     /// Perform a hit test on vertical planes only (walls).
+    #[allow(clippy::too_many_arguments)]
     pub fn hit_test_vertical(
         &self,
         origin_x: f64,
@@ -323,15 +327,19 @@ impl PlaneDetectorHandle {
     /// Set the inlier threshold (distance from plane to be considered an inlier).
     pub fn set_inlier_threshold(&mut self, threshold: f64) {
         // We need to recreate the detector with new config
-        let mut config = PlaneDetectorConfig::default();
-        config.inlier_threshold = threshold;
+        let config = PlaneDetectorConfig {
+            inlier_threshold: threshold,
+            ..PlaneDetectorConfig::default()
+        };
         self.detector = PlaneDetector::with_config(config);
     }
 
     /// Set the minimum number of inliers required to accept a plane.
     pub fn set_min_inliers(&mut self, min_inliers: usize) {
-        let mut config = PlaneDetectorConfig::default();
-        config.min_inliers = min_inliers;
+        let config = PlaneDetectorConfig {
+            min_inliers,
+            ..PlaneDetectorConfig::default()
+        };
         self.detector = PlaneDetector::with_config(config);
     }
 }

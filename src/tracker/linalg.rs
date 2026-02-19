@@ -91,6 +91,7 @@ impl Matrix9x9 {
     }
 
     /// Multiply matrix by vector.
+    #[allow(clippy::needless_range_loop)]
     pub fn mul_vec(&self, v: &[f64; 9]) -> [f64; 9] {
         let mut result = [0.0; 9];
         for i in 0..9 {
@@ -184,6 +185,7 @@ impl Matrix4x4 {
     }
 
     /// Multiply matrix by vector.
+    #[allow(clippy::needless_range_loop)]
     pub fn mul_vec(&self, v: &[f64; 4]) -> [f64; 4] {
         let mut result = [0.0; 4];
         for i in 0..4 {
@@ -358,6 +360,7 @@ pub fn svd_3x3(a: &Matrix3x3) -> Svd3x3 {
 
     // Count non-zero singular values
     let mut rank = 0;
+    #[allow(clippy::needless_range_loop)]
     for i in 0..3 {
         if s[i] > 1e-10 {
             rank += 1;
@@ -655,9 +658,9 @@ pub mod mat3 {
     #[inline]
     pub fn norm(m: &[[f64; 3]; 3]) -> f64 {
         let mut sum = 0.0;
-        for i in 0..3 {
-            for j in 0..3 {
-                sum += m[i][j] * m[i][j];
+        for row in m {
+            for &val in row {
+                sum += val * val;
             }
         }
         sum.sqrt()
@@ -825,6 +828,7 @@ pub struct Mat3 {
 
 impl Mat3 {
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         m00: f64, m01: f64, m02: f64,
         m10: f64, m11: f64, m12: f64,
@@ -1445,8 +1449,8 @@ mod tests {
         let (eigenvalues, v) = jacobi_eigen_3x3(&m);
 
         // Eigenvalues should all be 1
-        for i in 0..3 {
-            assert!((eigenvalues[i] - 1.0).abs() < 1e-10);
+        for ev in &eigenvalues {
+            assert!((ev - 1.0).abs() < 1e-10);
         }
 
         // V should be orthogonal
@@ -1486,6 +1490,7 @@ mod tests {
         assert!(eigenvalues[1] >= eigenvalues[2]);
 
         // Check A * v_i = lambda_i * v_i for each eigenvector
+        #[allow(clippy::needless_range_loop)]
         for i in 0..3 {
             let eigenvector = [v.data[0][i], v.data[1][i], v.data[2][i]];
             let av = m.mul_vec(&eigenvector);

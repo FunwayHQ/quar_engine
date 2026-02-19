@@ -49,7 +49,7 @@ impl FastDetector {
     ///
     /// # Arguments
     /// * `threshold` - Minimum intensity difference to consider a pixel as brighter/darker
-    ///                 Typical values: 20-50
+    ///   Typical values: 20-50
     pub fn new(threshold: u8) -> Self {
         Self { threshold }
     }
@@ -177,8 +177,8 @@ impl FastDetector {
         let mut max_count = 0;
 
         // First pass: count from start
-        for i in 0..16 {
-            if flags[i] {
+        for flag in flags {
+            if *flag {
                 count += 1;
                 max_count = max_count.max(count);
             } else {
@@ -194,8 +194,8 @@ impl FastDetector {
         if flags[0] && flags[15] {
             // Count contiguous from start
             let mut start_count = 0;
-            for i in 0..16 {
-                if flags[i] {
+            for flag in flags {
+                if *flag {
                     start_count += 1;
                 } else {
                     break;

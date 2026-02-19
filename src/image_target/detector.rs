@@ -7,12 +7,12 @@ use super::template::ImageTemplate;
 use crate::camera::CameraIntrinsics;
 use crate::features::{
     compute_descriptors_filtered, non_maximum_suppression, rgba_to_grayscale,
-    BruteForceMatcher, FastDetector, KeyPoint, Match, OrbDescriptor, DEFAULT_RATIO,
+    BruteForceMatcher, FastDetector, KeyPoint, OrbDescriptor, DEFAULT_RATIO,
 };
 use crate::tracker::homography::{
-    apply_homography, compute_homography_ransac, decompose_homography, project_corners,
+    compute_homography_ransac, decompose_homography, project_corners,
 };
-use crate::tracker::linalg::{Mat3, Vec2, Vec3};
+use crate::tracker::linalg::{Mat3, Vec2};
 
 /// Configuration for image target detection.
 #[derive(Debug, Clone)]

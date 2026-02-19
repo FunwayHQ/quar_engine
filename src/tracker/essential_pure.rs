@@ -73,12 +73,16 @@ pub fn compute_essential_matrix(points1: &[Vec2], points2: &[Vec2]) -> Option<Ma
     let avg = (s[0] + s[1]) / 2.0;
 
     // Reconstruct E = U * diag(avg, avg, 0) * V^T
-    let mut e_data = [[0.0f64; 3]; 3];
-    for i in 0..3 {
-        for j in 0..3 {
-            e_data[i][j] = u.data[i][0] * avg * v_t.data[0][j] + u.data[i][1] * avg * v_t.data[1][j];
+    #[allow(clippy::needless_range_loop)]
+    let e_data = {
+        let mut e_data = [[0.0f64; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                e_data[i][j] = u.data[i][0] * avg * v_t.data[0][j] + u.data[i][1] * avg * v_t.data[1][j];
+            }
         }
-    }
+        e_data
+    };
 
     // Normalize E for consistent scale
     let norm = linalg::mat3::norm(&e_data);
@@ -188,6 +192,7 @@ fn count_positive_depth(
 }
 
 /// Simple triangulation for pose validation.
+#[allow(clippy::needless_range_loop)]
 fn triangulate_point_simple(p1: &Vec2, p2: &Vec2, r: &Mat3, t: &Vec3) -> Option<Vec3> {
     // Build 4x4 matrix A
     let mut a_data = [[0.0f64; 4]; 4];

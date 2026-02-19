@@ -41,10 +41,8 @@ pub fn non_maximum_suppression(keypoints: &[KeyPoint], radius: u32) -> Vec<KeyPo
 
         // Suppress all weaker keypoints within radius
         for j in (i + 1)..sorted.len() {
-            if !suppressed[j] {
-                if kp.distance_squared(&sorted[j]) <= radius_squared {
-                    suppressed[j] = true;
-                }
+            if !suppressed[j] && kp.distance_squared(&sorted[j]) <= radius_squared {
+                suppressed[j] = true;
             }
         }
     }
@@ -76,8 +74,8 @@ pub fn non_maximum_suppression_grid(
         return keypoints.to_vec();
     }
 
-    let cols = (width + cell_size - 1) / cell_size;
-    let rows = (height + cell_size - 1) / cell_size;
+    let cols = width.div_ceil(cell_size);
+    let rows = height.div_ceil(cell_size);
     let grid_size = (cols * rows) as usize;
 
     // Track the best keypoint for each cell

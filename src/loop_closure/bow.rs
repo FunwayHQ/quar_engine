@@ -149,7 +149,7 @@ impl FeatureVector {
             let word_id = vocab.transform(desc);
             features_per_word
                 .entry(word_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(idx);
         }
 

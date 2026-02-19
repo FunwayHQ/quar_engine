@@ -338,7 +338,7 @@ impl Tracker {
         }
 
         // Periodically refresh features to prevent drift
-        if self.frame_count % self.config.redetect_interval == 0 {
+        if self.frame_count.is_multiple_of(self.config.redetect_interval) {
             self.refresh_features(&curr_gray);
         }
 
@@ -905,6 +905,7 @@ impl Tracker6DoFHandle {
     /// * `gx, gy, gz` - Angular velocity in rad/s
     /// * `timestamp` - Timestamp in seconds
     #[wasm_bindgen]
+    #[allow(clippy::too_many_arguments)]
     pub fn push_imu(
         &mut self,
         ax: f64, ay: f64, az: f64,

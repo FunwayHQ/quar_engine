@@ -260,19 +260,20 @@ fn compute_normal_equations(jacobian: &[Vec<f64>], residuals: &[f64]) -> (Vec<Ve
     let mut jtr = vec![0.0; num_params];
 
     // Compute JᵀJ and Jᵀr
+    #[allow(clippy::needless_range_loop)]
     for i in 0..num_params {
         for j in 0..=i {
             let mut sum = 0.0;
-            for k in 0..num_residuals {
-                sum += jacobian[k][i] * jacobian[k][j];
+            for row in &jacobian[..num_residuals] {
+                sum += row[i] * row[j];
             }
             jtj[i][j] = sum;
             jtj[j][i] = sum; // Symmetric
         }
 
         let mut sum = 0.0;
-        for k in 0..num_residuals {
-            sum += jacobian[k][i] * residuals[k];
+        for (k, row) in jacobian[..num_residuals].iter().enumerate() {
+            sum += row[i] * residuals[k];
         }
         jtr[i] = -sum; // Note: we want to minimize, so -Jᵀr
     }
@@ -286,12 +287,10 @@ fn solve_damped_normal_equations(jtj: &[Vec<f64>], b: &[f64], lambda: f64) -> Ve
         return vec![];
     }
 
-    let n = jtj.len();
-
     // Add damping to diagonal
     let mut a = jtj.to_vec();
-    for i in 0..n {
-        a[i][i] += lambda;
+    for (i, row) in a.iter_mut().enumerate() {
+        row[i] += lambda;
     }
 
     // Solve using Cholesky decomposition (A is symmetric positive definite)
@@ -305,6 +304,7 @@ fn solve_damped_normal_equations(jtj: &[Vec<f64>], b: &[f64], lambda: f64) -> Ve
 }
 
 /// Solve Ax = b using Cholesky decomposition.
+#[allow(clippy::needless_range_loop)]
 fn solve_cholesky(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
     let n = a.len();
 
@@ -363,6 +363,7 @@ fn solve_cholesky(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
 }
 
 /// Solve Ax = b using Gaussian elimination with partial pivoting.
+#[allow(clippy::needless_range_loop)]
 fn solve_gaussian(a: &[Vec<f64>], b: &[f64]) -> Vec<f64> {
     let n = a.len();
     if n == 0 {

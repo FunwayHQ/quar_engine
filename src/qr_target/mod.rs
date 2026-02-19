@@ -156,7 +156,7 @@ impl QrDetector {
         ];
 
         // Compute homography
-        let h = compute_homography(&template_corners.to_vec(), &corners.to_vec())?;
+        let h = compute_homography(template_corners.as_ref(), corners.as_ref())?;
 
         // Build camera matrix K
         let k = Mat3::new(

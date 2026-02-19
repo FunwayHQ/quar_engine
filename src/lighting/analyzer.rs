@@ -125,11 +125,10 @@ pub fn estimate_light_direction(grid: &[[f32; 3]; 3]) -> DirectionalEstimate {
     let mut dy = 0.0f32;
     let mut total_weight = 0.0f32;
 
-    for row in 0..3 {
-        for col in 0..3 {
-            let weight = grid[row][col];
-            let x_pos = col as f32 - 1.0; // -1, 0, 1
-            let y_pos = row as f32 - 1.0; // -1, 0, 1
+    for (row_idx, row) in grid.iter().enumerate() {
+        for (col_idx, &weight) in row.iter().enumerate() {
+            let x_pos = col_idx as f32 - 1.0; // -1, 0, 1
+            let y_pos = row_idx as f32 - 1.0; // -1, 0, 1
 
             dx += x_pos * weight;
             dy += y_pos * weight;

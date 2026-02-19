@@ -6,7 +6,6 @@
 //! - Good enough for small-scale loop closure
 
 use crate::features::OrbDescriptor;
-use std::collections::HashMap;
 
 /// Configuration for vocabulary building.
 #[derive(Debug, Clone)]

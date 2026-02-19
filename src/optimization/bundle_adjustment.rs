@@ -7,9 +7,8 @@
 //! The optimization minimizes total reprojection error across all observations.
 
 use crate::tracker::linalg::{Vec2, Vec3, Mat3};
-use super::residuals::{reprojection_residual, huber_weight, ReprojectionError};
-use super::jacobians::{jacobian_wrt_pose, jacobian_wrt_point, JacobianPose, JacobianPoint};
-use super::levenberg_marquardt::{LMOptimizer, LMConfig, LMResult, TerminationReason};
+use super::residuals::{reprojection_residual, huber_weight};
+use super::jacobians::{jacobian_wrt_pose, jacobian_wrt_point};
 
 /// Configuration for bundle adjustment.
 #[derive(Debug, Clone)]
@@ -131,7 +130,14 @@ impl LocalBA {
             observations,
         );
 
-        // Compute final error
+        // Compute initial and final errors for convergence check
+        let initial_error = compute_mean_reprojection_error(
+            rotations,
+            translations,
+            points,
+            observations,
+        );
+
         let mean_error = compute_mean_reprojection_error(
             &optimized_rotations,
             &optimized_translations,
@@ -139,13 +145,17 @@ impl LocalBA {
             observations,
         );
 
+        // Converged if error decreased or is below tolerance
+        let converged = mean_error < self.config.tolerance
+            || (initial_error - mean_error).abs() < self.config.tolerance;
+
         BAResult {
             rotations: optimized_rotations,
             translations: optimized_translations,
             points: optimized_points,
             mean_error,
             iterations: self.config.max_iterations,
-            converged: true,
+            converged,
         }
     }
 
@@ -186,7 +196,7 @@ impl LocalBA {
         optimized_points
     }
 
-    /// Refine a single 3D point using Gauss-Newton.
+    /// Refine a single 3D point using Levenberg-Marquardt.
     fn refine_point(
         &self,
         initial_point: &Vec3,
@@ -195,6 +205,7 @@ impl LocalBA {
         translations: &[Vec3],
     ) -> Option<Vec3> {
         let mut point = *initial_point;
+        let mut lambda = 1e-3;
 
         for _ in 0..5 {
             // Few iterations usually enough
@@ -225,6 +236,7 @@ impl LocalBA {
                 let j = jacobian_wrt_point(&point_cam, r);
 
                 // Accumulate normal equations with weight
+                #[allow(clippy::needless_range_loop)]
                 for i in 0..3 {
                     for k in 0..3 {
                         jtj[i][k] += weight * (j.data[0][i] * j.data[0][k] + j.data[1][i] * j.data[1][k]);
@@ -238,11 +250,20 @@ impl LocalBA {
                 return None;
             }
 
+            // LM damping: add lambda * diag(JtJ) to diagonal
+            #[allow(clippy::needless_range_loop)]
+            for i in 0..3 {
+                jtj[i][i] += lambda * jtj[i][i].max(1e-10);
+            }
+
             // Solve 3x3 system
             if let Some(delta) = solve_3x3(&jtj, &jtr) {
                 point.x += delta[0];
                 point.y += delta[1];
                 point.z += delta[2];
+
+                // Decrease lambda on success (step accepted)
+                lambda *= 0.1;
 
                 // Check convergence
                 let delta_norm = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
@@ -250,9 +271,12 @@ impl LocalBA {
                     break;
                 }
             } else {
+                // Increase lambda on failure
+                lambda *= 10.0;
                 break;
             }
         }
+        let _ = lambda;
 
         // Validate result
         if point.x.is_finite() && point.y.is_finite() && point.z.is_finite() {
@@ -304,7 +328,7 @@ impl LocalBA {
         (opt_rotations, opt_translations)
     }
 
-    /// Refine a single camera pose using Gauss-Newton.
+    /// Refine a single camera pose using Levenberg-Marquardt.
     fn refine_pose(
         &self,
         initial_rotation: &Mat3,
@@ -314,6 +338,7 @@ impl LocalBA {
     ) -> Option<(Mat3, Vec3)> {
         let mut rotation = *initial_rotation;
         let mut translation = *initial_translation;
+        let mut lambda = 1e-3;
 
         for _ in 0..5 {
             let mut jtj = [[0.0; 6]; 6];
@@ -341,6 +366,7 @@ impl LocalBA {
                 let j = jacobian_wrt_pose(&point_cam);
 
                 // Accumulate normal equations
+                #[allow(clippy::needless_range_loop)]
                 for i in 0..6 {
                     for k in 0..6 {
                         jtj[i][k] += weight * (j.data[0][i] * j.data[0][k] + j.data[1][i] * j.data[1][k]);
@@ -352,6 +378,12 @@ impl LocalBA {
 
             if total_weight < 1.0 {
                 return None;
+            }
+
+            // LM damping: add lambda * diag(JtJ) to diagonal
+            #[allow(clippy::needless_range_loop)]
+            for i in 0..6 {
+                jtj[i][i] += lambda * jtj[i][i].max(1e-10);
             }
 
             // Solve 6x6 system
@@ -366,15 +398,21 @@ impl LocalBA {
                 translation.y += delta[4];
                 translation.z += delta[5];
 
+                // Decrease lambda on success
+                lambda *= 0.1;
+
                 // Check convergence
                 let delta_norm: f64 = delta.iter().map(|d| d * d).sum::<f64>().sqrt();
                 if delta_norm < 1e-8 {
                     break;
                 }
             } else {
+                // Increase lambda on failure
+                lambda *= 10.0;
                 break;
             }
         }
+        let _ = lambda;
 
         Some((rotation, translation))
     }
@@ -489,6 +527,7 @@ fn solve_3x3(a: &[[f64; 3]; 3], b: &[f64; 3]) -> Option<[f64; 3]> {
 }
 
 /// Solve a 6x6 linear system using Gaussian elimination.
+#[allow(clippy::needless_range_loop)]
 fn solve_6x6(a: &[[f64; 6]; 6], b: &[f64; 6]) -> Option<[f64; 6]> {
     // Convert to dynamic allocation for Gaussian elimination
     let mut aug: Vec<Vec<f64>> = a.iter()
@@ -566,6 +605,7 @@ fn rodrigues(angle_axis: &[f64; 3]) -> Mat3 {
 }
 
 /// Matrix multiplication helper.
+#[allow(clippy::needless_range_loop)]
 fn mat_mul(a: &Mat3, b: &Mat3) -> Mat3 {
     let mut result = [[0.0; 3]; 3];
     for i in 0..3 {
@@ -700,7 +740,7 @@ mod tests {
         let result = optimize_pose_only(&init_rotation, &init_translation, &points, &observations);
         assert!(result.is_some());
 
-        let (opt_r, opt_t) = result.unwrap();
+        let (_opt_r, opt_t) = result.unwrap();
 
         // Translation should be close to true value
         assert!((opt_t.x - 0.0).abs() < 0.05);
@@ -766,8 +806,8 @@ mod tests {
         let x = solve_6x6(&a, &b).unwrap();
 
         // Each x[i] should be 1.0
-        for i in 0..6 {
-            assert!((x[i] - 1.0).abs() < 1e-10);
+        for val in &x {
+            assert!((val - 1.0).abs() < 1e-10);
         }
     }
 

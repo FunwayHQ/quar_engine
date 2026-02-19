@@ -28,6 +28,7 @@ impl SimpleRng {
         ((self.seed >> 33) as usize) % n
     }
 
+    #[allow(dead_code)]
     fn gen_range(&mut self, range: std::ops::Range<f64>) -> f64 {
         self.seed = self.seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         let t = (self.seed >> 11) as f64 / (1u64 << 53) as f64;

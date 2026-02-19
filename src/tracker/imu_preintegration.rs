@@ -157,6 +157,7 @@ impl RotationMatrix {
     }
 
     /// Matrix multiplication: self * other
+    #[allow(clippy::needless_range_loop)]
     pub fn mul(&self, other: &RotationMatrix) -> RotationMatrix {
         let mut result = [[0.0; 3]; 3];
         for i in 0..3 {
@@ -247,6 +248,7 @@ fn skew(v: [f64; 3]) -> [[f64; 3]; 3] {
 
 /// Right Jacobian of SO(3) for small angles.
 /// Jr(v) ≈ I - 0.5 * skew(v) for small v
+#[allow(clippy::needless_range_loop)]
 fn right_jacobian_so3(v: [f64; 3]) -> [[f64; 3]; 3] {
     let theta_sq = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 
@@ -351,6 +353,7 @@ impl PreintegratedImu {
     /// * `dt` - Time since last measurement
     /// * `gyro_noise` - Gyroscope noise density (rad/s/√Hz)
     /// * `accel_noise` - Accelerometer noise density (m/s²/√Hz)
+    #[allow(clippy::needless_range_loop)]
     pub fn integrate(
         &mut self,
         measurement: &ImuMeasurement,
@@ -401,7 +404,7 @@ impl PreintegratedImu {
         self.delta_velocity[2] += accel_rotated[2] * dt;
 
         // Save pre-update rotation for Jacobian computation (Forster et al.)
-        let delta_rotation_prev = self.delta_rotation.clone();
+        let delta_rotation_prev = self.delta_rotation;
 
         // ΔR = ΔR * dR
         self.delta_rotation = self.delta_rotation.mul(&d_rotation);
@@ -467,6 +470,7 @@ impl PreintegratedImu {
     /// Correct preintegration for bias change without re-integration.
     ///
     /// Uses first-order Taylor expansion around linearization point.
+    #[allow(clippy::needless_range_loop)]
     pub fn correct_bias(&self, new_bias: &ImuBias) -> PreintegratedImu {
         let delta_bias = new_bias.delta(&self.bias_at_integration);
 
@@ -573,6 +577,7 @@ impl ImuBuffer {
     }
 
     /// Add measurement from components.
+    #[allow(clippy::too_many_arguments)]
     pub fn push_components(
         &mut self,
         ax: f64, ay: f64, az: f64,

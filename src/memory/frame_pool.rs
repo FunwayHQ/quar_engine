@@ -22,9 +22,7 @@ pub struct FrameBuffer {
 impl FrameBuffer {
     /// Create a new buffer with the given capacity.
     fn with_capacity(capacity: usize) -> Self {
-        let mut data = Vec::with_capacity(capacity);
-        // Pre-fill to avoid reallocation
-        data.resize(capacity, 0);
+        let data = vec![0u8; capacity];
         Self {
             data,
             len: 0,
@@ -149,8 +147,8 @@ impl FramePool {
             for _ in 0..config.pyramid_buffers {
                 pyramid_buffers.push(FrameBuffer::with_capacity(level_size));
             }
-            w = (w + 1) / 2;
-            h = (h + 1) / 2;
+            w = w.div_ceil(2);
+            h = h.div_ceil(2);
         }
 
         Self {

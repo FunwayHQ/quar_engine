@@ -3,8 +3,7 @@
 //! Detects when the camera revisits a previous location and
 //! corrects accumulated drift using pose graph optimization.
 
-use super::bow::FeatureVector;
-use super::place_recognition::{KeyFrameId, PlaceMatch, PlaceRecognitionDB};
+use super::place_recognition::{KeyFrameId, PlaceRecognitionDB};
 use super::vocabulary::Vocabulary;
 use crate::features::{match_cross_check, OrbDescriptor, DEFAULT_MAX_DISTANCE};
 use crate::tracker::linalg::{Mat3, Vec3};
@@ -138,13 +137,10 @@ impl LoopCloser {
             self.config.min_bow_score,
         );
 
-        // Build feature vector for query
-        let query_fv = FeatureVector::from_descriptors(query_descriptors, self.db.vocabulary());
-
         // Convert to candidates with feature matches from stored descriptors
         matches
             .into_iter()
-            .filter_map(|m| {
+            .map(|m| {
                 // Match query descriptors against stored keyframe descriptors
                 let feature_matches = if let Some(match_descs) = self.keyframe_descriptors.get(&m.keyframe_id) {
                     let raw_matches = match_cross_check(
@@ -157,12 +153,12 @@ impl LoopCloser {
                     vec![]
                 };
 
-                Some(LoopCandidate {
+                LoopCandidate {
                     query_kf: 0, // Will be set by caller
                     match_kf: m.keyframe_id,
                     bow_score: m.score,
                     feature_matches,
-                })
+                }
             })
             .collect()
     }
@@ -231,6 +227,7 @@ impl LoopCloser {
 
 /// Pose graph node for optimization.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PoseGraphNode {
     /// Keyframe ID
     pub kf_id: KeyFrameId,
@@ -242,6 +239,7 @@ pub struct PoseGraphNode {
 
 /// Pose graph edge (constraint).
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct PoseGraphEdge {
     /// Source keyframe
     pub from_kf: KeyFrameId,
@@ -257,6 +255,7 @@ pub struct PoseGraphEdge {
 
 /// Simple pose graph for loop closure correction.
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct PoseGraph {
     /// Nodes (keyframes)
     nodes: Vec<PoseGraphNode>,
@@ -264,6 +263,7 @@ pub struct PoseGraph {
     edges: Vec<PoseGraphEdge>,
 }
 
+#[allow(dead_code)]
 impl PoseGraph {
     /// Create a new pose graph.
     pub fn new() -> Self {

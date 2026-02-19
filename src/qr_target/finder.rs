@@ -133,15 +133,13 @@ impl QrFinderDetector {
         }
 
         // Verify patterns vertically and cluster
-        let verified = self.verify_and_cluster(
+        self.verify_and_cluster(
             grayscale,
             width,
             height,
             threshold,
             &candidates,
-        );
-
-        verified
+        )
     }
 
     /// Find valid QR code candidates from detected finder patterns.
@@ -294,6 +292,7 @@ impl QrFinderDetector {
     }
 
     /// Verify that a pattern exists vertically at the given location.
+    #[allow(clippy::too_many_arguments)]
     fn verify_vertical(
         &self,
         grayscale: &[u8],
@@ -521,8 +520,8 @@ impl QrFinderDetector {
 
         let total = (width * height) as f64;
         let mut sum = 0.0;
-        for i in 0..256 {
-            sum += i as f64 * histogram[i] as f64;
+        for (i, &count) in histogram.iter().enumerate() {
+            sum += i as f64 * count as f64;
         }
 
         let mut sum_b = 0.0;
@@ -530,8 +529,8 @@ impl QrFinderDetector {
         let mut max_variance = 0.0;
         let mut threshold = 128u8;
 
-        for t in 0..256 {
-            w_b += histogram[t] as f64;
+        for (t, &count) in histogram.iter().enumerate() {
+            w_b += count as f64;
             if w_b == 0.0 {
                 continue;
             }
@@ -541,7 +540,7 @@ impl QrFinderDetector {
                 break;
             }
 
-            sum_b += t as f64 * histogram[t] as f64;
+            sum_b += t as f64 * count as f64;
             let mean_b = sum_b / w_b;
             let mean_f = (sum - sum_b) / w_f;
 
