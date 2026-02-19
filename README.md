@@ -5,9 +5,9 @@
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 [![WASM](https://img.shields.io/badge/WebAssembly-Ready-blueviolet.svg)](https://webassembly.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-493%20Rust%20%7C%20440%2B%20SDK-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-533%20Rust%20%7C%20494%20SDK-brightgreen.svg)](#testing)
 
-QUAR Engine is a high-performance WebAR engine that brings native-quality SLAM tracking to the browser. Built entirely in Rust and compiled to WebAssembly, it delivers real-time 6 degrees of freedom (6DoF) tracking at 60 FPS with a tiny ~51KB gzipped footprint.
+QUAR Engine is a high-performance WebAR engine that brings native-quality SLAM tracking to the browser. Built entirely in Rust and compiled to WebAssembly, it delivers real-time 6 degrees of freedom (6DoF) tracking at 60 FPS with a ~134KB gzipped footprint.
 
 ## Features
 
@@ -30,6 +30,8 @@ Try the demos on your phone (requires camera access):
 | [AR Cube](https://funwayhq.github.io/quar_engine/ar-demo.html) | Basic 3DoF rotation tracking |
 | [Advanced AR](https://funwayhq.github.io/quar_engine/advanced-demo.html) | IMU fusion + performance dashboard |
 | [Feature Detection](https://funwayhq.github.io/quar_engine/feature-demo.html) | FAST corner visualization |
+| [Image Target](https://funwayhq.github.io/quar_engine/image-target-demo.html) | ORB-based image tracking |
+| [QR Detection](https://funwayhq.github.io/quar_engine/qr-target-demo.html) | QR finder pattern detection |
 | [Web Workers](https://funwayhq.github.io/quar_engine/worker-demo.html) | Off-thread processing |
 
 ## Quick Start
@@ -161,7 +163,9 @@ quar_engine/
 | Metric | Target | Current |
 |--------|--------|---------|
 | Tracking Loop | <16ms (60 FPS) | Achieved on modern devices |
-| WASM Binary | <100KB gzipped | ~51KB |
+| WASM Binary | <300KB gzipped | 134 KB gzipped / 110 KB brotli |
+| JS Bindings | - | 101 KB (15 KB gzipped) |
+| SDK (ESM) | - | 184 KB (40 KB gzipped) |
 | Motion-to-Photon | <30ms | <25ms with IMU |
 | Feature Detection | <5ms (640x480) | ~3ms |
 
@@ -191,8 +195,8 @@ cargo clippy -- -D warnings
 
 The project has comprehensive test coverage:
 
-- **Rust**: 493 unit tests covering all core algorithms
-- **SDK**: 440+ TypeScript tests with Jest
+- **Rust**: 533 unit tests covering all core algorithms
+- **SDK**: 494 TypeScript tests with Jest (20 suites)
 
 ```bash
 # Run all Rust tests
