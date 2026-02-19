@@ -437,8 +437,8 @@ export class QuarEngine {
       this.wasmModule = null;
       this.trackerHandle = null;
       this.emit('error', new QuarError(
-        `WASM module failed to load: ${error}`,
         QuarErrorCode.WASM_LOAD_FAILED,
+        `WASM module failed to load: ${error}`,
         true // recoverable - camera-only mode still works
       ));
     }

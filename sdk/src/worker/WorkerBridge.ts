@@ -107,8 +107,8 @@ export class WorkerBridge {
     // Store timeout cleanup for when init succeeds/fails
     const origResolve = this.initResolve;
     const origReject = this.initReject;
-    this.initResolve = (...args: any[]) => { clearTimeout(initTimeout); origResolve?.(...args); };
-    this.initReject = (...args: any[]) => { clearTimeout(initTimeout); origReject?.(...args); };
+    this.initResolve = () => { clearTimeout(initTimeout); origResolve?.(); };
+    this.initReject = (error: Error) => { clearTimeout(initTimeout); origReject?.(error); };
 
     // Create worker
     let blobUrl: string | null = null;
