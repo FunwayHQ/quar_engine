@@ -1006,6 +1006,7 @@ export function get_grayscale(rgba_data: Uint8Array): Uint8Array;
 /**
  * Get the current high-resolution timestamp from the browser's Performance API.
  * Returns milliseconds since the page was loaded.
+ * Works in both window and worker contexts.
  */
 export function get_performance_now(): number;
 
