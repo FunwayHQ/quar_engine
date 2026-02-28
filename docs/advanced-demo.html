@@ -199,7 +199,7 @@
 
   <script type="module">
     import * as THREE from 'three';
-    import init, { TrackerHandle, version } from './pkg/quar_engine.js';
+    import init, { Tracker6DoFHandle, version } from './pkg/quar_engine.js';
 
     // DOM elements
     const videoCanvas = document.getElementById('video-canvas');
@@ -259,6 +259,11 @@
     const GYRO_ALPHA = 0.98;
     const VISUAL_SMOOTHING = 0.15;
 
+    // Translation state (accelerometer-driven)
+    let smoothedPosition = new THREE.Vector3(0, 0, 0);
+    const TRANSLATION_SCALE = 5.0;  // Scale factor for accelerometer position
+    const TRANSLATION_SMOOTHING = 0.3;
+
     // Gyroscope integration for AR world-space locking
     //
     // Goal: When phone rotates, cube stays FIXED in real world
@@ -302,6 +307,17 @@
       const gammaRate = (event.rotationRate.gamma || 0) * degToRad; // roll
       const alphaRate = (event.rotationRate.alpha || 0) * degToRad; // yaw
 
+      // Push IMU data to tracker for accelerometer-based translation
+      if (trackerHandle) {
+        if (trackerHandle.push_gyro) {
+          trackerHandle.push_gyro(betaRate, gammaRate, alphaRate, now);
+        }
+        const accelX = event.accelerationIncludingGravity?.x || 0;
+        const accelY = event.accelerationIncludingGravity?.y || 0;
+        const accelZ = event.accelerationIncludingGravity?.z || 0;
+        trackerHandle.push_imu(accelX, accelY, accelZ, betaRate, gammaRate, alphaRate, now / 1000);
+      }
+
       // Integrate gyro - accumulate rotation
       gyroOrientation.x += betaRate * dt;   // pitch: positive=look down, negative=look up
       gyroOrientation.y += gammaRate * dt;  // roll
@@ -330,7 +346,7 @@
 
     async function loadWasm() {
       await init();
-      trackerHandle = new TrackerHandle();
+      trackerHandle = new Tracker6DoFHandle(640, 480);
       console.log('WASM loaded:', version());
     }
 
@@ -533,6 +549,28 @@
               camera.rotation.y = visualOrientation.z;
               camera.rotation.z = -visualOrientation.y;
             }
+
+            // Translation via accelerometer-derived position
+            if (trackerHandle.get_accel_position) {
+              const accelPos = trackerHandle.get_accel_position();
+              const rawX = accelPos[0] ?? 0;
+              const rawY = accelPos[1] ?? 0;
+              const rawZ = accelPos[2] ?? 0;
+
+              const scaledX = rawX * TRANSLATION_SCALE;
+              const scaledY = rawY * TRANSLATION_SCALE;
+              const scaledZ = rawZ * TRANSLATION_SCALE;
+
+              smoothedPosition.x += (scaledX - smoothedPosition.x) * TRANSLATION_SMOOTHING;
+              smoothedPosition.y += (scaledY - smoothedPosition.y) * TRANSLATION_SMOOTHING;
+              smoothedPosition.z += (scaledZ - smoothedPosition.z) * TRANSLATION_SMOOTHING;
+
+              camera.position.set(
+                smoothedPosition.x,
+                smoothedPosition.y,
+                3 + smoothedPosition.z
+              );
+            }
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';
@@ -547,13 +585,20 @@
     }
 
     function reset() {
-      if (trackerHandle) trackerHandle.reset();
+      if (trackerHandle) {
+        trackerHandle.reset();
+        if (trackerHandle.reset_accel_position) {
+          trackerHandle.reset_accel_position();
+        }
+      }
       // Reset fusion state
       gyroOrientation = { x: 0, y: 0, z: 0 };
       visualOrientation = { x: 0, y: 0, z: 0 };
       fusedOrientation = { x: 0, y: 0, z: 0 };
       gyroInitialized = false;
+      smoothedPosition.set(0, 0, 0);
       camera.rotation.set(0, 0, 0);
+      camera.position.set(0, 0, 3);
       cube.rotation.set(0, 0, 0);
     }
 
