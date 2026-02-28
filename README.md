@@ -5,9 +5,9 @@
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)](https://www.rust-lang.org/)
 [![WASM](https://img.shields.io/badge/WebAssembly-Ready-blueviolet.svg)](https://webassembly.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-533%20Rust%20%7C%20494%20SDK-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-534%20Rust%20%7C%20494%20SDK-brightgreen.svg)](#testing)
 
-QUAR Engine is a high-performance WebAR engine that brings native-quality SLAM tracking to the browser. Built entirely in Rust and compiled to WebAssembly, it delivers real-time 6 degrees of freedom (6DoF) tracking at 60 FPS with a ~134KB gzipped footprint.
+QUAR Engine is a high-performance WebAR engine that brings native-quality SLAM tracking to the browser. Built entirely in Rust and compiled to WebAssembly, it delivers real-time 6 degrees of freedom (6DoF) tracking at 60 FPS with a ~140KB gzipped footprint.
 
 ## Features
 
@@ -118,9 +118,9 @@ Based on [ORB-SLAM3](https://github.com/UZ-SLAMLab/ORB_SLAM3) (Campos et al., IE
 |  Feature  |  Optical  | Essential |  Bundle   |    Loop     |
 | Detection |   Flow    |  Matrix   | Adjustment|   Closure   |
 +-----------+-----------+-----------+-----------+-------------+
-|   FAST-9  |Lucas-Kanade|  8-point  |    L-M    |   BoW/DBoW  |
-|    NMS    |  Pyramid  |  RANSAC   |  Huber    |   TF-IDF    |
-|    ORB    |   Gyro    |  SVD      |           |   LSH       |
+|   FAST-9  |Lucas-Kanade|  5-point  |    L-M    |   BoW/DBoW  |
+|    NMS    |  Pyramid  |  8-point  |  Huber    |   TF-IDF    |
+|    ORB    |   Gyro    |  RANSAC   |           |  Pose Graph |
 +-----------+-----------+-----------+-----------+-------------+
 ```
 
@@ -163,9 +163,9 @@ quar_engine/
 | Metric | Target | Current |
 |--------|--------|---------|
 | Tracking Loop | <16ms (60 FPS) | Achieved on modern devices |
-| WASM Binary | <300KB gzipped | 134 KB gzipped / 110 KB brotli |
+| WASM Binary | <300KB gzipped | 319 KB / 140 KB gzipped / 116 KB brotli |
 | JS Bindings | - | 101 KB (15 KB gzipped) |
-| SDK (ESM) | - | 184 KB (40 KB gzipped) |
+| SDK (ESM) | - | 191 KB (41 KB gzipped) |
 | Motion-to-Photon | <30ms | <25ms with IMU |
 | Feature Detection | <5ms (640x480) | ~3ms |
 
@@ -195,7 +195,7 @@ cargo clippy -- -D warnings
 
 The project has comprehensive test coverage:
 
-- **Rust**: 533 unit tests covering all core algorithms
+- **Rust**: 534 unit tests covering all core algorithms
 - **SDK**: 494 TypeScript tests with Jest (20 suites)
 
 ```bash
