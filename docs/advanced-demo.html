@@ -263,10 +263,13 @@
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
     let jsVelocity = { x: 0, y: 0, z: 0 };
     let jsPosition = { x: 0, y: 0, z: 0 };
-    const JS_VEL_DECAY = 0.92;
+    let gravityEstimate = { x: 0, y: 0, z: 0 };
+    let gravityInitialized = false;
+    const GRAVITY_ALPHA = 0.97;
+    const JS_VEL_DECAY = 0.85;
     const JS_POS_DECAY = 0.97;
-    const JS_ACCEL_THRESHOLD = 0.3;
-    const JS_VEL_THRESHOLD = 0.01;
+    const JS_ACCEL_THRESHOLD = 0.15;
+    const JS_VEL_THRESHOLD = 0.005;
     const JS_MAX_OFFSET = 2.0;
     const JS_SMOOTHING = 0.3;
 
@@ -325,19 +328,31 @@
         trackerHandle.push_imu(accelX, accelY, accelZ, betaRate, gammaRate, alphaRate, now / 1000);
       }
 
-      // JS-side accelerometer integration for translation
-      // Uses event.acceleration (gravity-free from device sensor fusion)
-      const accel = event.acceleration;
-      if (accel && gyroRate < 1.0 && dt > 0 && dt < 0.1) {
-        const ax = accel.x || 0;
-        const ay = accel.y || 0;
-        const az = accel.z || 0;
-        const fax = Math.abs(ax) > JS_ACCEL_THRESHOLD ? ax : 0;
-        const fay = Math.abs(ay) > JS_ACCEL_THRESHOLD ? ay : 0;
-        const faz = Math.abs(az) > JS_ACCEL_THRESHOLD ? az : 0;
-        jsVelocity.x += fax * dt;
-        jsVelocity.y += fay * dt;
-        jsVelocity.z += faz * dt;
+      // JS-side accelerometer: high-pass filter on accelerationIncludingGravity
+      const rawAccel = event.accelerationIncludingGravity;
+      if (rawAccel && dt > 0 && dt < 0.1) {
+        const rx = rawAccel.x || 0;
+        const ry = rawAccel.y || 0;
+        const rz = rawAccel.z || 0;
+        if (!gravityInitialized) {
+          gravityEstimate.x = rx; gravityEstimate.y = ry; gravityEstimate.z = rz;
+          gravityInitialized = true;
+        } else {
+          gravityEstimate.x = GRAVITY_ALPHA * gravityEstimate.x + (1 - GRAVITY_ALPHA) * rx;
+          gravityEstimate.y = GRAVITY_ALPHA * gravityEstimate.y + (1 - GRAVITY_ALPHA) * ry;
+          gravityEstimate.z = GRAVITY_ALPHA * gravityEstimate.z + (1 - GRAVITY_ALPHA) * rz;
+        }
+        const ax = rx - gravityEstimate.x;
+        const ay = ry - gravityEstimate.y;
+        const az = rz - gravityEstimate.z;
+        if (gyroRate < 1.5) {
+          const fax = Math.abs(ax) > JS_ACCEL_THRESHOLD ? ax : 0;
+          const fay = Math.abs(ay) > JS_ACCEL_THRESHOLD ? ay : 0;
+          const faz = Math.abs(az) > JS_ACCEL_THRESHOLD ? az : 0;
+          jsVelocity.x += fax * dt;
+          jsVelocity.y += fay * dt;
+          jsVelocity.z += faz * dt;
+        }
       }
       jsVelocity.x *= JS_VEL_DECAY;
       jsVelocity.y *= JS_VEL_DECAY;
@@ -626,6 +641,8 @@
       smoothedPosition.set(0, 0, 0);
       jsVelocity = { x: 0, y: 0, z: 0 };
       jsPosition = { x: 0, y: 0, z: 0 };
+      gravityEstimate = { x: 0, y: 0, z: 0 };
+      gravityInitialized = false;
       camera.rotation.set(0, 0, 0);
       camera.position.set(0, 0, 3);
       cube.rotation.set(0, 0, 0);

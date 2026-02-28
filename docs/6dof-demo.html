@@ -650,18 +650,22 @@
     let currentGyroRate = 0;  // Magnitude of rotation rate (rad/s)
     const ROTATION_THRESHOLD = 0.5;  // Increased - allow more translation during slight rotation
 
-    // Translation tracking (JS-side accelerometer integration)
-    // Uses event.acceleration (gravity-free from device sensor fusion)
-    // instead of Rust AccelIntegrator (which uses identity rotation for gravity removal)
+    // Translation tracking (JS-side high-pass filtered accelerometer)
+    // High-pass filter on accelerationIncludingGravity removes gravity without
+    // needing device orientation. Works on all devices (event.acceleration may be null).
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
     let accumulatedPosition = new THREE.Vector3(0, 0, 0);
-    let jsVelocity = { x: 0, y: 0, z: 0 };       // JS-integrated velocity from device acceleration
-    let jsPosition = { x: 0, y: 0, z: 0 };        // JS-integrated position
-    const JS_VEL_DECAY = 0.92;    // Strong velocity decay per frame (settles quickly)
-    const JS_POS_DECAY = 0.97;    // Position decay (returns to base over ~1s)
-    const JS_ACCEL_THRESHOLD = 0.3; // Ignore small accelerations (noise filter, m/s²)
-    const JS_VEL_THRESHOLD = 0.01;  // Zero out tiny velocities
-    const JS_MAX_OFFSET = 2.0;     // Max camera offset from base position
+    let jsVelocity = { x: 0, y: 0, z: 0 };
+    let jsPosition = { x: 0, y: 0, z: 0 };
+    // High-pass filter state: gravity estimate via low-pass on raw accel
+    let gravityEstimate = { x: 0, y: 0, z: 0 };
+    let gravityInitialized = false;
+    const GRAVITY_ALPHA = 0.97;     // Low-pass for gravity (higher = slower adaptation)
+    const JS_VEL_DECAY = 0.85;     // Velocity friction per IMU sample
+    const JS_POS_DECAY = 0.97;     // Position returns toward zero over ~1s
+    const JS_ACCEL_THRESHOLD = 0.15; // Noise floor (m/s²), lower than before
+    const JS_VEL_THRESHOLD = 0.005;  // Zero tiny velocities
+    const JS_MAX_OFFSET = 2.0;      // Max camera displacement from base
 
     // ==================== Kalman Filter for Pose Smoothing ====================
     // 6-state Kalman filter: [x, y, z, vx, vy, vz]
@@ -954,32 +958,50 @@
       }
 
       // JS-side accelerometer integration for translation.
-      // Use event.acceleration (gravity-free from device sensor fusion) — much more
-      // accurate than Rust AccelIntegrator which uses identity rotation for gravity removal.
-      // Only integrate when rotation rate is low (high rotation = pure camera rotation, not movement)
-      const accel = event.acceleration;
-      if (accel && currentGyroRate < 1.0 && dt > 0 && dt < 0.1) {
-        const ax = accel.x || 0;
-        const ay = accel.y || 0;
-        const az = accel.z || 0;
+      // High-pass filter on accelerationIncludingGravity:
+      //   gravity_estimate = alpha * gravity_estimate + (1-alpha) * raw
+      //   linear_accel = raw - gravity_estimate
+      // This works on ALL devices (event.acceleration may be null on many).
+      const rawAccel = event.accelerationIncludingGravity;
+      if (rawAccel && dt > 0 && dt < 0.1) {
+        const rx = rawAccel.x || 0;
+        const ry = rawAccel.y || 0;
+        const rz = rawAccel.z || 0;
 
-        // Apply noise threshold — ignore tiny accelerations
-        const filteredAx = Math.abs(ax) > JS_ACCEL_THRESHOLD ? ax : 0;
-        const filteredAy = Math.abs(ay) > JS_ACCEL_THRESHOLD ? ay : 0;
-        const filteredAz = Math.abs(az) > JS_ACCEL_THRESHOLD ? az : 0;
+        // Initialize gravity estimate on first sample
+        if (!gravityInitialized) {
+          gravityEstimate.x = rx;
+          gravityEstimate.y = ry;
+          gravityEstimate.z = rz;
+          gravityInitialized = true;
+        } else {
+          // Low-pass filter → gravity estimate
+          gravityEstimate.x = GRAVITY_ALPHA * gravityEstimate.x + (1 - GRAVITY_ALPHA) * rx;
+          gravityEstimate.y = GRAVITY_ALPHA * gravityEstimate.y + (1 - GRAVITY_ALPHA) * ry;
+          gravityEstimate.z = GRAVITY_ALPHA * gravityEstimate.z + (1 - GRAVITY_ALPHA) * rz;
+        }
 
-        // Integrate acceleration to velocity
-        jsVelocity.x += filteredAx * dt;
-        jsVelocity.y += filteredAy * dt;
-        jsVelocity.z += filteredAz * dt;
+        // High-pass: subtract gravity to get linear acceleration
+        const ax = rx - gravityEstimate.x;
+        const ay = ry - gravityEstimate.y;
+        const az = rz - gravityEstimate.z;
+
+        // Only integrate when rotation rate is low (high rotation = pure camera rotation)
+        if (currentGyroRate < 1.5) {
+          const fax = Math.abs(ax) > JS_ACCEL_THRESHOLD ? ax : 0;
+          const fay = Math.abs(ay) > JS_ACCEL_THRESHOLD ? ay : 0;
+          const faz = Math.abs(az) > JS_ACCEL_THRESHOLD ? az : 0;
+
+          jsVelocity.x += fax * dt;
+          jsVelocity.y += fay * dt;
+          jsVelocity.z += faz * dt;
+        }
       }
 
-      // Apply velocity decay (always, even without new accel data)
+      // Velocity decay (always applied)
       jsVelocity.x *= JS_VEL_DECAY;
       jsVelocity.y *= JS_VEL_DECAY;
       jsVelocity.z *= JS_VEL_DECAY;
-
-      // Zero out tiny velocities
       if (Math.abs(jsVelocity.x) < JS_VEL_THRESHOLD) jsVelocity.x = 0;
       if (Math.abs(jsVelocity.y) < JS_VEL_THRESHOLD) jsVelocity.y = 0;
       if (Math.abs(jsVelocity.z) < JS_VEL_THRESHOLD) jsVelocity.z = 0;
@@ -1718,6 +1740,8 @@
       accumulatedPosition.set(0, 0, 0);
       jsVelocity = { x: 0, y: 0, z: 0 };
       jsPosition = { x: 0, y: 0, z: 0 };
+      gravityEstimate = { x: 0, y: 0, z: 0 };
+      gravityInitialized = false;
       currentGyroRate = 0;
 
       // Reset IMU fusion state
