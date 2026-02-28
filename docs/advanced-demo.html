@@ -550,20 +550,27 @@
               camera.rotation.z = -visualOrientation.y;
             }
 
-            // Translation via accelerometer-derived position
-            if (trackerHandle.get_accel_position) {
-              const accelPos = trackerHandle.get_accel_position();
-              const rawX = accelPos[0] ?? 0;
-              const rawY = accelPos[1] ?? 0;
-              const rawZ = accelPos[2] ?? 0;
+            // Translation via accelerometer velocity (not position, which drifts)
+            if (trackerHandle.get_accel_velocity) {
+              const accelVel = trackerHandle.get_accel_velocity();
+              const isStationary = trackerHandle.is_stationary();
+              const POSITION_DECAY = 0.95;
+              const VEL_SCALE = 0.15;
+              const MAX_DISPLACEMENT = 3.0;
 
-              const scaledX = rawX * TRANSLATION_SCALE;
-              const scaledY = rawY * TRANSLATION_SCALE;
-              const scaledZ = rawZ * TRANSLATION_SCALE;
+              if (!isStationary) {
+                smoothedPosition.x += (accelVel[0] ?? 0) * VEL_SCALE;
+                smoothedPosition.y += (accelVel[1] ?? 0) * VEL_SCALE;
+                smoothedPosition.z += (accelVel[2] ?? 0) * VEL_SCALE;
+              }
 
-              smoothedPosition.x += (scaledX - smoothedPosition.x) * TRANSLATION_SMOOTHING;
-              smoothedPosition.y += (scaledY - smoothedPosition.y) * TRANSLATION_SMOOTHING;
-              smoothedPosition.z += (scaledZ - smoothedPosition.z) * TRANSLATION_SMOOTHING;
+              smoothedPosition.x *= POSITION_DECAY;
+              smoothedPosition.y *= POSITION_DECAY;
+              smoothedPosition.z *= POSITION_DECAY;
+
+              smoothedPosition.x = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.x));
+              smoothedPosition.y = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.y));
+              smoothedPosition.z = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.z));
 
               camera.position.set(
                 smoothedPosition.x,

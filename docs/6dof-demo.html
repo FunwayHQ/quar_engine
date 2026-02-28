@@ -1355,38 +1355,38 @@
               camera.rotation.z = -visualOrientation.y;
             }
 
-            // 6DoF Translation tracking via accelerometer-derived position.
-            // Visual tracker's translation is near-zero on phones (insufficient parallax),
-            // so we use the WASM accelerometer integrator which handles:
-            //   - Gravity removal (proper rotation-based method)
-            //   - ZUPT (zero velocity when stationary)
-            //   - Velocity decay (friction model)
-            //   - Double integration: accel → velocity → position
-            // Position is in meters, in device/IMU coordinate frame.
-            const accelPos = tracker6dof.get_accel_position();
+            // 6DoF Translation tracking via accelerometer velocity.
+            // The WASM accelerometer's position drifts due to gravity removal using
+            // identity rotation (gravity leaks when phone tilts). Instead, we use
+            // velocity with per-frame decay so displacement naturally returns to zero.
             const accelVel = tracker6dof.get_accel_velocity();
             const isStationary = tracker6dof.is_stationary();
 
-            // IMU coordinates → Three.js:
-            // Device X (right) → Three.js X (right)
-            // Device Y (up) → Three.js Y (up)
-            // Device Z (toward user) → Three.js Z (backward = toward user) — same
-            const rawX = accelPos[0] ?? 0;
-            const rawY = accelPos[1] ?? 0;
-            const rawZ = accelPos[2] ?? 0;
+            // Velocity-based displacement: integrate velocity per frame, apply decay
+            // This gives responsive motion without unbounded drift
+            const POSITION_DECAY = 0.95;  // Decay per frame (~4% lost → returns to zero in ~1s)
+            const VEL_SCALE = 0.15;       // Scale velocity (m/s) to scene units per frame
+            const MAX_DISPLACEMENT = 3.0; // Clamp max camera offset from base
 
-            // Scale: position is in meters, apply user scale factors
-            const scaledX = rawX * currentScale * xScale;
-            const scaledY = rawY * currentScale * yScale;
-            const scaledZ = rawZ * currentScale * zScale;
+            if (!isStationary) {
+              // Add velocity contribution (velocity in m/s, we want scene units per frame)
+              smoothedPosition.x += (accelVel[0] ?? 0) * VEL_SCALE * xScale;
+              smoothedPosition.y += (accelVel[1] ?? 0) * VEL_SCALE * yScale;
+              smoothedPosition.z += (accelVel[2] ?? 0) * VEL_SCALE * zScale;
+            }
 
-            // Track accumulated position for HUD display
-            accumulatedPosition.set(scaledX, scaledY, scaledZ);
+            // Decay position back toward zero to prevent drift accumulation
+            smoothedPosition.x *= POSITION_DECAY;
+            smoothedPosition.y *= POSITION_DECAY;
+            smoothedPosition.z *= POSITION_DECAY;
 
-            // Apply smoothing to reduce jitter from accelerometer noise
-            smoothedPosition.x += (scaledX - smoothedPosition.x) * smoothing;
-            smoothedPosition.y += (scaledY - smoothedPosition.y) * smoothing;
-            smoothedPosition.z += (scaledZ - smoothedPosition.z) * smoothing;
+            // Clamp to prevent camera from going too far
+            smoothedPosition.x = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.x));
+            smoothedPosition.y = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.y));
+            smoothedPosition.z = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.z));
+
+            // Track for HUD display
+            accumulatedPosition.set(smoothedPosition.x, smoothedPosition.y, smoothedPosition.z);
 
             // Move CAMERA instead of arGroup for proper world-locked behavior
             // arGroup stays at origin, camera moves through the world
@@ -1404,17 +1404,16 @@
             const gyroCompEnabled = tracker6dof.is_gyro_compensation_enabled ? tracker6dof.is_gyro_compensation_enabled() : false;
             gyroCompEl.textContent = gyroCompEnabled ? 'ON' : 'OFF';
             gyroCompEl.style.color = gyroCompEnabled ? '#4ade80' : '#888';
-            // Show translation debug (accelerometer-based)
-            const speed = Math.sqrt(accelVel[0]**2 + accelVel[1]**2 + accelVel[2]**2);
-            flowDebugEl.textContent = `accel:[${rawX.toFixed(3)},${rawZ.toFixed(3)}] spd:${speed.toFixed(3)} ${isStationary?'STILL':''} cam:[${camera.position.x.toFixed(2)},${camera.position.z.toFixed(2)}]`;
+            // Show translation debug (velocity-based)
+            const speed = Math.sqrt((accelVel[0]??0)**2 + (accelVel[1]??0)**2 + (accelVel[2]??0)**2);
+            flowDebugEl.textContent = `vel:[${(accelVel[0]??0).toFixed(3)},${(accelVel[2]??0).toFixed(3)}] spd:${speed.toFixed(3)} ${isStationary?'STILL':''} cam:[${camera.position.x.toFixed(2)},${camera.position.z.toFixed(2)}]`;
 
             // Log translation chain periodically for debugging
             if (totalFrames % 120 === 0) {
-              console.log('=== Translation Debug (Accelerometer) ===');
-              console.log(`Accel position (m): [${rawX.toFixed(4)}, ${rawY.toFixed(4)}, ${rawZ.toFixed(4)}]`);
-              console.log(`Accel velocity (m/s): [${accelVel[0]?.toFixed(4)}, ${accelVel[1]?.toFixed(4)}, ${accelVel[2]?.toFixed(4)}]`);
+              console.log('=== Translation Debug (Velocity) ===');
+              console.log(`Accel velocity (m/s): [${(accelVel[0]??0).toFixed(4)}, ${(accelVel[1]??0).toFixed(4)}, ${(accelVel[2]??0).toFixed(4)}]`);
               console.log(`Stationary: ${isStationary}, Speed: ${speed.toFixed(4)} m/s`);
-              console.log(`Scaled: [${scaledX.toFixed(4)}, ${scaledY.toFixed(4)}, ${scaledZ.toFixed(4)}]`);
+              console.log(`Position offset: [${smoothedPosition.x.toFixed(4)}, ${smoothedPosition.y.toFixed(4)}, ${smoothedPosition.z.toFixed(4)}]`);
               console.log(`Camera pos: [${camera.position.x.toFixed(3)}, ${camera.position.y.toFixed(3)}, ${camera.position.z.toFixed(3)}]`);
             }
 
@@ -1607,11 +1606,9 @@
 
             // Debug every 120 frames (~2 seconds): full chain trace
             if (totalFrames % 120 === 0) {
-              console.log('=== Accel Translation Debug (v3) ===');
-              console.log(`Accel pos (m): [${rawX.toFixed(4)}, ${rawY.toFixed(4)}, ${rawZ.toFixed(4)}]`);
-              console.log(`Scale: ${currentScale}, Axes: [${xScale},${yScale},${zScale}]`);
-              console.log(`Scaled: [${scaledX.toFixed(4)}, ${scaledY.toFixed(4)}, ${scaledZ.toFixed(4)}]`);
-              console.log(`Smoothed: [${smoothedPosition.x.toFixed(4)}, ${smoothedPosition.y.toFixed(4)}, ${smoothedPosition.z.toFixed(4)}]`);
+              console.log('=== Velocity Translation Debug (v4) ===');
+              console.log(`Vel: [${(accelVel[0]??0).toFixed(4)}, ${(accelVel[1]??0).toFixed(4)}, ${(accelVel[2]??0).toFixed(4)}]`);
+              console.log(`Offset: [${smoothedPosition.x.toFixed(4)}, ${smoothedPosition.y.toFixed(4)}, ${smoothedPosition.z.toFixed(4)}]`);
               console.log(`Camera: [${camera.position.x.toFixed(4)}, ${camera.position.y.toFixed(4)}, ${camera.position.z.toFixed(4)}]`);
               console.log(`Map Points: ${tracker6dof.map_point_count()}, Parallax: ${parallax.toFixed(2)}°`);
             }
