@@ -184,7 +184,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>Advanced AR with IMU Fusion</p>
+      <p>Advanced AR with IMU Fusion v2 (6DoF Translation)</p>
       <button id="start-btn">Start AR</button>
     </div>
   </div>
@@ -261,8 +261,14 @@
 
     // Translation state (accelerometer-driven)
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
-    const TRANSLATION_SCALE = 5.0;  // Scale factor for accelerometer position
-    const TRANSLATION_SMOOTHING = 0.3;
+    let jsVelocity = { x: 0, y: 0, z: 0 };
+    let jsPosition = { x: 0, y: 0, z: 0 };
+    const JS_VEL_DECAY = 0.92;
+    const JS_POS_DECAY = 0.97;
+    const JS_ACCEL_THRESHOLD = 0.3;
+    const JS_VEL_THRESHOLD = 0.01;
+    const JS_MAX_OFFSET = 2.0;
+    const JS_SMOOTHING = 0.3;
 
     // Gyroscope integration for AR world-space locking
     //
@@ -307,7 +313,8 @@
       const gammaRate = (event.rotationRate.gamma || 0) * degToRad; // roll
       const alphaRate = (event.rotationRate.alpha || 0) * degToRad; // yaw
 
-      // Push IMU data to tracker for accelerometer-based translation
+      // Push IMU data to tracker
+      const gyroRate = Math.sqrt(betaRate*betaRate + gammaRate*gammaRate + alphaRate*alphaRate);
       if (trackerHandle) {
         if (trackerHandle.push_gyro) {
           trackerHandle.push_gyro(betaRate, gammaRate, alphaRate, now);
@@ -317,6 +324,27 @@
         const accelZ = event.accelerationIncludingGravity?.z || 0;
         trackerHandle.push_imu(accelX, accelY, accelZ, betaRate, gammaRate, alphaRate, now / 1000);
       }
+
+      // JS-side accelerometer integration for translation
+      // Uses event.acceleration (gravity-free from device sensor fusion)
+      const accel = event.acceleration;
+      if (accel && gyroRate < 1.0 && dt > 0 && dt < 0.1) {
+        const ax = accel.x || 0;
+        const ay = accel.y || 0;
+        const az = accel.z || 0;
+        const fax = Math.abs(ax) > JS_ACCEL_THRESHOLD ? ax : 0;
+        const fay = Math.abs(ay) > JS_ACCEL_THRESHOLD ? ay : 0;
+        const faz = Math.abs(az) > JS_ACCEL_THRESHOLD ? az : 0;
+        jsVelocity.x += fax * dt;
+        jsVelocity.y += fay * dt;
+        jsVelocity.z += faz * dt;
+      }
+      jsVelocity.x *= JS_VEL_DECAY;
+      jsVelocity.y *= JS_VEL_DECAY;
+      jsVelocity.z *= JS_VEL_DECAY;
+      if (Math.abs(jsVelocity.x) < JS_VEL_THRESHOLD) jsVelocity.x = 0;
+      if (Math.abs(jsVelocity.y) < JS_VEL_THRESHOLD) jsVelocity.y = 0;
+      if (Math.abs(jsVelocity.z) < JS_VEL_THRESHOLD) jsVelocity.z = 0;
 
       // Integrate gyro - accumulate rotation
       gyroOrientation.x += betaRate * dt;   // pitch: positive=look down, negative=look up
@@ -550,34 +578,26 @@
               camera.rotation.z = -visualOrientation.y;
             }
 
-            // Translation via accelerometer velocity (not position, which drifts)
-            if (trackerHandle.get_accel_velocity) {
-              const accelVel = trackerHandle.get_accel_velocity();
-              const isStationary = trackerHandle.is_stationary();
-              const POSITION_DECAY = 0.95;
-              const VEL_SCALE = 0.15;
-              const MAX_DISPLACEMENT = 3.0;
+            // Translation via JS-side accelerometer (gravity-free from device sensor fusion)
+            jsPosition.x += jsVelocity.x * 0.02;
+            jsPosition.y += jsVelocity.y * 0.02;
+            jsPosition.z += jsVelocity.z * 0.02;
+            jsPosition.x *= JS_POS_DECAY;
+            jsPosition.y *= JS_POS_DECAY;
+            jsPosition.z *= JS_POS_DECAY;
+            jsPosition.x = Math.max(-JS_MAX_OFFSET, Math.min(JS_MAX_OFFSET, jsPosition.x));
+            jsPosition.y = Math.max(-JS_MAX_OFFSET, Math.min(JS_MAX_OFFSET, jsPosition.y));
+            jsPosition.z = Math.max(-JS_MAX_OFFSET, Math.min(JS_MAX_OFFSET, jsPosition.z));
 
-              if (!isStationary) {
-                smoothedPosition.x += (accelVel[0] ?? 0) * VEL_SCALE;
-                smoothedPosition.y += (accelVel[1] ?? 0) * VEL_SCALE;
-                smoothedPosition.z += (accelVel[2] ?? 0) * VEL_SCALE;
-              }
+            smoothedPosition.x += (jsPosition.x - smoothedPosition.x) * JS_SMOOTHING;
+            smoothedPosition.y += (jsPosition.y - smoothedPosition.y) * JS_SMOOTHING;
+            smoothedPosition.z += (jsPosition.z - smoothedPosition.z) * JS_SMOOTHING;
 
-              smoothedPosition.x *= POSITION_DECAY;
-              smoothedPosition.y *= POSITION_DECAY;
-              smoothedPosition.z *= POSITION_DECAY;
-
-              smoothedPosition.x = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.x));
-              smoothedPosition.y = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.y));
-              smoothedPosition.z = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.z));
-
-              camera.position.set(
-                smoothedPosition.x,
-                smoothedPosition.y,
-                3 + smoothedPosition.z
-              );
-            }
+            camera.position.set(
+              smoothedPosition.x,
+              smoothedPosition.y,
+              3 + smoothedPosition.z
+            );
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';
             stateEl.style.color = tracked > 0 ? '#facc15' : '#f87171';
@@ -604,6 +624,8 @@
       fusedOrientation = { x: 0, y: 0, z: 0 };
       gyroInitialized = false;
       smoothedPosition.set(0, 0, 0);
+      jsVelocity = { x: 0, y: 0, z: 0 };
+      jsPosition = { x: 0, y: 0, z: 0 };
       camera.rotation.set(0, 0, 0);
       camera.position.set(0, 0, 3);
       cube.rotation.set(0, 0, 0);

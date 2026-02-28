@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>QUAR Engine - 6DoF VIO Demo (v25 Parallax Scaling)</title>
+  <title>QUAR Engine - 6DoF VIO Demo (v23 Accel Translation)</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -487,7 +487,7 @@
 
     <div id="start-overlay">
       <h1>QUAR Engine</h1>
-      <p>6DoF VIO Demo v22 (Translation Fix)</p>
+      <p>6DoF VIO Demo v23 (Accel Translation)</p>
       <div class="features">
         <span>Plane Detection</span>
         <span>Hit Testing</span>
@@ -650,10 +650,18 @@
     let currentGyroRate = 0;  // Magnitude of rotation rate (rad/s)
     const ROTATION_THRESHOLD = 0.5;  // Increased - allow more translation during slight rotation
 
-    // Translation tracking
+    // Translation tracking (JS-side accelerometer integration)
+    // Uses event.acceleration (gravity-free from device sensor fusion)
+    // instead of Rust AccelIntegrator (which uses identity rotation for gravity removal)
     let smoothedPosition = new THREE.Vector3(0, 0, 0);
-    let lastRawTranslation = { x: 0, y: 0, z: 0 };  // For computing deltas
-    let accumulatedPosition = new THREE.Vector3(0, 0, 0);  // Our own accumulation with decay
+    let accumulatedPosition = new THREE.Vector3(0, 0, 0);
+    let jsVelocity = { x: 0, y: 0, z: 0 };       // JS-integrated velocity from device acceleration
+    let jsPosition = { x: 0, y: 0, z: 0 };        // JS-integrated position
+    const JS_VEL_DECAY = 0.92;    // Strong velocity decay per frame (settles quickly)
+    const JS_POS_DECAY = 0.97;    // Position decay (returns to base over ~1s)
+    const JS_ACCEL_THRESHOLD = 0.3; // Ignore small accelerations (noise filter, m/s²)
+    const JS_VEL_THRESHOLD = 0.01;  // Zero out tiny velocities
+    const JS_MAX_OFFSET = 2.0;     // Max camera offset from base position
 
     // ==================== Kalman Filter for Pose Smoothing ====================
     // 6-state Kalman filter: [x, y, z, vx, vy, vz]
@@ -931,29 +939,50 @@
       const gammaRate = (event.rotationRate.gamma || 0) * degToRad;
       const alphaRate = (event.rotationRate.alpha || 0) * degToRad;
 
-      // Get accelerometer data if available
-      const ax = event.acceleration?.x || event.accelerationIncludingGravity?.x || 0;
-      const ay = event.acceleration?.y || event.accelerationIncludingGravity?.y || 0;
-      const az = event.acceleration?.z || event.accelerationIncludingGravity?.z || 0;
-
       // Track rotation rate magnitude for translation filtering
       currentGyroRate = Math.sqrt(betaRate * betaRate + gammaRate * gammaRate + alphaRate * alphaRate);
 
       // Push IMU data to tracker6dof for VIO and gravity estimation
-      // Note: Device gyro axes may differ from camera axes - this mapping works for most phones
-      // X = beta (tilt forward/back), Y = gamma (tilt left/right), Z = alpha (rotate)
       if (tracker6dof) {
-        // Push gyro for flow compensation
         if (tracker6dof.push_gyro) {
           tracker6dof.push_gyro(betaRate, gammaRate, alphaRate, now);
         }
-        // Push full IMU data for VIO and gravity estimation
-        // Note: accelerationIncludingGravity includes gravity, which the gravity estimator expects
         const accelX = event.accelerationIncludingGravity?.x || 0;
         const accelY = event.accelerationIncludingGravity?.y || 0;
         const accelZ = event.accelerationIncludingGravity?.z || 0;
         tracker6dof.push_imu(accelX, accelY, accelZ, betaRate, gammaRate, alphaRate, timestamp);
       }
+
+      // JS-side accelerometer integration for translation.
+      // Use event.acceleration (gravity-free from device sensor fusion) — much more
+      // accurate than Rust AccelIntegrator which uses identity rotation for gravity removal.
+      // Only integrate when rotation rate is low (high rotation = pure camera rotation, not movement)
+      const accel = event.acceleration;
+      if (accel && currentGyroRate < 1.0 && dt > 0 && dt < 0.1) {
+        const ax = accel.x || 0;
+        const ay = accel.y || 0;
+        const az = accel.z || 0;
+
+        // Apply noise threshold — ignore tiny accelerations
+        const filteredAx = Math.abs(ax) > JS_ACCEL_THRESHOLD ? ax : 0;
+        const filteredAy = Math.abs(ay) > JS_ACCEL_THRESHOLD ? ay : 0;
+        const filteredAz = Math.abs(az) > JS_ACCEL_THRESHOLD ? az : 0;
+
+        // Integrate acceleration to velocity
+        jsVelocity.x += filteredAx * dt;
+        jsVelocity.y += filteredAy * dt;
+        jsVelocity.z += filteredAz * dt;
+      }
+
+      // Apply velocity decay (always, even without new accel data)
+      jsVelocity.x *= JS_VEL_DECAY;
+      jsVelocity.y *= JS_VEL_DECAY;
+      jsVelocity.z *= JS_VEL_DECAY;
+
+      // Zero out tiny velocities
+      if (Math.abs(jsVelocity.x) < JS_VEL_THRESHOLD) jsVelocity.x = 0;
+      if (Math.abs(jsVelocity.y) < JS_VEL_THRESHOLD) jsVelocity.y = 0;
+      if (Math.abs(jsVelocity.z) < JS_VEL_THRESHOLD) jsVelocity.z = 0;
 
       // Integrate gyro
       gyroOrientation.x += betaRate * dt;
@@ -1355,66 +1384,54 @@
               camera.rotation.z = -visualOrientation.y;
             }
 
-            // 6DoF Translation tracking via accelerometer velocity.
-            // The WASM accelerometer's position drifts due to gravity removal using
-            // identity rotation (gravity leaks when phone tilts). Instead, we use
-            // velocity with per-frame decay so displacement naturally returns to zero.
-            const accelVel = tracker6dof.get_accel_velocity();
-            const isStationary = tracker6dof.is_stationary();
+            // 6DoF Translation via JS-side accelerometer integration.
+            // Uses jsVelocity computed in gyro handler from event.acceleration
+            // (gravity-free via device sensor fusion — avoids Rust's identity-rotation issue).
+            // Velocity is integrated to position with decay to prevent drift.
 
-            // Velocity-based displacement: integrate velocity per frame, apply decay
-            // This gives responsive motion without unbounded drift
-            const POSITION_DECAY = 0.95;  // Decay per frame (~4% lost → returns to zero in ~1s)
-            const VEL_SCALE = 0.15;       // Scale velocity (m/s) to scene units per frame
-            const MAX_DISPLACEMENT = 3.0; // Clamp max camera offset from base
+            // Integrate JS velocity to position
+            jsPosition.x += jsVelocity.x * 0.02;  // ~dt at 50Hz IMU rate
+            jsPosition.y += jsVelocity.y * 0.02;
+            jsPosition.z += jsVelocity.z * 0.02;
 
-            if (!isStationary) {
-              // Add velocity contribution (velocity in m/s, we want scene units per frame)
-              smoothedPosition.x += (accelVel[0] ?? 0) * VEL_SCALE * xScale;
-              smoothedPosition.y += (accelVel[1] ?? 0) * VEL_SCALE * yScale;
-              smoothedPosition.z += (accelVel[2] ?? 0) * VEL_SCALE * zScale;
-            }
+            // Decay position back toward zero
+            jsPosition.x *= JS_POS_DECAY;
+            jsPosition.y *= JS_POS_DECAY;
+            jsPosition.z *= JS_POS_DECAY;
 
-            // Decay position back toward zero to prevent drift accumulation
-            smoothedPosition.x *= POSITION_DECAY;
-            smoothedPosition.y *= POSITION_DECAY;
-            smoothedPosition.z *= POSITION_DECAY;
+            // Clamp
+            jsPosition.x = Math.max(-JS_MAX_OFFSET, Math.min(JS_MAX_OFFSET, jsPosition.x));
+            jsPosition.y = Math.max(-JS_MAX_OFFSET, Math.min(JS_MAX_OFFSET, jsPosition.y));
+            jsPosition.z = Math.max(-JS_MAX_OFFSET, Math.min(JS_MAX_OFFSET, jsPosition.z));
 
-            // Clamp to prevent camera from going too far
-            smoothedPosition.x = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.x));
-            smoothedPosition.y = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.y));
-            smoothedPosition.z = Math.max(-MAX_DISPLACEMENT, Math.min(MAX_DISPLACEMENT, smoothedPosition.z));
+            // Smooth
+            smoothedPosition.x += (jsPosition.x - smoothedPosition.x) * smoothing;
+            smoothedPosition.y += (jsPosition.y - smoothedPosition.y) * smoothing;
+            smoothedPosition.z += (jsPosition.z - smoothedPosition.z) * smoothing;
 
-            // Track for HUD display
             accumulatedPosition.set(smoothedPosition.x, smoothedPosition.y, smoothedPosition.z);
 
-            // Move CAMERA instead of arGroup for proper world-locked behavior
-            // arGroup stays at origin, camera moves through the world
+            // Move CAMERA (arGroup stays at origin for world-locking)
             const zVal = invertZ ? -smoothedPosition.z : smoothedPosition.z;
-
-            // Apply translation to camera (offset from base position)
             camera.position.set(
               smoothedPosition.x,
-              1 + smoothedPosition.y,  // Base height of 1m + translation
-              3 + zVal                  // Base distance of 3m + translation
+              1 + smoothedPosition.y,
+              3 + zVal
             );
 
-            // Debug: show camera position being applied
+            // Debug HUD
             gyroRateEl.textContent = currentGyroRate.toFixed(2);
             const gyroCompEnabled = tracker6dof.is_gyro_compensation_enabled ? tracker6dof.is_gyro_compensation_enabled() : false;
             gyroCompEl.textContent = gyroCompEnabled ? 'ON' : 'OFF';
             gyroCompEl.style.color = gyroCompEnabled ? '#4ade80' : '#888';
-            // Show translation debug (velocity-based)
-            const speed = Math.sqrt((accelVel[0]??0)**2 + (accelVel[1]??0)**2 + (accelVel[2]??0)**2);
-            flowDebugEl.textContent = `vel:[${(accelVel[0]??0).toFixed(3)},${(accelVel[2]??0).toFixed(3)}] spd:${speed.toFixed(3)} ${isStationary?'STILL':''} cam:[${camera.position.x.toFixed(2)},${camera.position.z.toFixed(2)}]`;
+            const jsSpeed = Math.sqrt(jsVelocity.x**2 + jsVelocity.y**2 + jsVelocity.z**2);
+            flowDebugEl.textContent = `v:[${jsVelocity.x.toFixed(3)},${jsVelocity.z.toFixed(3)}] spd:${jsSpeed.toFixed(3)} pos:[${jsPosition.x.toFixed(2)},${jsPosition.z.toFixed(2)}]`;
 
-            // Log translation chain periodically for debugging
             if (totalFrames % 120 === 0) {
-              console.log('=== Translation Debug (Velocity) ===');
-              console.log(`Accel velocity (m/s): [${(accelVel[0]??0).toFixed(4)}, ${(accelVel[1]??0).toFixed(4)}, ${(accelVel[2]??0).toFixed(4)}]`);
-              console.log(`Stationary: ${isStationary}, Speed: ${speed.toFixed(4)} m/s`);
-              console.log(`Position offset: [${smoothedPosition.x.toFixed(4)}, ${smoothedPosition.y.toFixed(4)}, ${smoothedPosition.z.toFixed(4)}]`);
-              console.log(`Camera pos: [${camera.position.x.toFixed(3)}, ${camera.position.y.toFixed(3)}, ${camera.position.z.toFixed(3)}]`);
+              console.log('=== Translation Debug (JS Accel) ===');
+              console.log(`JS velocity: [${jsVelocity.x.toFixed(4)}, ${jsVelocity.y.toFixed(4)}, ${jsVelocity.z.toFixed(4)}]`);
+              console.log(`JS position: [${jsPosition.x.toFixed(4)}, ${jsPosition.y.toFixed(4)}, ${jsPosition.z.toFixed(4)}]`);
+              console.log(`Camera: [${camera.position.x.toFixed(3)}, ${camera.position.y.toFixed(3)}, ${camera.position.z.toFixed(3)}]`);
             }
 
             // Update VIO status display
@@ -1606,9 +1623,9 @@
 
             // Debug every 120 frames (~2 seconds): full chain trace
             if (totalFrames % 120 === 0) {
-              console.log('=== Velocity Translation Debug (v4) ===');
-              console.log(`Vel: [${(accelVel[0]??0).toFixed(4)}, ${(accelVel[1]??0).toFixed(4)}, ${(accelVel[2]??0).toFixed(4)}]`);
-              console.log(`Offset: [${smoothedPosition.x.toFixed(4)}, ${smoothedPosition.y.toFixed(4)}, ${smoothedPosition.z.toFixed(4)}]`);
+              console.log('=== JS Accel Debug (v5) ===');
+              console.log(`JS vel: [${jsVelocity.x.toFixed(4)}, ${jsVelocity.y.toFixed(4)}, ${jsVelocity.z.toFixed(4)}]`);
+              console.log(`JS pos: [${jsPosition.x.toFixed(4)}, ${jsPosition.y.toFixed(4)}, ${jsPosition.z.toFixed(4)}]`);
               console.log(`Camera: [${camera.position.x.toFixed(4)}, ${camera.position.y.toFixed(4)}, ${camera.position.z.toFixed(4)}]`);
               console.log(`Map Points: ${tracker6dof.map_point_count()}, Parallax: ${parallax.toFixed(2)}°`);
             }
@@ -1699,7 +1716,8 @@
       lastPosition.set(0, 0, 0);
       smoothedPosition.set(0, 0, 0);
       accumulatedPosition.set(0, 0, 0);
-      lastRawTranslation = { x: 0, y: 0, z: 0 };
+      jsVelocity = { x: 0, y: 0, z: 0 };
+      jsPosition = { x: 0, y: 0, z: 0 };
       currentGyroRate = 0;
 
       // Reset IMU fusion state
