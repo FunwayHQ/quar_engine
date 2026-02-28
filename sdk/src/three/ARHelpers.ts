@@ -205,6 +205,20 @@ export class ARSession {
   }
 
   /**
+   * Destroy the session and release all resources.
+   */
+  destroy(): void {
+    this.stop();
+    if (this._tracker) {
+      this._tracker.destroy();
+      this._tracker = null;
+    }
+    this._hitTester = null;
+    this._camera = null;
+    this._eventHandlers.clear();
+  }
+
+  /**
    * Process a frame. Call this in your render loop.
    * @param imageData - Camera frame data
    * @param timestamp - Frame timestamp in seconds

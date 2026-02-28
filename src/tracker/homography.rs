@@ -125,7 +125,7 @@ pub fn compute_homography_ransac(
             let mut inlier_count = 0;
 
             for i in 0..n {
-                let err = symmetric_transfer_error(&h, &src_points[i], &dst_points[i]);
+                let err = forward_transfer_error_squared(&h, &src_points[i], &dst_points[i]);
                 if err < threshold * threshold {
                     inlier_mask[i] = true;
                     inlier_count += 1;
@@ -159,7 +159,7 @@ pub fn compute_homography_ransac(
         if let Some(h_refined) = compute_homography(&inlier_src, &inlier_dst) {
             // Recompute inliers with refined homography
             for i in 0..n {
-                let err = symmetric_transfer_error(&h_refined, &src_points[i], &dst_points[i]);
+                let err = forward_transfer_error_squared(&h_refined, &src_points[i], &dst_points[i]);
                 best_inlier_mask[i] = err < threshold * threshold;
             }
             return Some((h_refined, best_inlier_mask));
@@ -169,14 +169,11 @@ pub fn compute_homography_ransac(
     best_h.map(|h| (h, best_inlier_mask))
 }
 
-/// Symmetric transfer error for homography.
+/// Forward transfer error (squared) for homography.
 ///
-/// Computes the sum of:
-/// - Forward error: ||H * src - dst||²
-/// - Backward error: ||H^-1 * dst - src||²
-///
+/// Computes ||H * src - dst||² (forward projection error only).
 /// Returns squared error for efficiency.
-pub fn symmetric_transfer_error(h: &Mat3, src: &Vec2, dst: &Vec2) -> f64 {
+pub fn forward_transfer_error_squared(h: &Mat3, src: &Vec2, dst: &Vec2) -> f64 {
     // Forward projection: H * src
     let src_h = Vec3::new(src.x, src.y, 1.0);
     let proj = h.mul_vec(&src_h);
@@ -252,9 +249,10 @@ pub fn decompose_homography(h: &Mat3, k: &Mat3) -> Vec<(Mat3, Vec3, Vec3)> {
         r1.z, r2.z, r3.z,
     );
 
-    // Enforce orthogonality via SVD
+    // Enforce orthogonality via SVD, ensuring proper rotation (det = +1)
     let r_matrix = r.to_matrix3x3();
-    let svd = svd_3x3(&r_matrix);
+    let mut svd = svd_3x3(&r_matrix);
+    super::linalg::svd_ensure_proper_rotations(&mut svd);
 
     let r_ortho = Mat3::from_matrix3x3(&svd.u.mul(&svd.v_t));
 
@@ -278,9 +276,10 @@ pub fn decompose_homography_full(h: &Mat3, k: &Mat3) -> Vec<(Mat3, Vec3, Vec3)> 
     // H' = K^-1 * H
     let hp = k_inv.mul(h);
 
-    // SVD of H'
+    // SVD of H', ensuring proper rotations
     let hp_matrix = hp.to_matrix3x3();
-    let svd = svd_3x3(&hp_matrix);
+    let mut svd = svd_3x3(&hp_matrix);
+    super::linalg::svd_ensure_proper_rotations(&mut svd);
 
     let d1 = svd.s[0];
     let d2 = svd.s[1];
@@ -307,33 +306,40 @@ pub fn decompose_homography_full(h: &Mat3, k: &Mat3) -> Vec<(Mat3, Vec3, Vec3)> 
         let n = Vec3::new(0.0, 0.0, 1.0);
         solutions.push((r, t, n));
     } else {
-        // General case - 4 solutions
-        let aux_s = (d1 * d1 - d3 * d3).sqrt();
+        // General case - 4 solutions (Malis & Vargas 2007)
+        // Normal components in SVD frame
+        let x1 = ((d1 * d1 - 1.0) / (d1 * d1 - d3 * d3)).sqrt();
+        let x3 = ((1.0 - d3 * d3) / (d1 * d1 - d3 * d3)).sqrt();
 
-        // Compute rotation and translation candidates
-        let cos_theta = (d1 * d3).sqrt();
-        let sin_theta = aux_s / 2.0;
+        // Rotation angle in SVD frame (about y-axis)
+        let cos_theta = (1.0 + d1 * d3) / (d1 + d3);
+        let sin_theta = ((d1 * d1 - 1.0) * (1.0 - d3 * d3)).sqrt() / (d1 + d3);
 
         // For each of 4 sign combinations
         for &sign1 in &[-1.0, 1.0] {
             for &sign2 in &[-1.0, 1.0] {
-                let t_norm = Vec3::new(
-                    sign1 * (1.0 - d3 * d3).sqrt(),
+                let n_prime = Vec3::new(sign1 * x1, 0.0, sign2 * x3);
+
+                let t_prime = Vec3::new(
+                    (d1 - d3) * sign1 * x1,
                     0.0,
-                    sign2 * (d1 * d1 - 1.0).sqrt(),
+                    -(d1 - d3) * sign2 * x3,
                 );
 
-                let n = Vec3::new(
-                    sign1 * (d1 * d1 - 1.0).sqrt() / aux_s,
-                    0.0,
-                    sign2 * (1.0 - d3 * d3).sqrt() / aux_s,
-                );
+                // Rotation about y-axis in SVD frame
+                let sin_a = sign1 * sign2 * sin_theta;
+                let y_axis = Vec3::new(0.0, 1.0, 0.0);
+                let r_prime = rotation_from_theta_and_axis(cos_theta, sin_a, &y_axis);
 
-                // Construct rotation
-                let r = rotation_from_theta_and_axis(cos_theta, sin_theta, &n);
-                let r_final = Mat3::from_matrix3x3(&svd.u).mul(&r).mul(&Mat3::from_matrix3x3(&svd.v_t));
+                // Transform back from SVD frame
+                let u_mat = Mat3::from_matrix3x3(&svd.u);
+                let vt_mat = Mat3::from_matrix3x3(&svd.v_t);
+                let r_final = u_mat.mul(&r_prime).mul(&vt_mat);
+                let t_final = u_mat.mul_vec(&t_prime);
+                let v_mat = vt_mat.transpose();
+                let n_final = v_mat.mul_vec(&n_prime);
 
-                solutions.push((r_final.scale(s), t_norm.scale(s), n));
+                solutions.push((r_final.scale(s), t_final.scale(s), n_final));
             }
         }
     }

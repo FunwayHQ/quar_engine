@@ -326,20 +326,15 @@ impl PlaneDetectorHandle {
 
     /// Set the inlier threshold (distance from plane to be considered an inlier).
     pub fn set_inlier_threshold(&mut self, threshold: f64) {
-        // We need to recreate the detector with new config
-        let config = PlaneDetectorConfig {
-            inlier_threshold: threshold,
-            ..PlaneDetectorConfig::default()
-        };
+        let mut config = self.detector.config().clone();
+        config.inlier_threshold = threshold;
         self.detector = PlaneDetector::with_config(config);
     }
 
     /// Set the minimum number of inliers required to accept a plane.
     pub fn set_min_inliers(&mut self, min_inliers: usize) {
-        let config = PlaneDetectorConfig {
-            min_inliers,
-            ..PlaneDetectorConfig::default()
-        };
+        let mut config = self.detector.config().clone();
+        config.min_inliers = min_inliers;
         self.detector = PlaneDetector::with_config(config);
     }
 }

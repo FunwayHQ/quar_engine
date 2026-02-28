@@ -56,6 +56,7 @@ interface WasmTracker6DoF {
   get_pose(): Pose6DoF | null;
   get_scale(): number;
   set_scale(scale: number): void;
+  free?(): void;
 
   // VIO
   set_vio_enabled(enabled: boolean): void;
@@ -124,9 +125,10 @@ export interface Tracker6DoFOptions {
  * ```
  */
 export class Tracker6DoF {
-  private handle: WasmTracker6DoF;
+  private handle: WasmTracker6DoF | null;
   private _lastPose: Pose6DoF | null = null;
   private _confidence: TrackingConfidence = 'lost';
+  private _disposed = false;
 
   constructor(wasmHandle: WasmTracker6DoF, options?: Partial<Tracker6DoFOptions>) {
     this.handle = wasmHandle;
@@ -144,12 +146,40 @@ export class Tracker6DoF {
   }
 
   /**
+   * Destroy the tracker and free WASM resources.
+   */
+  destroy(): void {
+    if (this._disposed) return;
+    this._disposed = true;
+    if (this.handle?.free) {
+      this.handle.free();
+    }
+    this.handle = null;
+    this._lastPose = null;
+  }
+
+  /**
+   * Check if the tracker has been disposed.
+   */
+  get isDisposed(): boolean {
+    return this._disposed;
+  }
+
+  private ensureNotDisposed(): WasmTracker6DoF {
+    if (this._disposed || !this.handle) {
+      throw new Error('Tracker6DoF has been destroyed');
+    }
+    return this.handle;
+  }
+
+  /**
    * Process a video frame and return the 6DoF pose.
    * @param imageData - RGBA image data
    * @returns Pose or null if tracking lost
    */
   processFrame(imageData: ImageData): Pose6DoF | null {
-    const pose = this.handle.process_frame(imageData.data, imageData.width, imageData.height);
+    const handle = this.ensureNotDisposed();
+    const pose = handle.process_frame(imageData.data, imageData.width, imageData.height);
     this._lastPose = pose;
     this.updateConfidence();
     return pose;
@@ -162,7 +192,8 @@ export class Tracker6DoF {
    * @returns Pose or null if tracking lost
    */
   processFrameVIO(imageData: ImageData, timestamp: number): Pose6DoF | null {
-    const pose = this.handle.process_frame_vio(
+    const handle = this.ensureNotDisposed();
+    const pose = handle.process_frame_vio(
       imageData.data,
       imageData.width,
       imageData.height,
@@ -184,7 +215,7 @@ export class Tracker6DoF {
     gyro: [number, number, number],
     timestamp: number
   ): void {
-    this.handle.push_imu(
+    this.ensureNotDisposed().push_imu(
       accel[0], accel[1], accel[2],
       gyro[0], gyro[1], gyro[2],
       timestamp
@@ -195,7 +226,7 @@ export class Tracker6DoF {
    * Get the current pose.
    */
   getPose(): Pose6DoF | null {
-    return this.handle.get_pose();
+    return this.ensureNotDisposed().get_pose();
   }
 
   /**
@@ -216,7 +247,7 @@ export class Tracker6DoF {
    * Reset the tracker.
    */
   reset(): void {
-    this.handle.reset();
+    this.ensureNotDisposed().reset();
     this._lastPose = null;
     this._confidence = 'lost';
   }
@@ -227,28 +258,28 @@ export class Tracker6DoF {
    * Enable or disable VIO mode.
    */
   setVIOEnabled(enabled: boolean): void {
-    this.handle.set_vio_enabled(enabled);
+    this.ensureNotDisposed().set_vio_enabled(enabled);
   }
 
   /**
    * Check if VIO is enabled.
    */
   isVIOEnabled(): boolean {
-    return this.handle.is_vio_enabled();
+    return this.ensureNotDisposed().is_vio_enabled();
   }
 
   /**
    * Check if VIO is initialized (gravity estimated).
    */
   isVIOInitialized(): boolean {
-    return this.handle.is_vio_initialized();
+    return this.ensureNotDisposed().is_vio_initialized();
   }
 
   /**
    * Get estimated gravity vector.
    */
   getGravity(): [number, number, number] {
-    const g = this.handle.get_gravity();
+    const g = this.ensureNotDisposed().get_gravity();
     return [g[0], g[1], g[2]];
   }
 
@@ -256,14 +287,14 @@ export class Tracker6DoF {
    * Get IMU buffer length.
    */
   getIMUBufferLength(): number {
-    return this.handle.imu_buffer_len();
+    return this.ensureNotDisposed().imu_buffer_len();
   }
 
   /**
    * Clear IMU buffer.
    */
   clearIMUBuffer(): void {
-    this.handle.clear_imu_buffer();
+    this.ensureNotDisposed().clear_imu_buffer();
   }
 
   // ==================== Scale Methods ====================
@@ -272,28 +303,28 @@ export class Tracker6DoF {
    * Get current scale estimate.
    */
   getScale(): number {
-    return this.handle.get_scale();
+    return this.ensureNotDisposed().get_scale();
   }
 
   /**
    * Set scale manually.
    */
   setScale(scale: number): void {
-    this.handle.set_scale(scale);
+    this.ensureNotDisposed().set_scale(scale);
   }
 
   /**
    * Get VIO scale estimate.
    */
   getVIOScale(): number {
-    return this.handle.get_vio_scale();
+    return this.ensureNotDisposed().get_vio_scale();
   }
 
   /**
    * Get scale estimation confidence (0-1).
    */
   getScaleConfidence(): number {
-    return this.handle.get_scale_confidence();
+    return this.ensureNotDisposed().get_scale_confidence();
   }
 
   // ==================== Stabilization Methods ====================
@@ -302,35 +333,35 @@ export class Tracker6DoF {
    * Enable or disable position stabilization.
    */
   setStabilizationEnabled(enabled: boolean): void {
-    this.handle.set_stabilization_enabled(enabled);
+    this.ensureNotDisposed().set_stabilization_enabled(enabled);
   }
 
   /**
    * Check if stabilization is enabled.
    */
   isStabilizationEnabled(): boolean {
-    return this.handle.is_stabilization_enabled();
+    return this.ensureNotDisposed().is_stabilization_enabled();
   }
 
   /**
    * Check if device is stationary.
    */
   isStationary(): boolean {
-    return this.handle.is_stationary();
+    return this.ensureNotDisposed().is_stationary();
   }
 
   /**
    * Check if stabilized to stationary state.
    */
   isStabilizedStationary(): boolean {
-    return this.handle.is_stabilized_stationary();
+    return this.ensureNotDisposed().is_stabilized_stationary();
   }
 
   /**
    * Get accelerometer-derived velocity.
    */
   getAccelVelocity(): [number, number, number] {
-    const v = this.handle.get_accel_velocity();
+    const v = this.ensureNotDisposed().get_accel_velocity();
     return [v[0], v[1], v[2]];
   }
 
@@ -338,7 +369,7 @@ export class Tracker6DoF {
    * Get accelerometer-derived speed (m/s).
    */
   getAccelSpeed(): number {
-    return this.handle.get_accel_speed();
+    return this.ensureNotDisposed().get_accel_speed();
   }
 
   // ==================== Map Points Methods ====================
@@ -347,7 +378,7 @@ export class Tracker6DoF {
    * Get number of 3D map points.
    */
   getMapPointCount(): number {
-    return this.handle.map_point_count();
+    return this.ensureNotDisposed().map_point_count();
   }
 
   /**
@@ -355,7 +386,7 @@ export class Tracker6DoF {
    * @returns Flat array [x1, y1, z1, x2, y2, z2, ...]
    */
   getMapPoints(): Float64Array {
-    return new Float64Array(this.handle.get_map_points());
+    return new Float64Array(this.ensureNotDisposed().get_map_points());
   }
 
   /**
@@ -363,7 +394,7 @@ export class Tracker6DoF {
    * @returns Flat array [x1, y1, z1, x2, y2, z2, ...]
    */
   getMapPointsWorld(): Float64Array {
-    return new Float64Array(this.handle.get_map_points_world());
+    return new Float64Array(this.ensureNotDisposed().get_map_points_world());
   }
 
   /**
@@ -371,14 +402,14 @@ export class Tracker6DoF {
    * @returns Flat array [m00, m01, m02, m10, ...] (row-major)
    */
   getGravityRotation(): Float64Array {
-    return new Float64Array(this.handle.get_gravity_rotation());
+    return new Float64Array(this.ensureNotDisposed().get_gravity_rotation());
   }
 
   /**
    * Clear all map points.
    */
   clearMapPoints(): void {
-    this.handle.clear_map_points();
+    this.ensureNotDisposed().clear_map_points();
   }
 
   // ==================== Statistics ====================
@@ -387,21 +418,22 @@ export class Tracker6DoF {
    * Get number of tracked feature points.
    */
   getTrackedPointCount(): number {
-    return this.handle.tracked_points();
+    return this.ensureNotDisposed().tracked_points();
   }
 
   /**
    * Get comprehensive tracker statistics.
    */
   getStats(): TrackerStats {
+    const h = this.ensureNotDisposed();
     return {
-      trackedPoints: this.handle.tracked_points(),
-      mapPointCount: this.handle.map_point_count(),
-      vioInitialized: this.handle.is_vio_initialized(),
-      stabilized: this.handle.is_stabilized_stationary(),
-      imuBufferSize: this.handle.imu_buffer_len(),
-      scale: this.handle.get_scale(),
-      scaleConfidence: this.handle.get_scale_confidence(),
+      trackedPoints: h.tracked_points(),
+      mapPointCount: h.map_point_count(),
+      vioInitialized: h.is_vio_initialized(),
+      stabilized: h.is_stabilized_stationary(),
+      imuBufferSize: h.imu_buffer_len(),
+      scale: h.get_scale(),
+      scaleConfidence: h.get_scale_confidence(),
     };
   }
 
@@ -460,7 +492,7 @@ export class Tracker6DoF {
   // Private methods
 
   private updateConfidence(): void {
-    const points = this.handle.tracked_points();
+    const points = this.ensureNotDisposed().tracked_points();
     if (points === 0) {
       this._confidence = 'lost';
     } else if (points < 20) {

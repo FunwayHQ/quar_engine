@@ -12,7 +12,7 @@ use crate::features::{
 use crate::tracker::homography::{
     compute_homography_ransac, decompose_homography, project_corners,
 };
-use crate::tracker::linalg::{Mat3, Vec2};
+use crate::tracker::linalg::{Mat3, Vec2, rotation_matrix_to_quaternion};
 
 /// Configuration for image target detection.
 #[derive(Debug, Clone)]
@@ -404,54 +404,6 @@ fn quadrilateral_area(corners: &[Vec2; 4]) -> f64 {
         area -= corners[j].x * corners[i].y;
     }
     area.abs() / 2.0
-}
-
-/// Convert 3x3 rotation matrix to quaternion [x, y, z, w].
-fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
-    let trace = r.get(0, 0) + r.get(1, 1) + r.get(2, 2);
-
-    let (w, x, y, z) = if trace > 0.0 {
-        let s = (trace + 1.0).sqrt() * 2.0;
-        (
-            0.25 * s,
-            (r.get(2, 1) - r.get(1, 2)) / s,
-            (r.get(0, 2) - r.get(2, 0)) / s,
-            (r.get(1, 0) - r.get(0, 1)) / s,
-        )
-    } else if r.get(0, 0) > r.get(1, 1) && r.get(0, 0) > r.get(2, 2) {
-        let s = (1.0 + r.get(0, 0) - r.get(1, 1) - r.get(2, 2)).sqrt() * 2.0;
-        (
-            (r.get(2, 1) - r.get(1, 2)) / s,
-            0.25 * s,
-            (r.get(0, 1) + r.get(1, 0)) / s,
-            (r.get(0, 2) + r.get(2, 0)) / s,
-        )
-    } else if r.get(1, 1) > r.get(2, 2) {
-        let s = (1.0 + r.get(1, 1) - r.get(0, 0) - r.get(2, 2)).sqrt() * 2.0;
-        (
-            (r.get(0, 2) - r.get(2, 0)) / s,
-            (r.get(0, 1) + r.get(1, 0)) / s,
-            0.25 * s,
-            (r.get(1, 2) + r.get(2, 1)) / s,
-        )
-    } else {
-        let s = (1.0 + r.get(2, 2) - r.get(0, 0) - r.get(1, 1)).sqrt() * 2.0;
-        (
-            (r.get(1, 0) - r.get(0, 1)) / s,
-            (r.get(0, 2) + r.get(2, 0)) / s,
-            (r.get(1, 2) + r.get(2, 1)) / s,
-            0.25 * s,
-        )
-    };
-
-    // Normalize
-    let len = (w * w + x * x + y * y + z * z).sqrt();
-    [
-        (x / len) as f32,
-        (y / len) as f32,
-        (z / len) as f32,
-        (w / len) as f32,
-    ]
 }
 
 #[cfg(test)]

@@ -27,6 +27,7 @@ let sharedBuffers: SharedArrayBuffer[] = [];
 let isProcessing = false;
 
 // Metrics tracking
+let metricsIntervalId: ReturnType<typeof setInterval> | null = null;
 let metricsStartTime = 0;
 let totalProcessingTime = 0;
 let maxProcessingTime = 0;
@@ -259,6 +260,10 @@ function handleReset(): void {
  * Handle termination.
  */
 function handleTerminate(): void {
+  if (metricsIntervalId !== null) {
+    clearInterval(metricsIntervalId);
+    metricsIntervalId = null;
+  }
   trackerHandle = null;
   wasmModule = null;
   sharedBuffers = [];
@@ -272,7 +277,7 @@ function handleTerminate(): void {
 function startMetricsReporting(): void {
   metricsStartTime = performance.now();
 
-  setInterval(() => {
+  metricsIntervalId = setInterval(() => {
     if (!config.enableMetrics) return;
 
     const metrics: WorkerMetrics = {

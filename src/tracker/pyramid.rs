@@ -90,14 +90,13 @@ pub fn build_pyramid(image: &GrayImage, levels: u32) -> Vec<GrayImage> {
     let mut pyramid = Vec::with_capacity(levels as usize);
     pyramid.push(image.clone());
 
-    let mut current = image.clone();
-
     for _ in 1..levels {
-        if current.width < 4 || current.height < 4 {
+        let prev = pyramid.last().unwrap();
+        if prev.width < 4 || prev.height < 4 {
             break;
         }
-        current = downsample_bilinear(&current);
-        pyramid.push(current.clone());
+        let downsampled = downsample_bilinear(prev);
+        pyramid.push(downsampled);
     }
 
     pyramid

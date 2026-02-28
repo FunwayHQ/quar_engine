@@ -257,56 +257,61 @@ fn combine_essential(
     e
 }
 
-/// Solve the cubic polynomial constraints from Essential matrix properties.
+/// Solve the cubic polynomial constraints from Essential matrix properties
+/// using Nister's (2004) action matrix method.
 ///
 /// Essential matrix constraints:
-/// 1. E * E^T * E = 0.5 * trace(E * E^T) * E (trace constraint)
-/// 2. det(E) = 0 (determinant constraint)
+/// 1. 2*E*E^T*E - trace(E*E^T)*E = 0 (trace constraint, 9 equations)
+/// 2. det(E) = 0 (determinant constraint, 1 equation)
 ///
-/// With E = x*E1 + y*E2 + z*E3 + E4 (setting w=1), this gives polynomial equations
-/// in x, y, z which we solve using elimination.
+/// With E = x*E1 + y*E2 + z*E3 + E4 (setting w=1), this gives 10 cubic
+/// polynomial equations in x,y,z which we solve via the action matrix method.
+///
+/// Monomial ordering for degree-3 polynomials (20 monomials):
+/// [x³, x²y, x²z, xy², xyz, xz², y³, y²z, yz², z³,
+///  x², xy, xz, y², yz, z², x, y, z, 1]
 fn solve_cubic_constraints(
     e1: &[[f64; 3]; 3],
     e2: &[[f64; 3]; 3],
     e3: &[[f64; 3]; 3],
     e4: &[[f64; 3]; 3],
 ) -> Option<Vec<(f64, f64, f64)>> {
-    // Simplified approach: sample and refine
-    // For a full implementation, we'd use Gröbner basis methods
-    //
-    // Here we use a grid search + Newton refinement approach which is
-    // simpler but still effective for practical use.
+    // Build 10x20 constraint matrix
+    let constraint_matrix = build_constraint_matrix(e1, e2, e3, e4);
 
+    // Gauss-Jordan elimination on first 10 columns
+    let eliminated = gauss_jordan_10x20(&constraint_matrix)?;
+
+    // Extract 10x10 action matrix for multiplication by z
+    let action = extract_action_matrix(&eliminated);
+
+    // Find real eigenvalues of action matrix → z values
+    let eigen_results = real_eigenvalues_10x10(&action);
+
+    if eigen_results.is_empty() {
+        return None;
+    }
+
+    // For each real eigenvalue z, recover x and y from the eigenvector
     let mut solutions = Vec::new();
+    for (z_val, eigvec) in &eigen_results {
+        // Eigenvector has basis [x², xy, xz, y², yz, z², x, y, z, 1]
+        // Index 9 = constant, index 6 = x, index 7 = y, index 8 = z
+        let w = eigvec[9]; // constant term
+        if w.abs() < 1e-12 {
+            continue;
+        }
+        let x_val = eigvec[6] / w;
+        let y_val = eigvec[7] / w;
 
-    // Grid search over the parameter space
-    let range = 2.0;
-    let steps = 5;
-
-    for ix in 0..=steps {
-        for iy in 0..=steps {
-            for iz in 0..=steps {
-                let x = -range + (2.0 * range * ix as f64) / steps as f64;
-                let y = -range + (2.0 * range * iy as f64) / steps as f64;
-                let z = -range + (2.0 * range * iz as f64) / steps as f64;
-
-                // Refine using Newton's method on the constraint residuals
-                if let Some((rx, ry, rz)) = refine_solution(e1, e2, e3, e4, x, y, z) {
-                    // Check if this is a valid solution
-                    let e = combine_essential(e1, e2, e3, e4, rx, ry, rz, 1.0);
-                    let residual = constraint_residual(&e);
-
-                    if residual < 0.01 {
-                        // Check if solution is unique (not too close to existing)
-                        let is_unique = solutions.iter().all(|(sx, sy, sz): &(f64, f64, f64)| {
-                            (rx - sx).powi(2) + (ry - sy).powi(2) + (rz - sz).powi(2) > 0.01
-                        });
-
-                        if is_unique {
-                            solutions.push((rx, ry, rz));
-                        }
-                    }
-                }
+        // Validate: eigvec[8]/w should ≈ z_val
+        if x_val.is_finite() && y_val.is_finite() && z_val.is_finite() {
+            // Check uniqueness
+            let is_unique = solutions.iter().all(|(sx, sy, sz): &(f64, f64, f64)| {
+                (x_val - sx).powi(2) + (y_val - sy).powi(2) + (z_val - sz).powi(2) > 1e-6
+            });
+            if is_unique {
+                solutions.push((x_val, y_val, *z_val));
             }
         }
     }
@@ -318,62 +323,591 @@ fn solve_cubic_constraints(
     }
 }
 
-/// Refine a solution using Newton's method on the constraint equations
-fn refine_solution(
+// ==================== Polynomial Arithmetic ====================
+
+/// Multiply two linear polynomials [x,y,z,1] → quadratic [x²,xy,xz,y²,yz,z²,x,y,z,1]
+fn poly_mul_ll(a: &[f64; 4], b: &[f64; 4]) -> [f64; 10] {
+    [
+        a[0] * b[0],                         // x²
+        a[0] * b[1] + a[1] * b[0],           // xy
+        a[0] * b[2] + a[2] * b[0],           // xz
+        a[1] * b[1],                         // y²
+        a[1] * b[2] + a[2] * b[1],           // yz
+        a[2] * b[2],                         // z²
+        a[0] * b[3] + a[3] * b[0],           // x
+        a[1] * b[3] + a[3] * b[1],           // y
+        a[2] * b[3] + a[3] * b[2],           // z
+        a[3] * b[3],                         // 1
+    ]
+}
+
+/// Multiply quadratic [x²,xy,xz,y²,yz,z²,x,y,z,1] by linear [x,y,z,1] → cubic (20 terms)
+#[allow(clippy::needless_range_loop)]
+fn poly_mul_ql(q: &[f64; 10], l: &[f64; 4]) -> [f64; 20] {
+    let mut r = [0.0; 20];
+    // Multiply each quadratic monomial by each linear monomial
+    // q[0]=x² * l: x²*x=x³(0), x²*y=x²y(1), x²*z=x²z(2), x²*1=x²(10)
+    r[0] += q[0] * l[0]; r[1] += q[0] * l[1]; r[2] += q[0] * l[2]; r[10] += q[0] * l[3];
+    // q[1]=xy * l: xy*x=x²y(1), xy*y=xy²(3), xy*z=xyz(4), xy*1=xy(11)
+    r[1] += q[1] * l[0]; r[3] += q[1] * l[1]; r[4] += q[1] * l[2]; r[11] += q[1] * l[3];
+    // q[2]=xz * l: xz*x=x²z(2), xz*y=xyz(4), xz*z=xz²(5), xz*1=xz(12)
+    r[2] += q[2] * l[0]; r[4] += q[2] * l[1]; r[5] += q[2] * l[2]; r[12] += q[2] * l[3];
+    // q[3]=y² * l: y²*x=xy²(3), y²*y=y³(6), y²*z=y²z(7), y²*1=y²(13)
+    r[3] += q[3] * l[0]; r[6] += q[3] * l[1]; r[7] += q[3] * l[2]; r[13] += q[3] * l[3];
+    // q[4]=yz * l: yz*x=xyz(4), yz*y=y²z(7), yz*z=yz²(8), yz*1=yz(14)
+    r[4] += q[4] * l[0]; r[7] += q[4] * l[1]; r[8] += q[4] * l[2]; r[14] += q[4] * l[3];
+    // q[5]=z² * l: z²*x=xz²(5), z²*y=yz²(8), z²*z=z³(9), z²*1=z²(15)
+    r[5] += q[5] * l[0]; r[8] += q[5] * l[1]; r[9] += q[5] * l[2]; r[15] += q[5] * l[3];
+    // q[6]=x * l: x*x=x²(10), x*y=xy(11), x*z=xz(12), x*1=x(16)
+    r[10] += q[6] * l[0]; r[11] += q[6] * l[1]; r[12] += q[6] * l[2]; r[16] += q[6] * l[3];
+    // q[7]=y * l: y*x=xy(11), y*y=y²(13), y*z=yz(14), y*1=y(17)
+    r[11] += q[7] * l[0]; r[13] += q[7] * l[1]; r[14] += q[7] * l[2]; r[17] += q[7] * l[3];
+    // q[8]=z * l: z*x=xz(12), z*y=yz(14), z*z=z²(15), z*1=z(18)
+    r[12] += q[8] * l[0]; r[14] += q[8] * l[1]; r[15] += q[8] * l[2]; r[18] += q[8] * l[3];
+    // q[9]=1 * l: 1*x=x(16), 1*y=y(17), 1*z=z(18), 1*1=1(19)
+    r[16] += q[9] * l[0]; r[17] += q[9] * l[1]; r[18] += q[9] * l[2]; r[19] += q[9] * l[3];
+    r
+}
+
+/// Add two quadratic polynomials
+fn poly_add_qq(a: &[f64; 10], b: &[f64; 10]) -> [f64; 10] {
+    let mut r = [0.0; 10];
+    for i in 0..10 { r[i] = a[i] + b[i]; }
+    r
+}
+
+/// Subtract two cubic polynomials
+fn poly_sub_cc(a: &[f64; 20], b: &[f64; 20]) -> [f64; 20] {
+    let mut r = [0.0; 20];
+    for i in 0..20 { r[i] = a[i] - b[i]; }
+    r
+}
+
+/// Scale a cubic polynomial
+fn poly_scale_c(a: &[f64; 20], s: f64) -> [f64; 20] {
+    let mut r = [0.0; 20];
+    for i in 0..20 { r[i] = a[i] * s; }
+    r
+}
+
+// ==================== Constraint Building ====================
+
+/// Build the 10x20 constraint matrix from 4 null-space Essential matrices.
+///
+/// E = x*E1 + y*E2 + z*E3 + E4 → each E[i][j] is linear in (x,y,z).
+/// Constraints: 2*E*E^T*E - trace(E*E^T)*E = 0 (9 eq) and det(E)=0 (1 eq).
+#[allow(clippy::needless_range_loop)]
+fn build_constraint_matrix(
     e1: &[[f64; 3]; 3],
     e2: &[[f64; 3]; 3],
     e3: &[[f64; 3]; 3],
     e4: &[[f64; 3]; 3],
-    x0: f64, y0: f64, z0: f64,
-) -> Option<(f64, f64, f64)> {
-    let mut x = x0;
-    let mut y = y0;
-    let mut z = z0;
+) -> [[f64; 20]; 10] {
+    // E[i][j] as linear polynomial [coeff_x, coeff_y, coeff_z, coeff_1]
+    let mut ep = [[[0.0f64; 4]; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            ep[i][j] = [e1[i][j], e2[i][j], e3[i][j], e4[i][j]];
+        }
+    }
 
-    for _ in 0..10 {
-        let e = combine_essential(e1, e2, e3, e4, x, y, z, 1.0);
-        let residual = constraint_residual(&e);
+    // Compute (E*E^T)[i][j] = sum_k E[i][k] * E[j][k] (quadratic polynomials)
+    let mut eet = [[[0.0f64; 10]; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            for k in 0..3 {
+                let prod = poly_mul_ll(&ep[i][k], &ep[j][k]);
+                eet[i][j] = poly_add_qq(&eet[i][j], &prod);
+            }
+        }
+    }
 
-        if residual < 1e-6 {
-            return Some((x, y, z));
+    // trace(E*E^T) = sum_i (E*E^T)[i][i] (quadratic polynomial)
+    let mut trace_poly = [0.0f64; 10];
+    for i in 0..3 {
+        trace_poly = poly_add_qq(&trace_poly, &eet[i][i]);
+    }
+
+    // Build 9 trace constraint equations: 2*(E*E^T*E)[i][j] - trace(E*E^T)*E[i][j] = 0
+    let mut rows = [[0.0f64; 20]; 10];
+    let mut eq_idx = 0;
+
+    for i in 0..3 {
+        for j in 0..3 {
+            // (E*E^T*E)[i][j] = sum_k (E*E^T)[i][k] * E[k][j]
+            let mut eete_ij = [0.0f64; 20];
+            for k in 0..3 {
+                let prod = poly_mul_ql(&eet[i][k], &ep[k][j]);
+                for m in 0..20 { eete_ij[m] += prod[m]; }
+            }
+
+            // trace(E*E^T) * E[i][j]
+            let trace_e = poly_mul_ql(&trace_poly, &ep[i][j]);
+
+            // 2*E*E^T*E - trace*E = 0
+            rows[eq_idx] = poly_sub_cc(&poly_scale_c(&eete_ij, 2.0), &trace_e);
+            eq_idx += 1;
+        }
+    }
+
+    // 10th equation: det(E) = 0
+    // det = E00*(E11*E22 - E12*E21) - E01*(E10*E22 - E12*E20) + E02*(E10*E21 - E11*E20)
+    let sub11_22 = poly_mul_ll(&ep[1][1], &ep[2][2]);
+    let sub12_21 = poly_mul_ll(&ep[1][2], &ep[2][1]);
+    let sub10_22 = poly_mul_ll(&ep[1][0], &ep[2][2]);
+    let sub12_20 = poly_mul_ll(&ep[1][2], &ep[2][0]);
+    let sub10_21 = poly_mul_ll(&ep[1][0], &ep[2][1]);
+    let sub11_20 = poly_mul_ll(&ep[1][1], &ep[2][0]);
+
+    let mut minor0 = [0.0f64; 10];
+    let mut minor1 = [0.0f64; 10];
+    let mut minor2 = [0.0f64; 10];
+    for m in 0..10 {
+        minor0[m] = sub11_22[m] - sub12_21[m];
+        minor1[m] = sub10_22[m] - sub12_20[m];
+        minor2[m] = sub10_21[m] - sub11_20[m];
+    }
+
+    let term0 = poly_mul_ql(&minor0, &ep[0][0]);
+    let term1 = poly_mul_ql(&minor1, &ep[0][1]);
+    let term2 = poly_mul_ql(&minor2, &ep[0][2]);
+
+    for m in 0..20 {
+        rows[9][m] = term0[m] - term1[m] + term2[m];
+    }
+
+    rows
+}
+
+// ==================== Gauss-Jordan Elimination ====================
+
+/// Gauss-Jordan elimination on 10x20 matrix with partial pivoting.
+/// Returns the eliminated matrix in RREF form [I | B], or None if singular.
+#[allow(clippy::needless_range_loop)]
+fn gauss_jordan_10x20(m: &[[f64; 20]; 10]) -> Option<[[f64; 20]; 10]> {
+    let mut a = *m;
+
+    for col in 0..10 {
+        // Find pivot row
+        let mut max_row = col;
+        let mut max_val = a[col][col].abs();
+        for row in (col + 1)..10 {
+            if a[row][col].abs() > max_val {
+                max_val = a[row][col].abs();
+                max_row = row;
+            }
         }
 
-        // Compute numerical gradient
-        let eps = 1e-6;
+        if max_val < 1e-12 {
+            return None; // Singular
+        }
 
-        let ex = combine_essential(e1, e2, e3, e4, x + eps, y, z, 1.0);
-        let ey = combine_essential(e1, e2, e3, e4, x, y + eps, z, 1.0);
-        let ez = combine_essential(e1, e2, e3, e4, x, y, z + eps, 1.0);
+        // Swap rows
+        if max_row != col {
+            a.swap(col, max_row);
+        }
 
-        let dx = (constraint_residual(&ex) - residual) / eps;
-        let dy = (constraint_residual(&ey) - residual) / eps;
-        let dz = (constraint_residual(&ez) - residual) / eps;
+        // Scale pivot row
+        let pivot = a[col][col];
+        for j in 0..20 {
+            a[col][j] /= pivot;
+        }
 
-        let grad_norm = (dx * dx + dy * dy + dz * dz).sqrt();
-        if grad_norm < 1e-10 {
+        // Eliminate all other rows
+        for row in 0..10 {
+            if row == col {
+                continue;
+            }
+            let factor = a[row][col];
+            for j in 0..20 {
+                a[row][j] -= factor * a[col][j];
+            }
+        }
+    }
+
+    Some(a)
+}
+
+// ==================== Action Matrix ====================
+
+/// Extract the 10x10 action matrix for multiplication by z.
+///
+/// After GJ elimination, rows of the 10x20 matrix express degree-3 monomials
+/// in terms of degree ≤ 2 monomials (columns 10-19).
+///
+/// The action matrix encodes z * (degree-≤-2 monomial) expressed in the
+/// degree-≤-2 basis {x², xy, xz, y², yz, z², x, y, z, 1}.
+///
+/// - z*x² = x²z → row for column 2 (x²z) in the eliminated matrix
+/// - z*xy = xyz → row for column 4 (xyz)
+/// - z*xz = xz² → row for column 5 (xz²)
+/// - z*y² = y²z → row for column 7 (y²z)
+/// - z*yz = yz² → row for column 8 (yz²)
+/// - z*z² = z³ → row for column 9 (z³)
+/// - z*x = xz → already in basis at index 2
+/// - z*y = yz → already in basis at index 4
+/// - z*z = z² → already in basis at index 5
+/// - z*1 = z → already in basis at index 8
+#[allow(clippy::needless_range_loop)]
+fn extract_action_matrix(eliminated: &[[f64; 20]; 10]) -> [[f64; 10]; 10] {
+    let mut action = [[0.0f64; 10]; 10];
+
+    // Rows 0-5: degree-3 monomials that need reduction
+    // z*x² = x²z = column 2 in degree-3 → row 2 in eliminated matrix
+    // The eliminated matrix has [I | B], so columns 10-19 give the expression
+    // in the degree-≤-2 basis. But with sign negation (since I*mono = -B*lower_terms)
+    // Actually: row[col] says mono[col] = -sum(row[10..20] * lower_monos) + row identity
+    // After RREF: mono[col] = -eliminated[col][10]*x² - ... - eliminated[col][19]*1
+    // Wait, RREF gives [I | B] so mono_i = sum_j B[i][j] * basis_j where basis is columns 10-19
+    // No: RREF is A*x = 0, so mono_i = -sum_j eliminated[i][10+j] * basis_j
+
+    // Map: which row (degree-3 column index) maps to which z-multiplication
+    // z*x² = x²z: degree-3 index 2
+    // z*xy = xyz: degree-3 index 4
+    // z*xz = xz²: degree-3 index 5
+    // z*y² = y²z: degree-3 index 7
+    // z*yz = yz²: degree-3 index 8
+    // z*z² = z³:  degree-3 index 9
+    let degree3_rows = [2, 4, 5, 7, 8, 9];
+
+    for (action_row, &d3_col) in degree3_rows.iter().enumerate() {
+        // After RREF, degree-3 monomial d3_col is expressed as:
+        // mono[d3_col] = -sum_j eliminated[d3_col][10+j] * basis[j]
+        for j in 0..10 {
+            action[action_row][j] = -eliminated[d3_col][10 + j];
+        }
+    }
+
+    // Rows 6-9: z times degree-≤-1 monomials that are already in basis
+    // z*x = xz → basis index 2: row 6, column 2 = 1
+    action[6][2] = 1.0;
+    // z*y = yz → basis index 4: row 7, column 4 = 1
+    action[7][4] = 1.0;
+    // z*z = z² → basis index 5: row 8, column 5 = 1
+    action[8][5] = 1.0;
+    // z*1 = z → basis index 8: row 9, column 8 = 1
+    action[9][8] = 1.0;
+
+    action
+}
+
+// ==================== 10x10 Eigenvalue Solver (QR Iteration) ====================
+
+/// Find real eigenvalues and eigenvectors of a 10x10 non-symmetric matrix
+/// using QR iteration with Hessenberg reduction.
+#[allow(clippy::needless_range_loop)]
+fn real_eigenvalues_10x10(a: &[[f64; 10]; 10]) -> Vec<(f64, [f64; 10])> {
+    let n = 10;
+
+    // Step 1: Reduce to upper Hessenberg form H = Q^T A Q
+    let (mut h, q_total) = hessenberg_reduce_10(a);
+
+    // Step 2: QR iteration with shifts
+    let mut eigenvalues = Vec::new();
+    let mut active_n = n;
+
+    for _iter in 0..500 {
+        if active_n <= 1 {
+            if active_n == 1 {
+                eigenvalues.push(h[0][0]);
+            }
             break;
         }
 
-        // Gradient descent step
-        let step = 0.1 * residual / grad_norm;
-        x -= step * dx;
-        y -= step * dy;
-        z -= step * dz;
+        // Check for convergence: h[active_n-1][active_n-2] ≈ 0
+        let sub = h[active_n - 1][active_n - 2].abs();
+        let diag_sum = h[active_n - 1][active_n - 1].abs() + h[active_n - 2][active_n - 2].abs();
+        if sub < 1e-14 * diag_sum.max(1e-15) {
+            eigenvalues.push(h[active_n - 1][active_n - 1]);
+            active_n -= 1;
+            continue;
+        }
+
+        // Check for 2x2 block convergence
+        if active_n >= 3 {
+            let sub2 = h[active_n - 2][active_n - 3].abs();
+            let diag_sum2 = h[active_n - 2][active_n - 2].abs() + h[active_n - 3][active_n - 3].abs();
+            if sub2 < 1e-14 * diag_sum2.max(1e-15) {
+                // 2x2 block at bottom
+                let a11 = h[active_n - 2][active_n - 2];
+                let a12 = h[active_n - 2][active_n - 1];
+                let a21 = h[active_n - 1][active_n - 2];
+                let a22 = h[active_n - 1][active_n - 1];
+                let disc = (a11 - a22) * (a11 - a22) + 4.0 * a12 * a21;
+                if disc >= 0.0 {
+                    eigenvalues.push((a11 + a22 + disc.sqrt()) / 2.0);
+                    eigenvalues.push((a11 + a22 - disc.sqrt()) / 2.0);
+                }
+                // Complex pair: skip (no real eigenvalues)
+                active_n -= 2;
+                continue;
+            }
+        }
+
+        // Wilkinson shift: eigenvalue of bottom 2x2 closest to h[n-1][n-1]
+        let a11 = h[active_n - 2][active_n - 2];
+        let a12 = h[active_n - 2][active_n - 1];
+        let a21 = h[active_n - 1][active_n - 2];
+        let a22 = h[active_n - 1][active_n - 1];
+        let tr = a11 + a22;
+        let det = a11 * a22 - a12 * a21;
+        let disc = tr * tr - 4.0 * det;
+        let mu = if disc >= 0.0 {
+            let e1 = (tr + disc.sqrt()) / 2.0;
+            let e2 = (tr - disc.sqrt()) / 2.0;
+            if (e1 - a22).abs() < (e2 - a22).abs() { e1 } else { e2 }
+        } else {
+            a22 // Use real part as shift
+        };
+
+        // QR step: H - mu*I = Q*R, then H = R*Q + mu*I
+        qr_step_10(&mut h, active_n, mu);
     }
 
-    // Return if we got close enough
-    let e = combine_essential(e1, e2, e3, e4, x, y, z, 1.0);
-    if constraint_residual(&e) < 0.1 {
-        Some((x, y, z))
-    } else {
-        None
+    // Step 3: For each real eigenvalue, compute eigenvector of original matrix
+    let mut results = Vec::new();
+    for &eigval in &eigenvalues {
+        if let Some(eigvec) = compute_eigenvector_10(a, eigval, &q_total) {
+            results.push((eigval, eigvec));
+        }
+    }
+
+    results
+}
+
+/// Reduce a 10x10 matrix to upper Hessenberg form using Householder reflections.
+/// Returns (H, Q) where H = Q^T * A * Q.
+#[allow(clippy::needless_range_loop)]
+fn hessenberg_reduce_10(a: &[[f64; 10]; 10]) -> ([[f64; 10]; 10], [[f64; 10]; 10]) {
+    let n = 10;
+    let mut h = *a;
+    let mut q = [[0.0f64; 10]; 10];
+    for i in 0..n { q[i][i] = 1.0; }
+
+    for k in 0..(n - 2) {
+        // Compute Householder vector for column k, rows k+1..n
+        let mut x = [0.0f64; 10];
+        let mut norm_sq = 0.0;
+        for i in (k + 1)..n {
+            x[i] = h[i][k];
+            norm_sq += x[i] * x[i];
+        }
+
+        if norm_sq < 1e-30 {
+            continue;
+        }
+
+        let norm = norm_sq.sqrt();
+        let sign = if x[k + 1] >= 0.0 { 1.0 } else { -1.0 };
+        x[k + 1] += sign * norm;
+
+        // Recompute norm of v
+        let mut v_norm_sq = 0.0;
+        for i in (k + 1)..n {
+            v_norm_sq += x[i] * x[i];
+        }
+        if v_norm_sq < 1e-30 {
+            continue;
+        }
+        let v_norm = v_norm_sq.sqrt();
+        for i in (k + 1)..n {
+            x[i] /= v_norm;
+        }
+
+        // Apply H = (I - 2*v*v^T) * H * (I - 2*v*v^T)
+        // Left multiplication: H = H - 2*v*(v^T*H)
+        let mut vth = [0.0f64; 10]; // v^T * H (row vector)
+        for j in 0..n {
+            for i in (k + 1)..n {
+                vth[j] += x[i] * h[i][j];
+            }
+        }
+        for i in (k + 1)..n {
+            for j in 0..n {
+                h[i][j] -= 2.0 * x[i] * vth[j];
+            }
+        }
+
+        // Right multiplication: H = H - 2*(H*v)*v^T
+        let mut hv = [0.0f64; 10]; // H * v (column vector)
+        for i in 0..n {
+            for j in (k + 1)..n {
+                hv[i] += h[i][j] * x[j];
+            }
+        }
+        for i in 0..n {
+            for j in (k + 1)..n {
+                h[i][j] -= 2.0 * hv[i] * x[j];
+            }
+        }
+
+        // Accumulate Q: Q = Q * (I - 2*v*v^T)
+        let mut qv = [0.0f64; 10]; // Q * v
+        for i in 0..n {
+            for j in (k + 1)..n {
+                qv[i] += q[i][j] * x[j];
+            }
+        }
+        for i in 0..n {
+            for j in (k + 1)..n {
+                q[i][j] -= 2.0 * qv[i] * x[j];
+            }
+        }
+    }
+
+    (h, q)
+}
+
+/// Perform one implicit QR step with shift on the active submatrix h[0..n][0..n].
+#[allow(clippy::needless_range_loop)]
+fn qr_step_10(h: &mut [[f64; 10]; 10], n: usize, mu: f64) {
+    // Shift
+    for i in 0..n {
+        h[i][i] -= mu;
+    }
+
+    // QR factorize using Givens rotations
+    let mut cs = [0.0f64; 10];
+    let mut sn = [0.0f64; 10];
+
+    for i in 0..(n - 1) {
+        let a = h[i][i];
+        let b = h[i + 1][i];
+        let r = (a * a + b * b).sqrt();
+        if r < 1e-30 {
+            cs[i] = 1.0;
+            sn[i] = 0.0;
+            continue;
+        }
+        cs[i] = a / r;
+        sn[i] = b / r;
+
+        // Apply Givens rotation to rows i and i+1
+        for j in 0..n {
+            let t1 = cs[i] * h[i][j] + sn[i] * h[i + 1][j];
+            let t2 = -sn[i] * h[i][j] + cs[i] * h[i + 1][j];
+            h[i][j] = t1;
+            h[i + 1][j] = t2;
+        }
+    }
+
+    // Now H = R (upper triangular). Apply Q^T from right: H = R * Q
+    for i in 0..(n - 1) {
+        for j in 0..n {
+            let t1 = h[j][i] * cs[i] + h[j][i + 1] * sn[i];
+            let t2 = -h[j][i] * sn[i] + h[j][i + 1] * cs[i];
+            h[j][i] = t1;
+            h[j][i + 1] = t2;
+        }
+    }
+
+    // Unshift
+    for i in 0..n {
+        h[i][i] += mu;
     }
 }
 
-/// Compute residual of Essential matrix constraints
+/// Compute eigenvector for a given eigenvalue of the original 10x10 matrix.
+/// Uses inverse iteration: solve (A - lambda*I) * x = b repeatedly.
+#[allow(clippy::needless_range_loop)]
+fn compute_eigenvector_10(
+    a: &[[f64; 10]; 10],
+    eigenvalue: f64,
+    _q: &[[f64; 10]; 10],
+) -> Option<[f64; 10]> {
+    let n = 10;
+
+    // Build (A - lambda*I) with small perturbation for invertibility
+    let mut m = *a;
+    for i in 0..n {
+        m[i][i] -= eigenvalue;
+    }
+
+    // Inverse iteration: start with random vector, iterate (A-λI)^{-1} * v
+    let mut v = [0.0f64; 10];
+    v[0] = 1.0; v[1] = 0.5; v[2] = 0.3; v[3] = 0.7; v[4] = 0.1;
+    v[5] = 0.9; v[6] = 0.4; v[7] = 0.6; v[8] = 0.2; v[9] = 0.8;
+
+    for _ in 0..20 {
+        // Solve m * w = v using Gaussian elimination with partial pivoting
+        let w = solve_nxn_10(&m, &v)?;
+
+        // Normalize
+        let norm: f64 = w.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if norm < 1e-30 {
+            return None;
+        }
+        for i in 0..n {
+            v[i] = w[i] / norm;
+        }
+    }
+
+    Some(v)
+}
+
+/// Solve 10x10 linear system using Gaussian elimination with partial pivoting.
+#[allow(clippy::needless_range_loop)]
+fn solve_nxn_10(a: &[[f64; 10]; 10], b: &[f64; 10]) -> Option<[f64; 10]> {
+    let n = 10;
+    let mut aug = [[0.0f64; 11]; 10];
+    for i in 0..n {
+        for j in 0..n {
+            aug[i][j] = a[i][j];
+        }
+        aug[i][n] = b[i];
+    }
+
+    // Forward elimination with partial pivoting
+    for col in 0..n {
+        let mut max_row = col;
+        let mut max_val = aug[col][col].abs();
+        for row in (col + 1)..n {
+            if aug[row][col].abs() > max_val {
+                max_val = aug[row][col].abs();
+                max_row = row;
+            }
+        }
+
+        if max_val < 1e-30 {
+            // Nearly singular: add small perturbation
+            aug[col][col] += 1e-10;
+        } else if max_row != col {
+            aug.swap(col, max_row);
+        }
+
+        let pivot = aug[col][col];
+        if pivot.abs() < 1e-30 {
+            return None;
+        }
+
+        for row in (col + 1)..n {
+            let factor = aug[row][col] / pivot;
+            for j in col..=n {
+                aug[row][j] -= factor * aug[col][j];
+            }
+        }
+    }
+
+    // Back substitution
+    let mut x = [0.0f64; 10];
+    for i in (0..n).rev() {
+        x[i] = aug[i][n];
+        for j in (i + 1)..n {
+            x[i] -= aug[i][j] * x[j];
+        }
+        if aug[i][i].abs() < 1e-30 {
+            return None;
+        }
+        x[i] /= aug[i][i];
+    }
+
+    Some(x)
+}
+
+/// Compute residual of Essential matrix constraints (used for validation in tests)
+#[cfg(test)]
 #[allow(clippy::needless_range_loop)]
 fn constraint_residual(e: &[[f64; 3]; 3]) -> f64 {
-    // Compute E * E^T
     let mut eet = [[0.0f64; 3]; 3];
     for i in 0..3 {
         for j in 0..3 {
@@ -382,12 +916,8 @@ fn constraint_residual(e: &[[f64; 3]; 3]) -> f64 {
             }
         }
     }
-
-    // trace(E * E^T)
     let trace = eet[0][0] + eet[1][1] + eet[2][2];
 
-    // Constraint: 2 * E * E^T * E - trace(E * E^T) * E = 0
-    // Compute E * E^T * E
     let mut eete = [[0.0f64; 3]; 3];
     for i in 0..3 {
         for j in 0..3 {
@@ -397,7 +927,6 @@ fn constraint_residual(e: &[[f64; 3]; 3]) -> f64 {
         }
     }
 
-    // Residual = sum of squared differences
     let mut residual = 0.0;
     for i in 0..3 {
         for j in 0..3 {
@@ -406,7 +935,6 @@ fn constraint_residual(e: &[[f64; 3]; 3]) -> f64 {
         }
     }
 
-    // Add determinant constraint
     let det = e[0][0] * (e[1][1] * e[2][2] - e[1][2] * e[2][1])
             - e[0][1] * (e[1][0] * e[2][2] - e[1][2] * e[2][0])
             + e[0][2] * (e[1][0] * e[2][1] - e[1][1] * e[2][0]);
@@ -538,7 +1066,7 @@ fn sampson_distance(e: &Mat3, p1: &Vec2, p2: &Vec2) -> f64 {
     let denom = ex1[0] * ex1[0] + ex1[1] * ex1[1] + etx2[0] * etx2[0] + etx2[1] * etx2[1];
 
     if denom > 1e-10 {
-        (xex * xex / denom).abs().sqrt()
+        (xex * xex / denom).abs()
     } else {
         f64::MAX
     }

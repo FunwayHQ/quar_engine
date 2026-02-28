@@ -11,6 +11,7 @@ import {
   BUFFER_CONTROL_EMPTY,
   BUFFER_CONTROL_FILLED,
   BUFFER_CONTROL_PROCESSING,
+  BUFFER_CONTROL_WRITING,
   calculateBufferSize,
   isSharedArrayBufferAvailable,
 } from './types';
@@ -93,11 +94,11 @@ export class SharedFrameBuffer {
     const writeIndex = this.currentWriteIndex;
     const controlView = this.controlViews[writeIndex];
 
-    // Atomically check and claim the buffer to avoid TOCTOU race.
-    // Try to transition EMPTY → FILLED. If the buffer is PROCESSING, skip.
-    const currentControl = Atomics.load(controlView, 0);
-    if (currentControl === BUFFER_CONTROL_PROCESSING) {
-      // Worker is still processing this buffer, skip this frame
+    // Atomically claim the buffer for writing before touching data.
+    // Try to transition EMPTY → WRITING. If the buffer is PROCESSING or FILLED, skip.
+    const prev = Atomics.compareExchange(controlView, 0, BUFFER_CONTROL_EMPTY, BUFFER_CONTROL_WRITING);
+    if (prev !== BUFFER_CONTROL_EMPTY) {
+      // Buffer is not empty (worker processing or already filled), skip this frame
       return -1;
     }
 
@@ -106,19 +107,16 @@ export class SharedFrameBuffer {
 
     // Validate size
     if (data.length !== this.width * this.height * 4) {
+      // Release the buffer back to EMPTY on error
+      Atomics.store(controlView, 0, BUFFER_CONTROL_EMPTY);
       throw new Error(`Invalid frame size: expected ${this.width * this.height * 4}, got ${data.length}`);
     }
 
-    // Write frame data first, then atomically mark as filled
+    // Write frame data (we own the buffer in WRITING state)
     this.dataViews[writeIndex].set(data);
 
-    // Use compareExchange to atomically transition to FILLED only if still in expected state.
-    // If the worker claimed it between our load and now, the exchange fails and we skip.
-    const prev = Atomics.compareExchange(controlView, 0, currentControl, BUFFER_CONTROL_FILLED);
-    if (prev !== currentControl) {
-      // Buffer state changed between load and exchange - worker claimed it
-      return -1;
-    }
+    // Atomically transition WRITING → FILLED
+    Atomics.store(controlView, 0, BUFFER_CONTROL_FILLED);
 
     // Notify waiting worker
     Atomics.notify(controlView, 0);

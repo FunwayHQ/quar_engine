@@ -64,6 +64,9 @@ export class IMUManager {
   private calibrationResolve: ((bias: IMUBias) => void) | null = null;
   private calibrationReject: ((error: Error) => void) | null = null;
 
+  // Timer IDs for cleanup
+  private calibrationTimerId: ReturnType<typeof setTimeout> | null = null;
+
   // Event callbacks
   private onReadingCallbacks: ((reading: IMUReading) => void)[] = [];
   private onStateChangeCallbacks: ((state: IMUState) => void)[] = [];
@@ -162,7 +165,8 @@ export class IMUManager {
     // Auto-calibrate if configured
     if (this.config.autoCalibrate && this.calibrationState === CalibrationState.Uncalibrated) {
       // Start calibration after a short delay to collect initial samples
-      setTimeout(() => {
+      this.calibrationTimerId = setTimeout(() => {
+        this.calibrationTimerId = null;
         this.calibrate().catch((err) => {
           console.warn('Auto-calibration failed:', err);
         });
@@ -174,6 +178,10 @@ export class IMUManager {
    * Stop listening to IMU sensor data.
    */
   stop(): void {
+    if (this.calibrationTimerId !== null) {
+      clearTimeout(this.calibrationTimerId);
+      this.calibrationTimerId = null;
+    }
     if (this.eventHandler) {
       window.removeEventListener('devicemotion', this.eventHandler);
       this.eventHandler = null;

@@ -32,8 +32,12 @@ impl FrameArena {
 
     /// Allocate space for `count` items of type T.
     ///
-    /// Returns a mutable slice to the allocated space, or None if
+    /// Returns an ArenaVec that can push/access elements, or None if
     /// there isn't enough space in the arena.
+    ///
+    /// # Safety
+    /// The returned ArenaVec holds a raw pointer into the arena buffer.
+    /// It must not be used after the arena is reset.
     pub fn alloc<T: Copy + Default>(&self, count: usize) -> Option<ArenaVec<T>> {
         let size = count * std::mem::size_of::<T>();
         let align = std::mem::align_of::<T>();
@@ -48,7 +52,9 @@ impl FrameArena {
             return None;
         }
 
-        let start = aligned_offset;
+        // Get raw pointer to the allocated region
+        let ptr = unsafe { buffer.as_ptr().add(aligned_offset) as *mut u8 };
+
         *offset = aligned_offset + size;
 
         // Update high water mark
@@ -58,7 +64,7 @@ impl FrameArena {
         }
 
         Some(ArenaVec {
-            start,
+            ptr,
             len: 0,
             capacity: count,
             _marker: std::marker::PhantomData,
@@ -104,10 +110,13 @@ impl Default for FrameArena {
 ///
 /// This provides a Vec-like interface for temporary collections
 /// that don't need to outlive the current frame.
+///
+/// # Safety
+/// The raw pointer is valid for the lifetime of the FrameArena that created it,
+/// as long as `reset()` has not been called. ArenaVec should not outlive its arena.
 pub struct ArenaVec<T> {
-    /// Start offset in the arena buffer
-    #[allow(dead_code)]
-    start: usize,
+    /// Raw pointer to the start of the allocated region in the arena
+    ptr: *mut u8,
     /// Current number of elements
     len: usize,
     /// Maximum capacity
@@ -145,6 +154,43 @@ impl<T: Copy> ArenaVec<T> {
     #[inline]
     pub fn clear(&mut self) {
         self.len = 0;
+    }
+
+    /// Push an item. Returns false if full.
+    #[inline]
+    pub fn push(&mut self, item: T) -> bool {
+        if self.len >= self.capacity {
+            return false;
+        }
+        unsafe {
+            let dest = self.ptr.add(self.len * std::mem::size_of::<T>()) as *mut T;
+            dest.write(item);
+        }
+        self.len += 1;
+        true
+    }
+
+    /// Get an item by index.
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index >= self.len {
+            return None;
+        }
+        unsafe {
+            let src = self.ptr.add(index * std::mem::size_of::<T>()) as *const T;
+            Some(&*src)
+        }
+    }
+
+    /// Get a slice of the filled portion.
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        if self.len == 0 {
+            return &[];
+        }
+        unsafe {
+            std::slice::from_raw_parts(self.ptr as *const T, self.len)
+        }
     }
 }
 
@@ -273,12 +319,14 @@ impl<T: Copy + Default, const N: usize> std::ops::Index<usize> for FixedVec<T, N
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
+        assert!(index < self.len, "FixedVec index {index} out of bounds (len {})", self.len);
         &self.data[index]
     }
 }
 
 impl<T: Copy + Default, const N: usize> std::ops::IndexMut<usize> for FixedVec<T, N> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        assert!(index < self.len, "FixedVec index {index} out of bounds (len {})", self.len);
         &mut self.data[index]
     }
 }

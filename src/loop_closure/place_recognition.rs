@@ -34,6 +34,8 @@ pub struct PlaceRecognitionDB {
     inverted_index: HashMap<usize, Vec<KeyFrameId>>,
     /// Total number of keyframes
     num_keyframes: usize,
+    /// Raw descriptors per keyframe (for recomputing BoW when IDF changes)
+    keyframe_descriptors: HashMap<KeyFrameId, Vec<OrbDescriptor>>,
 }
 
 impl PlaceRecognitionDB {
@@ -44,6 +46,7 @@ impl PlaceRecognitionDB {
             keyframe_bows: HashMap::new(),
             inverted_index: HashMap::new(),
             num_keyframes: 0,
+            keyframe_descriptors: HashMap::new(),
         }
     }
 
@@ -65,13 +68,32 @@ impl PlaceRecognitionDB {
                 .push(kf_id);
         }
 
-        // Update IDF weights
+        // Update IDF weights (this changes weights for all existing BoW vectors)
         let words: Vec<usize> = bow.word_ids().copied().collect();
         self.vocab.update_idf(&words);
 
-        // Store BoW
+        // Store raw descriptors for BoW recomputation
+        self.keyframe_descriptors
+            .insert(kf_id, descriptors.to_vec());
+
+        // Store BoW for the new keyframe
         self.keyframe_bows.insert(kf_id, bow);
         self.num_keyframes += 1;
+
+        // Recompute all existing BoW vectors with updated IDF weights
+        // Collect IDs first to avoid borrow conflict
+        let existing_ids: Vec<KeyFrameId> = self
+            .keyframe_descriptors
+            .keys()
+            .copied()
+            .filter(|id| *id != kf_id)
+            .collect();
+        for id in existing_ids {
+            if let Some(descs) = self.keyframe_descriptors.get(&id) {
+                let new_bow = BowVector::from_descriptors(descs, &self.vocab);
+                self.keyframe_bows.insert(id, new_bow);
+            }
+        }
     }
 
     /// Query for similar keyframes.
@@ -158,6 +180,8 @@ impl PlaceRecognitionDB {
                     kf_ids.retain(|&id| id != kf_id);
                 }
             }
+            // Remove stored descriptors
+            self.keyframe_descriptors.remove(&kf_id);
             self.num_keyframes -= 1;
             true
         } else {

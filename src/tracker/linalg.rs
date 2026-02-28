@@ -378,13 +378,35 @@ pub fn svd_3x3(a: &Matrix3x3) -> Svd3x3 {
         u = gram_schmidt_3x3(&u);
     }
 
-    // At this point A = U * S * V^T should hold
-    // V is orthogonal from Jacobi, U is orthogonal from construction
-
     Svd3x3 {
         u,
         s,
         v_t: v.transpose(),
+    }
+}
+
+/// Ensure SVD factors U and V^T represent proper rotations (det = +1).
+///
+/// For Essential matrix decomposition, U and V must have positive determinants.
+/// If det(U) < 0, negate the last column of U; if det(V) < 0, negate the last
+/// column of V (last row of V^T). The corresponding singular value is also
+/// negated to preserve A = U * S * V^T, but for Essential matrices s[2] ≈ 0
+/// so this has negligible effect.
+pub fn svd_ensure_proper_rotations(svd: &mut Svd3x3) {
+    if svd.u.determinant() < 0.0 {
+        for row in 0..3 {
+            svd.u.data[row][2] = -svd.u.data[row][2];
+        }
+        svd.s[2] = -svd.s[2];
+    }
+
+    // V^T: det(V^T) = det(V). Negate last row of V^T = negate last column of V.
+    let v_t_det = svd.v_t.determinant();
+    if v_t_det < 0.0 {
+        for col in 0..3 {
+            svd.v_t.data[2][col] = -svd.v_t.data[2][col];
+        }
+        svd.s[2] = -svd.s[2];
     }
 }
 
@@ -968,6 +990,55 @@ impl Mat3 {
 pub struct EssentialSolution {
     pub rotation: Mat3,
     pub translation: Vec3,
+}
+
+/// Convert a 3x3 rotation matrix to a quaternion [x, y, z, w].
+///
+/// Uses Shepperd's method for numerical stability.
+pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
+    let trace = r.data[0][0] + r.data[1][1] + r.data[2][2];
+
+    let (w, x, y, z) = if trace > 0.0 {
+        let s = (trace + 1.0).sqrt() * 2.0;
+        (
+            0.25 * s,
+            (r.data[2][1] - r.data[1][2]) / s,
+            (r.data[0][2] - r.data[2][0]) / s,
+            (r.data[1][0] - r.data[0][1]) / s,
+        )
+    } else if r.data[0][0] > r.data[1][1] && r.data[0][0] > r.data[2][2] {
+        let s = (1.0 + r.data[0][0] - r.data[1][1] - r.data[2][2]).sqrt() * 2.0;
+        (
+            (r.data[2][1] - r.data[1][2]) / s,
+            0.25 * s,
+            (r.data[0][1] + r.data[1][0]) / s,
+            (r.data[0][2] + r.data[2][0]) / s,
+        )
+    } else if r.data[1][1] > r.data[2][2] {
+        let s = (1.0 + r.data[1][1] - r.data[0][0] - r.data[2][2]).sqrt() * 2.0;
+        (
+            (r.data[0][2] - r.data[2][0]) / s,
+            (r.data[0][1] + r.data[1][0]) / s,
+            0.25 * s,
+            (r.data[1][2] + r.data[2][1]) / s,
+        )
+    } else {
+        let s = (1.0 + r.data[2][2] - r.data[0][0] - r.data[1][1]).sqrt() * 2.0;
+        (
+            (r.data[1][0] - r.data[0][1]) / s,
+            (r.data[0][2] + r.data[2][0]) / s,
+            (r.data[1][2] + r.data[2][1]) / s,
+            0.25 * s,
+        )
+    };
+
+    let len = (w * w + x * x + y * y + z * z).sqrt();
+    [
+        (x / len) as f32,
+        (y / len) as f32,
+        (z / len) as f32,
+        (w / len) as f32,
+    ]
 }
 
 #[cfg(test)]

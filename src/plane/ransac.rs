@@ -120,6 +120,11 @@ impl PlaneDetector {
         }
     }
 
+    /// Get the current detector configuration.
+    pub fn config(&self) -> &PlaneDetectorConfig {
+        &self.config
+    }
+
     /// Detect planes from a set of 3D points.
     ///
     /// Returns a vector of detected planes, sorted by inlier count (largest first).
@@ -182,8 +187,8 @@ impl PlaneDetector {
         // Sort by inlier count (largest first)
         planes.sort_by(|a, b| b.inlier_count.cmp(&a.inlier_count));
 
-        // Merge similar planes
-        self.merge_planes(&mut planes);
+        // Merge similar planes and refit using combined inlier sets
+        self.merge_planes(&mut planes, points);
 
         planes
     }
@@ -459,8 +464,8 @@ impl PlaneDetector {
         Some([x, y, z])
     }
 
-    /// Merge similar planes.
-    fn merge_planes(&self, planes: &mut Vec<Plane>) {
+    /// Merge similar planes and refit using combined inlier sets.
+    fn merge_planes(&self, planes: &mut Vec<Plane>, points: &[[f64; 3]]) {
         if planes.len() <= 1 {
             return;
         }
@@ -490,6 +495,19 @@ impl PlaneDetector {
                     merged_indices.insert(j);
                     planes[i].inlier_count += j_inlier_count;
                     planes[i].inlier_indices.extend(j_inlier_indices);
+
+                    // Refit plane using combined inlier points
+                    let combined_points: Vec<[f64; 3]> = planes[i]
+                        .inlier_indices
+                        .iter()
+                        .filter_map(|&idx| points.get(idx).copied())
+                        .collect();
+                    if let Some((normal, distance)) = Self::fit_plane_least_squares(&combined_points) {
+                        planes[i].normal = normal;
+                        planes[i].distance = distance;
+                        planes[i].plane_type = PlaneType::from_normal(normal);
+                    }
+
                     // Recompute confidence
                     planes[i].confidence = (planes[i].inlier_count as f64 / 100.0).min(1.0);
                 }

@@ -287,12 +287,18 @@ pub fn compute_essential_ransac(
     let mut best_inliers: Vec<bool> = vec![false; n];
     let mut best_inlier_count: usize = 0;
 
+    // Pre-allocate reusable buffers
+    let mut sample_indices = Vec::with_capacity(8);
+    let mut sample1 = Vec::with_capacity(8);
+    let mut sample2 = Vec::with_capacity(8);
+    let mut inliers = vec![false; n];
+
     // Use simple deterministic RNG
     let mut seed: u64 = 42;
 
     for _iter in 0..max_iterations {
         // Sample 8 random points
-        let mut sample_indices = Vec::with_capacity(8);
+        sample_indices.clear();
         while sample_indices.len() < 8 {
             let idx = next_random(&mut seed, n);
             if !sample_indices.contains(&idx) {
@@ -300,12 +306,18 @@ pub fn compute_essential_ransac(
             }
         }
 
-        let sample1: Vec<_> = sample_indices.iter().map(|&i| points1[i]).collect();
-        let sample2: Vec<_> = sample_indices.iter().map(|&i| points2[i]).collect();
+        sample1.clear();
+        sample2.clear();
+        for &i in &sample_indices {
+            sample1.push(points1[i]);
+            sample2.push(points2[i]);
+        }
 
         if let Some(e) = compute_essential_matrix(&sample1, &sample2) {
             // Count inliers
-            let mut inliers = vec![false; n];
+            for v in inliers.iter_mut() {
+                *v = false;
+            }
             let mut inlier_count: usize = 0;
 
             for i in 0..n {
@@ -318,7 +330,7 @@ pub fn compute_essential_ransac(
 
             if inlier_count > best_inlier_count {
                 best_inlier_count = inlier_count;
-                best_inliers = inliers;
+                best_inliers.copy_from_slice(&inliers);
                 best_e = Some(e);
             }
         }
@@ -327,37 +339,8 @@ pub fn compute_essential_ransac(
     best_e.map(|e| (e, best_inliers))
 }
 
-/// Triangulate a single 3D point from two 2D observations.
-pub fn triangulate_point(p1: &Vec2, p2: &Vec2, r: &Mat3, t: &Vec3) -> Option<Vec3> {
-    triangulate_point_simple(p1, p2, r, t)
-}
-
-/// Triangulate multiple points and return valid ones (positive depth).
-pub fn triangulate_valid_points(
-    points1: &[Vec2],
-    points2: &[Vec2],
-    r: &Mat3,
-    t: &Vec3,
-) -> Vec<(usize, Vec3)> {
-    let mut result = Vec::new();
-
-    for (i, (p1, p2)) in points1.iter().zip(points2.iter()).enumerate() {
-        if let Some(point_3d) = triangulate_point(p1, p2, r, t) {
-            // Check positive depth in both cameras
-            if point_3d.z > 0.0 {
-                let point_cam2_z = r.data[2][0] * point_3d.x
-                    + r.data[2][1] * point_3d.y
-                    + r.data[2][2] * point_3d.z
-                    + t.z;
-                if point_cam2_z > 0.0 {
-                    result.push((i, point_3d));
-                }
-            }
-        }
-    }
-
-    result
-}
+// Re-export triangulation functions from the canonical module
+pub use super::triangulation::{triangulate_point, triangulate_valid_points};
 
 /// Compute parallax angle between two rays.
 pub fn compute_parallax(p1: &Vec2, p2: &Vec2, r: &Mat3) -> f64 {

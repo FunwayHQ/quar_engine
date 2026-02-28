@@ -337,7 +337,11 @@ impl DriftDecay {
         is_stationary: bool,
         stationary_duration: f64,
     ) {
-        // Check if beyond max drift
+        if !is_stationary || stationary_duration < self.min_stationary_time {
+            return;
+        }
+
+        // Only apply max_drift clamp when stationary (not during active motion)
         let dx = position[0] - self.origin[0];
         let dy = position[1] - self.origin[1];
         let dz = position[2] - self.origin[2];
@@ -352,10 +356,6 @@ impl DriftDecay {
             velocity[0] *= 0.5;
             velocity[1] *= 0.5;
             velocity[2] *= 0.5;
-            return;
-        }
-
-        if !is_stationary || stationary_duration < self.min_stationary_time {
             return;
         }
 
@@ -635,10 +635,16 @@ impl PositionStabilizer {
     }
 
     /// Apply stabilization to position.
+    ///
+    /// # Arguments
+    /// * `position` - Current position (modified in place)
+    /// * `velocity` - Current velocity (modified in place)
+    /// * `dt` - Actual elapsed time since last frame (seconds)
     pub fn stabilize(
         &self,
         position: &mut [f64; 3],
         velocity: &mut [f64; 3],
+        dt: f64,
     ) {
         if !self.enabled {
             return;
@@ -647,8 +653,8 @@ impl PositionStabilizer {
         let is_stationary = self.stationary.is_stationary();
         let duration = self.stationary.stationary_duration();
 
-        // Apply anchor pull
-        let stabilized = self.anchor.apply(*position, is_stationary, 1.0 / 60.0);
+        // Apply anchor pull with actual dt
+        let stabilized = self.anchor.apply(*position, is_stationary, dt);
         position[0] = stabilized[0];
         position[1] = stabilized[1];
         position[2] = stabilized[2];
@@ -764,11 +770,26 @@ mod tests {
         let mut position = [1.0, 0.0, 0.0]; // Beyond max_drift (0.5)
         let mut velocity = [0.0, 0.0, 0.0];
 
-        decay.apply(&mut position, &mut velocity, false, 0.0);
+        // Max drift clamp only applies when stationary (C8 fix)
+        decay.apply(&mut position, &mut velocity, true, 5.0);
 
         // Should be clamped to max_drift
         let distance = (position[0].powi(2) + position[1].powi(2) + position[2].powi(2)).sqrt();
         assert!(distance <= 0.51); // Allow small tolerance
+    }
+
+    #[test]
+    fn test_drift_decay_no_clamp_during_motion() {
+        let decay = DriftDecay::new();
+
+        let mut position = [1.0, 0.0, 0.0]; // Beyond max_drift (0.5)
+        let mut velocity = [0.0, 0.0, 0.0];
+
+        // During active motion, position should NOT be clamped
+        decay.apply(&mut position, &mut velocity, false, 0.0);
+
+        // Position unchanged — function returns early when not stationary
+        assert!((position[0] - 1.0).abs() < 1e-10);
     }
 
     #[test]
@@ -799,7 +820,7 @@ mod tests {
 
         let mut position = [0.05, 0.05, 0.05];
         let mut velocity = [0.0, 0.0, 0.0];
-        stabilizer.stabilize(&mut position, &mut velocity);
+        stabilizer.stabilize(&mut position, &mut velocity, 0.016);
 
         // Position should be pulled toward anchor
         assert!(position[0].abs() < 0.05);

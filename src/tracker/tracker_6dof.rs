@@ -16,12 +16,13 @@ use super::essential_pure::{
 use super::five_point::compute_essential_5pt_ransac;
 use super::imu_preintegration::{ImuBuffer, ImuMeasurement, PreintegratedImu, ImuBias};
 use super::kalman::MotionState;
-use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3};
+use super::linalg::{EssentialSolution, Mat3, Vec2, Vec3, rotation_matrix_to_quaternion};
 use super::scale_estimator::{ScaleEstimator, GravityEstimator};
 use super::accelerometer::{AccelIntegrator};
 use super::stabilization::PositionStabilizer;
 use super::triangulation::triangulate_valid_points;
 use super::types::{Point2, Pose3D, TrackerConfig};
+use super::pyramid::build_pyramid;
 use super::{GrayImage, LucasKanadeTracker};
 
 // Bundle Adjustment and Loop Closure integration
@@ -160,8 +161,10 @@ pub struct Tracker6DoF {
     motion_state: MotionState,
     /// Whether Kalman filtering is enabled
     kalman_enabled: bool,
-    /// Last frame timestamp
+    /// Last frame timestamp (VIO)
     last_frame_time: f64,
+    /// Time delta between last two frames
+    frame_dt: f64,
     /// IMU buffer for VIO
     imu_buffer: ImuBuffer,
     /// Scale estimator for metric scale
@@ -258,6 +261,7 @@ impl Tracker6DoF {
             motion_state: MotionState::new(),
             kalman_enabled: true,
             last_frame_time: 0.0,
+            frame_dt: 0.016,
             imu_buffer: ImuBuffer::new(500),
             scale_estimator: ScaleEstimator::new(),
             gravity_estimator: GravityEstimator::new(),
@@ -319,9 +323,12 @@ impl Tracker6DoF {
 
         let prev_gray = self.prev_gray.as_ref().unwrap();
 
+        // Build current frame pyramid once — reused by both prev→curr and keyframe→curr tracking
+        let curr_pyramid = build_pyramid(&curr_gray, self.config.base.pyramid_levels);
+
         // Track points from previous frame (for rotation estimation)
         if !self.prev_points.is_empty() {
-            let track_results = self.lk_tracker.track(prev_gray, &curr_gray, &self.prev_points);
+            let track_results = self.lk_tracker.track_with_curr_pyramid(prev_gray, &curr_pyramid, &self.prev_points);
 
             // Filter successfully tracked points
             let mut curr_points = Vec::new();
@@ -338,7 +345,7 @@ impl Tracker6DoF {
             if curr_points.len() >= self.config.base.min_tracked_points {
                 // Use keyframe-based translation if enabled
                 if self.use_keyframe_translation && self.keyframe_gray.is_some() {
-                    self.estimate_pose_with_keyframe(&prev_matched, &curr_points, &curr_gray);
+                    self.estimate_pose_with_keyframe(&prev_matched, &curr_points, &curr_pyramid);
                 } else {
                     self.estimate_pose(&prev_matched, &curr_points);
                 }
@@ -469,8 +476,9 @@ impl Tracker6DoF {
                         self.current_pose.translation[2] as f64 + scaled_t[2] as f64,
                     ];
 
-                    // Predict and update
-                    self.motion_state.predict(0.016); // Assume ~60fps
+                    // Predict with actual dt (clamped to reasonable range)
+                    let dt = self.actual_dt().clamp(0.001, 0.1);
+                    self.motion_state.predict(dt);
 
                     // Higher parallax = more confident measurement
                     let confidence = (max_parallax / 5.0).clamp(0.3, 1.0);
@@ -491,7 +499,8 @@ impl Tracker6DoF {
                 }
             } else if self.kalman_enabled {
                 // No translation update - just run prediction
-                self.motion_state.predict(0.016);
+                let dt = self.actual_dt().clamp(0.001, 0.1);
+                self.motion_state.predict(dt);
                 let predicted = self.motion_state.position_f32();
                 self.current_pose.translation = predicted;
             }
@@ -541,15 +550,48 @@ impl Tracker6DoF {
         }
     }
 
-    /// Refine scale estimate using triangulated points.
+    /// Refine scale estimate using median triangulated depth.
     fn refine_scale(
         &mut self,
-        _prev_points: &[Vec2],
-        _curr_points: &[Vec2],
-        _pose: &EssentialSolution,
+        prev_points: &[Vec2],
+        curr_points: &[Vec2],
+        pose: &EssentialSolution,
     ) {
-        // TODO: Implement scale refinement using triangulated point depths
-        // For now, scale stays constant
+        let valid_points = triangulate_valid_points(
+            prev_points,
+            curr_points,
+            &pose.rotation,
+            &pose.translation,
+        );
+
+        if valid_points.len() < 3 {
+            return;
+        }
+
+        // Collect positive depths
+        let mut depths: Vec<f64> = valid_points
+            .iter()
+            .map(|(_, p)| p.z)
+            .filter(|&z| z > 0.1 && z < 100.0)
+            .collect();
+
+        if depths.len() < 3 {
+            return;
+        }
+
+        // Median depth
+        depths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median_depth = depths[depths.len() / 2];
+
+        // Adjust scale: if median depth is around 1.0, our scale is good.
+        // If median depth is too large/small, adjust scale to target ~1m median.
+        let target_depth = 1.0; // 1 meter
+        let scale_correction = target_depth / median_depth;
+
+        // Blend slowly toward corrected scale
+        let blend = 0.05;
+        let new_scale = self.scale as f64 * (1.0 - blend) + (self.scale as f64 * scale_correction) * blend;
+        self.scale = new_scale.clamp(0.0001, 10.0) as f32;
     }
 
     /// Estimate pose using keyframe-based translation.
@@ -560,7 +602,7 @@ impl Tracker6DoF {
         &mut self,
         prev_points: &[Point2],
         curr_points: &[Point2],
-        curr_gray: &GrayImage,
+        curr_pyramid: &[GrayImage],
     ) {
         // 1. Estimate rotation from previous frame (responsive)
         let prev_norm: Vec<Vec2> = prev_points
@@ -620,7 +662,7 @@ impl Tracker6DoF {
         // 2. Track keyframe points to current frame for translation
         if let Some(ref kf_gray) = self.keyframe_gray {
             if !self.keyframe_points.is_empty() {
-                let kf_track_results = self.lk_tracker.track(kf_gray, curr_gray, &self.keyframe_points);
+                let kf_track_results = self.lk_tracker.track_with_curr_pyramid(kf_gray, curr_pyramid, &self.keyframe_points);
 
                 // Filter successfully tracked points
                 let mut kf_matched = Vec::new();
@@ -752,7 +794,7 @@ impl Tracker6DoF {
                                 || kf_matched.len() < min_kf_points * 2;
 
                             if should_update_keyframe {
-                                self.keyframe_gray = Some(curr_gray.clone());
+                                self.keyframe_gray = Some(curr_pyramid[0].clone());
                                 self.keyframe_points = curr_points.to_vec();
                                 self.keyframe_frame = self.frame_count;
                                 self.keyframe_pose = self.current_pose;
@@ -761,13 +803,19 @@ impl Tracker6DoF {
                     }
                 } else {
                     // Lost keyframe tracking - reset keyframe
-                    self.keyframe_gray = Some(curr_gray.clone());
+                    self.keyframe_gray = Some(curr_pyramid[0].clone());
                     self.keyframe_points = curr_points.to_vec();
                     self.keyframe_frame = self.frame_count;
                     self.keyframe_pose = self.current_pose;
                 }
             }
         }
+    }
+
+    /// Get actual time delta since last frame, falling back to 60fps.
+    #[inline]
+    fn actual_dt(&self) -> f64 {
+        self.frame_dt
     }
 
     /// Detect new features in the image.
@@ -1058,6 +1106,14 @@ impl Tracker6DoF {
             None
         };
 
+        // Compute actual frame dt
+        if self.last_frame_time > 0.0 {
+            let dt = timestamp - self.last_frame_time;
+            if dt > 0.0 && dt < 1.0 {
+                self.frame_dt = dt;
+            }
+        }
+
         // Store for later use
         self.last_preintegration = preint.clone();
         self.last_frame_time = timestamp;
@@ -1207,7 +1263,7 @@ impl Tracker6DoF {
         ];
         let mut velocity = [0.0, 0.0, 0.0]; // Could track velocity if needed
 
-        self.stabilizer.stabilize(&mut position, &mut velocity);
+        self.stabilizer.stabilize(&mut position, &mut velocity, self.frame_dt);
 
         self.current_pose.translation = [
             position[0] as f32,
@@ -1599,11 +1655,18 @@ impl Tracker6DoF {
                 alpha * target.translation[i];
         }
 
-        // Blend rotation quaternions (simple linear interpolation + normalize)
+        // Check quaternion dot product: if negative, negate target to take shortest path
+        let dot = self.current_pose.rotation[0] * target.rotation[0]
+            + self.current_pose.rotation[1] * target.rotation[1]
+            + self.current_pose.rotation[2] * target.rotation[2]
+            + self.current_pose.rotation[3] * target.rotation[3];
+        let sign = if dot < 0.0 { -1.0_f32 } else { 1.0 };
+
+        // Blend rotation quaternions (LERP with shortest-path correction)
         for i in 0..4 {
             self.current_pose.rotation[i] =
                 (1.0 - alpha) * self.current_pose.rotation[i] +
-                alpha * target.rotation[i];
+                alpha * sign * target.rotation[i];
         }
         // Normalize quaternion
         let len = (self.current_pose.rotation[0] * self.current_pose.rotation[0]
@@ -1642,51 +1705,6 @@ impl Tracker6DoF {
 
         Some(pose)
     }
-}
-
-/// Convert a 3x3 rotation matrix to a quaternion [x, y, z, w].
-fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
-    // Using Shepperd's method for numerical stability
-    let trace = r.data[0][0] + r.data[1][1] + r.data[2][2];
-
-    let (x, y, z, w) = if trace > 0.0 {
-        let s = 0.5 / (trace + 1.0).sqrt();
-        let w = 0.25 / s;
-        let x = (r.data[2][1] - r.data[1][2]) * s;
-        let y = (r.data[0][2] - r.data[2][0]) * s;
-        let z = (r.data[1][0] - r.data[0][1]) * s;
-        (x, y, z, w)
-    } else if r.data[0][0] > r.data[1][1] && r.data[0][0] > r.data[2][2] {
-        let s = 2.0 * (1.0 + r.data[0][0] - r.data[1][1] - r.data[2][2]).sqrt();
-        let w = (r.data[2][1] - r.data[1][2]) / s;
-        let x = 0.25 * s;
-        let y = (r.data[0][1] + r.data[1][0]) / s;
-        let z = (r.data[0][2] + r.data[2][0]) / s;
-        (x, y, z, w)
-    } else if r.data[1][1] > r.data[2][2] {
-        let s = 2.0 * (1.0 + r.data[1][1] - r.data[0][0] - r.data[2][2]).sqrt();
-        let w = (r.data[0][2] - r.data[2][0]) / s;
-        let x = (r.data[0][1] + r.data[1][0]) / s;
-        let y = 0.25 * s;
-        let z = (r.data[1][2] + r.data[2][1]) / s;
-        (x, y, z, w)
-    } else {
-        let s = 2.0 * (1.0 + r.data[2][2] - r.data[0][0] - r.data[1][1]).sqrt();
-        let w = (r.data[1][0] - r.data[0][1]) / s;
-        let x = (r.data[0][2] + r.data[2][0]) / s;
-        let y = (r.data[1][2] + r.data[2][1]) / s;
-        let z = 0.25 * s;
-        (x, y, z, w)
-    };
-
-    // Normalize and convert to f32
-    let len = (x * x + y * y + z * z + w * w).sqrt();
-    [
-        (x / len) as f32,
-        (y / len) as f32,
-        (z / len) as f32,
-        (w / len) as f32,
-    ]
 }
 
 /// Compute angle difference between two quaternions in radians.

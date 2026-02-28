@@ -379,8 +379,9 @@ impl AccelIntegrator {
             return;
         }
 
-        // Remove gravity (simple method)
-        let linear_accel = self.accel_processor.remove_gravity_simple(accel);
+        // Remove gravity using proper rotation-based method
+        let body_to_world = RotationMatrix::identity(); // Use identity if no rotation available
+        let linear_accel = self.accel_processor.remove_gravity(accel, &body_to_world);
 
         // Apply threshold to reduce noise
         let threshold = 0.1; // m/s²
@@ -396,9 +397,11 @@ impl AccelIntegrator {
         self.velocity[2] += linear_accel[2] * dt;
 
         // Apply velocity decay (friction model to reduce drift)
-        self.velocity[0] *= self.velocity_decay;
-        self.velocity[1] *= self.velocity_decay;
-        self.velocity[2] *= self.velocity_decay;
+        // Time-based: decay^(dt*60) so behavior is frame-rate independent
+        let decay = self.velocity_decay.powf(dt * 60.0);
+        self.velocity[0] *= decay;
+        self.velocity[1] *= decay;
+        self.velocity[2] *= decay;
 
         // Integrate velocity to position
         self.position[0] += self.velocity[0] * dt;

@@ -154,7 +154,7 @@ impl LocalBA {
             translations: optimized_translations,
             points: optimized_points,
             mean_error,
-            iterations: self.config.max_iterations,
+            iterations: 1, // Single pass of structure-only + motion-only
             converged,
         }
     }
@@ -258,12 +258,35 @@ impl LocalBA {
 
             // Solve 3x3 system
             if let Some(delta) = solve_3x3(&jtj, &jtr) {
+                // Save old point and compute old cost
+                let old_point = point;
+                let old_cost: f64 = observations.iter().map(|obs| {
+                    let cam_idx = obs.camera_idx;
+                    if cam_idx >= rotations.len() { return 0.0; }
+                    let e = reprojection_residual(&old_point, &rotations[cam_idx], &translations[cam_idx], &obs.observation);
+                    e.dx * e.dx + e.dy * e.dy
+                }).sum();
+
                 point.x += delta[0];
                 point.y += delta[1];
                 point.z += delta[2];
 
-                // Decrease lambda on success (step accepted)
-                lambda *= 0.1;
+                // Compute new cost
+                let new_cost: f64 = observations.iter().map(|obs| {
+                    let cam_idx = obs.camera_idx;
+                    if cam_idx >= rotations.len() { return 0.0; }
+                    let e = reprojection_residual(&point, &rotations[cam_idx], &translations[cam_idx], &obs.observation);
+                    e.dx * e.dx + e.dy * e.dy
+                }).sum();
+
+                if new_cost < old_cost {
+                    // Step accepted — decrease lambda
+                    lambda *= 0.1;
+                } else {
+                    // Step rejected — revert and increase lambda
+                    point = old_point;
+                    lambda *= 10.0;
+                }
 
                 // Check convergence
                 let delta_norm = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
@@ -271,9 +294,11 @@ impl LocalBA {
                     break;
                 }
             } else {
-                // Increase lambda on failure
+                // Increase lambda on failure and continue (not break)
                 lambda *= 10.0;
-                break;
+                if lambda > 1e12 {
+                    break;
+                }
             }
         }
         let _ = lambda;

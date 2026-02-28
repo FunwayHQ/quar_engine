@@ -164,6 +164,7 @@ export const BUFFER_DATA_OFFSET = 4; // Aligned to 4 bytes
 export const BUFFER_CONTROL_EMPTY = 0;
 export const BUFFER_CONTROL_FILLED = 1;
 export const BUFFER_CONTROL_PROCESSING = 2;
+export const BUFFER_CONTROL_WRITING = 3;
 
 /**
  * Calculate required SharedArrayBuffer size for a frame.

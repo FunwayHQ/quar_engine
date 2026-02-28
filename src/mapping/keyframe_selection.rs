@@ -123,14 +123,42 @@ impl KeyFrameSelector {
     }
 
     /// Compute translation distance between current pose and keyframe.
+    /// Uses camera centers (C = -R^T * t) for both poses.
     fn compute_translation(&self, current_pose: &Pose3D, keyframe: &KeyFrame) -> f32 {
         let kf_center = keyframe.camera_center();
-        let curr_t = &current_pose.translation;
 
-        // Compute camera center for current pose (simplified, assumes small translation)
-        let dx = curr_t[0] as f64 - kf_center[0];
-        let dy = curr_t[1] as f64 - kf_center[1];
-        let dz = curr_t[2] as f64 - kf_center[2];
+        // Compute camera center for current pose: C = -R^T * t
+        let q = &current_pose.rotation;
+        let t = &current_pose.translation;
+        let x = q[0] as f64;
+        let y = q[1] as f64;
+        let z = q[2] as f64;
+        let w = q[3] as f64;
+
+        // R^T (transposed rotation from quaternion)
+        let r00 = 1.0 - 2.0 * (y * y + z * z);
+        let r10 = 2.0 * (x * y + w * z);
+        let r20 = 2.0 * (x * z - w * y);
+        let r01 = 2.0 * (x * y - w * z);
+        let r11 = 1.0 - 2.0 * (x * x + z * z);
+        let r21 = 2.0 * (y * z + w * x);
+        let r02 = 2.0 * (x * z + w * y);
+        let r12 = 2.0 * (y * z - w * x);
+        let r22 = 1.0 - 2.0 * (x * x + y * y);
+
+        let tx = t[0] as f64;
+        let ty = t[1] as f64;
+        let tz = t[2] as f64;
+
+        let curr_center = [
+            -(r00 * tx + r10 * ty + r20 * tz),
+            -(r01 * tx + r11 * ty + r21 * tz),
+            -(r02 * tx + r12 * ty + r22 * tz),
+        ];
+
+        let dx = curr_center[0] - kf_center[0];
+        let dy = curr_center[1] - kf_center[1];
+        let dz = curr_center[2] - kf_center[2];
 
         (dx * dx + dy * dy + dz * dz).sqrt() as f32
     }

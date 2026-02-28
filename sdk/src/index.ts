@@ -202,11 +202,10 @@ export class QuarEngine {
 
     // Initialize camera
     try {
-      const resolution = fullConfig.camera.resolution === 'hd'
-        ? ResolutionPresets.hd
-        : fullConfig.camera.resolution === 'fhd'
-          ? ResolutionPresets.fhd
-          : fullConfig.camera.resolution;
+      const resName = fullConfig.camera.resolution;
+      const resolution = typeof resName === 'string' && resName in ResolutionPresets
+        ? ResolutionPresets[resName as keyof typeof ResolutionPresets]
+        : fullConfig.camera.resolution;
 
       await engine.cameraManager.init({
         facingMode: fullConfig.camera.facing,
@@ -419,9 +418,7 @@ export class QuarEngine {
   private async loadWasm(): Promise<void> {
     try {
       // Dynamic import of WASM module
-      const wasmPath = this.config.debug?.logLevel === 'debug'
-        ? '../pkg/quar_engine.js'  // Development
-        : '../pkg/quar_engine.js'; // Production (could be CDN path)
+      const wasmPath = '../pkg/quar_engine.js';
 
       const module = await import(/* webpackIgnore: true */ wasmPath) as WasmModule;
       await module.default();

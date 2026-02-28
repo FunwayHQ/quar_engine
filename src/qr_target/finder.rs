@@ -190,6 +190,7 @@ impl QrFinderDetector {
         let mut counts = [0u32; 5];
         let mut current_idx = 0;
         let mut last_color = false; // false = dark, true = light
+        let mut first_segment_light = false; // track if pattern started with light
 
         let row_offset = (y * width) as usize;
 
@@ -199,6 +200,7 @@ impl QrFinderDetector {
 
             if x == 0 {
                 last_color = is_light;
+                first_segment_light = is_light;
                 counts[0] = 1;
                 continue;
             }
@@ -215,7 +217,17 @@ impl QrFinderDetector {
                     // We need to verify segment 0 was dark, segment 2 was dark, segment 4 was dark
                     // Since we track transitions and last_color is now light after the 5th dark segment,
                     // the pattern is valid if it matches the ratio
-                    if self.check_ratio(&counts) {
+                    // Pattern must start with dark segment (QR finder starts black)
+                    // After 5 segments ending at idx 4, last_color just flipped.
+                    // Segment 0 should be dark. Track it: at x==0 we set last_color;
+                    // if segment 0 started light, this is not a valid QR finder pattern.
+                    // The first segment (idx 0) is dark if we completed 5 alternations
+                    // starting from dark. Check: segment count is odd (0,2,4 = dark).
+                    // Since last_color is now light (just transitioned), segment 4 was dark,
+                    // segment 3 was light, ..., segment 0 was dark. This is guaranteed
+                    // by the alternating structure IF the first segment was dark.
+                    // We need to track whether the first segment was indeed dark.
+                    if self.check_ratio(&counts) && !first_segment_light {
                         let total_width: u32 = counts.iter().sum();
                         let module_size = total_width as f32 / 7.0;
 
@@ -224,13 +236,14 @@ impl QrFinderDetector {
                             && module_size <= self.config.max_module_size
                         {
                             // Center X is at middle of the 5 segments
-                            let center_x = x as f64 - (total_width as f64 / 2.0);
+                            let center_x = x as f64 - total_width as f64 / 2.0 - 0.5;
 
                             candidates.push((center_x, y as f64, module_size));
                         }
                     }
 
-                    // Shift counts left
+                    // Shift counts left — new segment 0 was old segment 2
+                    // Even-indexed segments have the same color, so first_segment_light unchanged
                     counts[0] = counts[2];
                     counts[1] = counts[3];
                     counts[2] = counts[4];

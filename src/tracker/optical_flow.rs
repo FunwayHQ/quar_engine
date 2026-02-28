@@ -96,6 +96,24 @@ impl LucasKanadeTracker {
             .collect()
     }
 
+    /// Track points using a pre-built current frame pyramid.
+    ///
+    /// This avoids rebuilding the current pyramid when tracking multiple point sets
+    /// against the same current frame (e.g., prev→curr and keyframe→curr).
+    pub fn track_with_curr_pyramid(
+        &self,
+        prev: &GrayImage,
+        curr_pyramid: &[GrayImage],
+        prev_points: &[Point2],
+    ) -> Vec<TrackResult> {
+        let prev_pyramid = build_pyramid(prev, self.pyramid_levels);
+
+        prev_points
+            .iter()
+            .map(|point| self.track_point(&prev_pyramid, curr_pyramid, *point))
+            .collect()
+    }
+
     /// Track points with forward-backward consistency check.
     ///
     /// This method tracks points forward (prev → curr) and then backward (curr → prev),
@@ -200,7 +218,6 @@ impl LucasKanadeTracker {
 
         // Scale point to coarsest level
         let scale = 1 << (num_levels - 1);
-        let _guess = Point2::new(point.x / scale as f32, point.y / scale as f32);
         let mut prev_pt = Point2::new(point.x / scale as f32, point.y / scale as f32);
 
         // Initial flow estimate
@@ -331,6 +348,17 @@ impl LucasKanadeTracker {
 
             flow.x += du;
             flow.y += dv;
+
+            // Check if flow pushed point out of bounds
+            let fx = px + flow.x;
+            let fy = py + flow.y;
+            if fx < half_win as f32
+                || fy < half_win as f32
+                || fx >= (curr.width as i32 - half_win) as f32
+                || fy >= (curr.height as i32 - half_win) as f32
+            {
+                return None;
+            }
 
             // Check convergence
             if du * du + dv * dv < self.epsilon * self.epsilon {

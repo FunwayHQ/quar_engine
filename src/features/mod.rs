@@ -270,20 +270,28 @@ pub fn match_features(
         Err(_) => return JsValue::NULL,
     };
 
-    // Extract descriptors
-    let descs1: Vec<OrbDescriptor> = features1
+    // Extract descriptors with index maps back to original feature indices
+    let (descs1, idx_map1): (Vec<OrbDescriptor>, Vec<usize>) = features1
         .iter()
-        .filter_map(|f| f.descriptor)
-        .collect();
-    let descs2: Vec<OrbDescriptor> = features2
+        .enumerate()
+        .filter_map(|(i, f)| f.descriptor.map(|d| (d, i)))
+        .unzip();
+    let (descs2, idx_map2): (Vec<OrbDescriptor>, Vec<usize>) = features2
         .iter()
-        .filter_map(|f| f.descriptor)
-        .collect();
+        .enumerate()
+        .filter_map(|(i, f)| f.descriptor.map(|d| (d, i)))
+        .unzip();
 
     // Match with cross-check
     let matches = match_cross_check(&descs1, &descs2, max_distance);
 
-    serde_wasm_bindgen::to_value(&matches).unwrap_or(JsValue::NULL)
+    // Remap match indices to original feature indices
+    let remapped: Vec<Match> = matches
+        .into_iter()
+        .map(|m| Match::new(idx_map1[m.query_idx], idx_map2[m.train_idx], m.distance))
+        .collect();
+
+    serde_wasm_bindgen::to_value(&remapped).unwrap_or(JsValue::NULL)
 }
 
 #[cfg(test)]

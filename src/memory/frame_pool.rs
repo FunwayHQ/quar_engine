@@ -17,6 +17,8 @@ pub struct FrameBuffer {
     width: u32,
     /// Height of the frame (if applicable)
     height: u32,
+    /// Pyramid level tag (None for grayscale buffers)
+    pyramid_level: Option<usize>,
 }
 
 impl FrameBuffer {
@@ -28,7 +30,26 @@ impl FrameBuffer {
             len: 0,
             width: 0,
             height: 0,
+            pyramid_level: None,
         }
+    }
+
+    /// Create a new buffer tagged with a pyramid level.
+    fn with_capacity_and_level(capacity: usize, level: usize) -> Self {
+        let data = vec![0u8; capacity];
+        Self {
+            data,
+            len: 0,
+            width: 0,
+            height: 0,
+            pyramid_level: Some(level),
+        }
+    }
+
+    /// Get the pyramid level tag, if any.
+    #[inline]
+    pub fn pyramid_level(&self) -> Option<usize> {
+        self.pyramid_level
     }
 
     /// Get the buffer data as a slice.
@@ -61,7 +82,7 @@ impl FrameBuffer {
     pub fn set_dimensions(&mut self, width: u32, height: u32) {
         self.width = width;
         self.height = height;
-        self.len = (width * height) as usize;
+        self.len = ((width * height) as usize).min(self.data.len());
     }
 
     /// Get current logical length.
@@ -94,12 +115,13 @@ impl FrameBuffer {
         self.height
     }
 
-    /// Clear the buffer (reset length, keep capacity).
+    /// Clear the buffer (reset length, keep capacity, preserve level tag).
     #[inline]
     pub fn clear(&mut self) {
         self.len = 0;
         self.width = 0;
         self.height = 0;
+        // pyramid_level is preserved intentionally — it's a structural tag
     }
 
     /// Copy data from a slice into the buffer.
@@ -142,10 +164,10 @@ impl FramePool {
         let mut w = config.max_width;
         let mut h = config.max_height;
 
-        for _ in 0..config.max_pyramid_levels {
+        for level in 0..config.max_pyramid_levels {
             let level_size = (w * h) as usize;
             for _ in 0..config.pyramid_buffers {
-                pyramid_buffers.push(FrameBuffer::with_capacity(level_size));
+                pyramid_buffers.push(FrameBuffer::with_capacity_and_level(level_size, level));
             }
             w = w.div_ceil(2);
             h = h.div_ceil(2);
@@ -189,19 +211,11 @@ impl FramePool {
             return None;
         }
 
-        let start_idx = level * self.config.pyramid_buffers;
-        let end_idx = start_idx + self.config.pyramid_buffers;
-
         let mut buffers = self.pyramid_buffers.borrow_mut();
 
-        // Find an available buffer in this level's range
-        for i in start_idx..end_idx.min(buffers.len()) {
-            if !buffers.is_empty() {
-                // Simple approach: just pop from the back if we have any
-                if i < buffers.len() {
-                    return Some(buffers.remove(i));
-                }
-            }
+        // Find a buffer tagged with the requested level
+        if let Some(idx) = buffers.iter().position(|b| b.pyramid_level == Some(level)) {
+            return Some(buffers.remove(idx));
         }
 
         None
@@ -250,12 +264,12 @@ impl Default for FramePool {
 /// This is a zero-allocation version that writes directly to a pre-allocated buffer.
 #[inline]
 pub fn rgba_to_grayscale_into(rgba: &[u8], dest: &mut FrameBuffer) {
-    let pixel_count = rgba.len() / 4;
+    let pixel_count = (rgba.len() / 4).min(dest.capacity());
     dest.set_len(pixel_count);
 
     let dest_slice = dest.as_mut_slice();
 
-    for i in 0..pixel_count {
+    for i in 0..dest_slice.len() {
         let r = rgba[i * 4] as u32;
         let g = rgba[i * 4 + 1] as u32;
         let b = rgba[i * 4 + 2] as u32;

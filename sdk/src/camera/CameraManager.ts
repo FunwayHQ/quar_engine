@@ -108,6 +108,11 @@ export class CameraManager {
     try {
       this.stream = await this.requestCameraAccess();
     } catch (error) {
+      // Clean up video element on failure
+      if (this.videoElement) {
+        this.videoElement.remove();
+        this.videoElement = null;
+      }
       this.handleCameraError(error);
     }
 

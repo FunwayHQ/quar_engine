@@ -265,7 +265,7 @@ export class Anchor {
   // Private methods
 
   private generateId(): AnchorId {
-    return `anchor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `anchor_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
   }
 
   private updateObject3DPose(): void {
@@ -409,6 +409,7 @@ export class AnchorManager {
    */
   clearAnchors(): void {
     for (const anchor of this.anchors.values()) {
+      anchor.notifyRemoved();
       anchor.updateState('lost');
     }
     this.anchors.clear();

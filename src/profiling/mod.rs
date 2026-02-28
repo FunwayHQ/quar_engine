@@ -262,10 +262,7 @@ impl Timer {
         #[cfg(target_arch = "wasm32")]
         {
             Self {
-                start: web_sys::window()
-                    .and_then(|w| w.performance())
-                    .map(|p| p.now())
-                    .unwrap_or(0.0),
+                start: Self::performance_now(),
             }
         }
         #[cfg(not(target_arch = "wasm32"))]
@@ -276,15 +273,39 @@ impl Timer {
         }
     }
 
+    /// Get the current performance timestamp (works in both window and worker contexts).
+    #[cfg(target_arch = "wasm32")]
+    #[inline]
+    fn performance_now() -> f64 {
+        // Try window context first (main thread)
+        if let Some(perf) = web_sys::window().and_then(|w| w.performance()) {
+            return perf.now();
+        }
+        // Fallback: try worker global scope via js_sys::global()
+        let global = js_sys::global();
+        if let Ok(perf_val) = js_sys::Reflect::get(&global, &"performance".into()) {
+            if !perf_val.is_undefined() {
+                if let Ok(now_fn) = js_sys::Reflect::get(&perf_val, &"now".into()) {
+                    if now_fn.is_function() {
+                        let func = js_sys::Function::from(now_fn);
+                        if let Ok(result) = func.call0(&perf_val) {
+                            if let Some(val) = result.as_f64() {
+                                return val;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        0.0
+    }
+
     /// Get elapsed time in milliseconds.
     #[inline]
     pub fn elapsed_ms(&self) -> f64 {
         #[cfg(target_arch = "wasm32")]
         {
-            web_sys::window()
-                .and_then(|w| w.performance())
-                .map(|p| p.now() - self.start)
-                .unwrap_or(0.0)
+            Self::performance_now() - self.start
         }
         #[cfg(not(target_arch = "wasm32"))]
         {

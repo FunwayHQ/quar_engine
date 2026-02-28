@@ -148,7 +148,41 @@ impl RotationMatrix {
             return [0.0, 0.0, 0.0];
         }
 
-        let factor = theta / (2.0 * theta.sin());
+        let sin_theta = theta.sin();
+
+        if sin_theta.abs() < 1e-6 {
+            // Near pi rotation: sin(theta) ≈ 0, extract axis from (R + I) / 2
+            // The diagonal of (R + I) / 2 gives cos²(half-angles) along each axis
+            let d0 = ((self.data[0][0] + 1.0) / 2.0).max(0.0).sqrt();
+            let d1 = ((self.data[1][1] + 1.0) / 2.0).max(0.0).sqrt();
+            let d2 = ((self.data[2][2] + 1.0) / 2.0).max(0.0).sqrt();
+
+            // Determine signs from off-diagonal elements
+            let mut axis = [d0, d1, d2];
+            // Use the largest component to determine signs of others
+            if d0 >= d1 && d0 >= d2 {
+                if self.data[0][1] + self.data[1][0] < 0.0 { axis[1] = -axis[1]; }
+                if self.data[0][2] + self.data[2][0] < 0.0 { axis[2] = -axis[2]; }
+            } else if d1 >= d0 && d1 >= d2 {
+                if self.data[0][1] + self.data[1][0] < 0.0 { axis[0] = -axis[0]; }
+                if self.data[1][2] + self.data[2][1] < 0.0 { axis[2] = -axis[2]; }
+            } else {
+                if self.data[0][2] + self.data[2][0] < 0.0 { axis[0] = -axis[0]; }
+                if self.data[1][2] + self.data[2][1] < 0.0 { axis[1] = -axis[1]; }
+            }
+
+            let norm = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+            if norm < 1e-12 {
+                return [0.0, 0.0, 0.0];
+            }
+            return [
+                axis[0] / norm * theta,
+                axis[1] / norm * theta,
+                axis[2] / norm * theta,
+            ];
+        }
+
+        let factor = theta / (2.0 * sin_theta);
         [
             factor * (self.data[2][1] - self.data[1][2]),
             factor * (self.data[0][2] - self.data[2][0]),
@@ -461,6 +495,9 @@ impl PreintegratedImu {
             self.covariance[i][i] += gyro_var;
             self.covariance[3 + i][3 + i] += accel_var;
             self.covariance[6 + i][6 + i] += accel_var * dt * dt;
+            // Position-velocity cross-covariance: C[p,v] += accel_var * dt
+            self.covariance[6 + i][3 + i] += accel_var * dt;
+            self.covariance[3 + i][6 + i] += accel_var * dt;
         }
 
         self.delta_t += dt;
@@ -684,8 +721,19 @@ impl ImuBuffer {
         // The measured acceleration should equal gravity when stationary
         // accel_measured = gravity_in_body - bias
         // So bias = expected_gravity - accel_mean
-        // Assume gravity is approximately [0, -9.81, 0] in typical phone orientation
-        let gravity_body = [0.0, -GRAVITY_MAGNITUDE, 0.0];
+        // Estimate gravity direction from mean accel vector (it points opposite to gravity)
+        let accel_norm = (accel_mean[0].powi(2) + accel_mean[1].powi(2) + accel_mean[2].powi(2)).sqrt();
+        let gravity_body = if accel_norm > 1.0 {
+            // Normalize and scale to gravity magnitude
+            [
+                accel_mean[0] / accel_norm * GRAVITY_MAGNITUDE,
+                accel_mean[1] / accel_norm * GRAVITY_MAGNITUDE,
+                accel_mean[2] / accel_norm * GRAVITY_MAGNITUDE,
+            ]
+        } else {
+            // Fallback to down direction if signal too weak
+            [0.0, -GRAVITY_MAGNITUDE, 0.0]
+        };
         let accel_bias = [
             gravity_body[0] - accel_mean[0],
             gravity_body[1] - accel_mean[1],

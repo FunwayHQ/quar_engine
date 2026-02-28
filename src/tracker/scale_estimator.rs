@@ -149,11 +149,10 @@ impl ScaleEstimator {
         timestamp: f64,
         quality: f64,
     ) {
-        let visual_speed = (
+        let visual_speed_sq =
             visual_velocity[0].powi(2) +
             visual_velocity[1].powi(2) +
-            visual_velocity[2].powi(2)
-        ).sqrt();
+            visual_velocity[2].powi(2);
 
         let imu_speed = (
             imu_velocity[0].powi(2) +
@@ -161,14 +160,24 @@ impl ScaleEstimator {
             imu_velocity[2].powi(2)
         ).sqrt();
 
+        let visual_speed = visual_speed_sq.sqrt();
+
         // Only use samples with sufficient motion
         if imu_speed < self.min_speed || visual_speed < 0.001 {
             return;
         }
 
+        // Use 3D dot product for scale: s = (v_visual . v_imu) / |v_visual|^2
+        // This projects IMU velocity onto visual direction for better alignment
+        let dot_product =
+            visual_velocity[0] * imu_velocity[0] +
+            visual_velocity[1] * imu_velocity[1] +
+            visual_velocity[2] * imu_velocity[2];
+        let directional_imu_speed = dot_product / visual_speed;
+
         let sample = VelocitySample {
             visual_speed,
-            imu_speed,
+            imu_speed: directional_imu_speed,
             timestamp,
             weight: quality.clamp(0.0, 1.0),
         };

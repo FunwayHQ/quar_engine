@@ -287,10 +287,10 @@ fn solve_damped_normal_equations(jtj: &[Vec<f64>], b: &[f64], lambda: f64) -> Ve
         return vec![];
     }
 
-    // Add damping to diagonal
+    // Add damping to diagonal (Marquardt-style: scale by diagonal element)
     let mut a = jtj.to_vec();
     for (i, row) in a.iter_mut().enumerate() {
-        row[i] += lambda;
+        row[i] += lambda * row[i].max(1e-10);
     }
 
     // Solve using Cholesky decomposition (A is symmetric positive definite)

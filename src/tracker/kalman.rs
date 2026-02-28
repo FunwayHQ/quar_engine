@@ -280,6 +280,17 @@ impl Matrix6x3 {
         result
     }
 
+    /// Transpose to get 3x6 matrix.
+    pub fn transpose_to_3x6(&self) -> Matrix3x6 {
+        let mut result = Matrix3x6::zeros();
+        for i in 0..6 {
+            for j in 0..3 {
+                result.data[j][i] = self.data[i][j];
+            }
+        }
+        result
+    }
+
     /// Multiply by 3x6 matrix to get 6x6 matrix.
     pub fn mul_3x6(&self, other: &Matrix3x6) -> Matrix6x6 {
         let mut result = Matrix6x6::zeros();
@@ -500,9 +511,9 @@ impl MotionState {
     /// Get position uncertainty (diagonal of covariance).
     pub fn position_uncertainty(&self) -> [f64; 3] {
         [
-            self.covariance.get(0, 0).sqrt(),
-            self.covariance.get(1, 1).sqrt(),
-            self.covariance.get(2, 2).sqrt(),
+            self.covariance.get(0, 0).max(0.0).sqrt(),
+            self.covariance.get(1, 1).max(0.0).sqrt(),
+            self.covariance.get(2, 2).max(0.0).sqrt(),
         ]
     }
 
@@ -667,7 +678,13 @@ impl MotionState {
         let kh = k.mul_3x6(&h);
         let i_minus_kh = Matrix6x6::identity().sub(&kh);
         let p_temp = i_minus_kh.mul(&self.covariance);
-        self.covariance = p_temp.mul(&i_minus_kh.transpose());
+        let p_joseph = p_temp.mul(&i_minus_kh.transpose());
+
+        // Add K*R*K^T term (critical for numerical stability)
+        let kr = k.mul_3x3(&r);
+        let k_t = k.transpose_to_3x6();
+        let krkt = kr.mul_3x6(&k_t);
+        self.covariance = p_joseph.add(&krkt);
 
         true
     }

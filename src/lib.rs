@@ -81,13 +81,30 @@ pub fn error(message: &str) {
 
 /// Get the current high-resolution timestamp from the browser's Performance API.
 /// Returns milliseconds since the page was loaded.
+/// Works in both window and worker contexts.
 #[wasm_bindgen]
 pub fn get_performance_now() -> f64 {
-    web_sys::window()
-        .expect("should have window")
-        .performance()
-        .expect("should have performance")
-        .now()
+    // Try window context first (main thread)
+    if let Some(perf) = web_sys::window().and_then(|w| w.performance()) {
+        return perf.now();
+    }
+    // Fallback: try worker global scope via js_sys::global()
+    let global = js_sys::global();
+    if let Ok(perf_val) = js_sys::Reflect::get(&global, &"performance".into()) {
+        if !perf_val.is_undefined() {
+            if let Ok(now_fn) = js_sys::Reflect::get(&perf_val, &"now".into()) {
+                if now_fn.is_function() {
+                    let func = js_sys::Function::from(now_fn);
+                    if let Ok(result) = func.call0(&perf_val) {
+                        if let Some(val) = result.as_f64() {
+                            return val;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    0.0
 }
 
 /// Engine configuration options passed from JavaScript.

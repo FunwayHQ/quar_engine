@@ -5,9 +5,11 @@
 
 use super::place_recognition::{KeyFrameId, PlaceRecognitionDB};
 use super::vocabulary::Vocabulary;
+use crate::camera::CameraIntrinsics;
 use crate::features::{match_cross_check, OrbDescriptor, DEFAULT_MAX_DISTANCE};
-use crate::tracker::linalg::{Mat3, Vec3};
-use std::collections::{HashMap, HashSet};
+use crate::tracker::essential_pure::{choose_valid_pose, compute_essential_ransac, decompose_essential};
+use crate::tracker::linalg::{Mat3, Vec2, Vec3};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Configuration for loop closure.
 #[derive(Debug, Clone)]
@@ -73,9 +75,11 @@ pub struct LoopCloser {
     /// Configuration
     config: LoopConfig,
     /// Recently added keyframe IDs (to skip in queries)
-    recent_keyframes: Vec<KeyFrameId>,
+    recent_keyframes: VecDeque<KeyFrameId>,
     /// Stored descriptors per keyframe for feature matching
     keyframe_descriptors: HashMap<KeyFrameId, Vec<OrbDescriptor>>,
+    /// Camera intrinsics for geometric verification
+    camera: Option<CameraIntrinsics>,
 }
 
 impl LoopCloser {
@@ -84,8 +88,9 @@ impl LoopCloser {
         Self {
             db: PlaceRecognitionDB::with_defaults(),
             config,
-            recent_keyframes: Vec::new(),
+            recent_keyframes: VecDeque::new(),
             keyframe_descriptors: HashMap::new(),
+            camera: None,
         }
     }
 
@@ -99,9 +104,15 @@ impl LoopCloser {
         Self {
             db: PlaceRecognitionDB::new(vocab),
             config,
-            recent_keyframes: Vec::new(),
+            recent_keyframes: VecDeque::new(),
             keyframe_descriptors: HashMap::new(),
+            camera: None,
         }
+    }
+
+    /// Set camera intrinsics for geometric verification.
+    pub fn set_camera(&mut self, camera: CameraIntrinsics) {
+        self.camera = Some(camera);
     }
 
     /// Add a keyframe to the database.
@@ -111,10 +122,10 @@ impl LoopCloser {
         // Store descriptors for later feature matching
         self.keyframe_descriptors.insert(kf_id, descriptors.to_vec());
 
-        // Track recent keyframes
-        self.recent_keyframes.push(kf_id);
+        // Track recent keyframes using VecDeque for O(1) push/pop
+        self.recent_keyframes.push_back(kf_id);
         if self.recent_keyframes.len() > self.config.skip_recent {
-            self.recent_keyframes.remove(0);
+            self.recent_keyframes.pop_front();
         }
     }
 
@@ -176,36 +187,83 @@ impl LoopCloser {
         candidates
     }
 
-    /// Verify a loop candidate geometrically.
+    /// Verify a loop candidate geometrically using Essential matrix RANSAC.
     ///
     /// Uses RANSAC to estimate the relative pose and filter outliers.
-    /// In a full implementation, this would use the actual 2D keypoints
-    /// and 3D map points.
+    /// Requires camera intrinsics to be set via `set_camera()`.
     pub fn verify(
         &self,
         candidate: &LoopCandidate,
-        _query_keypoints: &[(f64, f64)],
-        _match_keypoints: &[(f64, f64)],
+        query_keypoints: &[(f64, f64)],
+        match_keypoints: &[(f64, f64)],
     ) -> Option<LoopClosure> {
-        // Simplified verification - in production, this would:
-        // 1. Match features between query and match keyframes
-        // 2. Use Essential matrix RANSAC to find inliers
-        // 3. Estimate relative pose from inliers
-        // 4. Check if enough inliers for a valid loop
-
         if candidate.feature_matches.len() < self.config.min_matches {
             return None;
         }
 
-        // For now, return a placeholder loop closure
-        // In production, this would compute the actual relative pose
+        // Build normalized point correspondences from matched keypoints
+        let camera = self.camera.as_ref()?;
+
+        let mut points1 = Vec::new();
+        let mut points2 = Vec::new();
+        let mut valid_matches = Vec::new();
+
+        for &(q_idx, m_idx) in &candidate.feature_matches {
+            if q_idx < query_keypoints.len() && m_idx < match_keypoints.len() {
+                let (qx, qy) = query_keypoints[q_idx];
+                let (mx, my) = match_keypoints[m_idx];
+                points1.push(camera.normalize_point(qx, qy));
+                points2.push(camera.normalize_point(mx, my));
+                valid_matches.push((q_idx, m_idx));
+            }
+        }
+
+        if points1.len() < 8 {
+            return None;
+        }
+
+        // Run Essential matrix RANSAC
+        let (essential, inlier_mask) = compute_essential_ransac(
+            &points1,
+            &points2,
+            self.config.ransac_threshold,
+            200, // iterations
+            0.99,
+        )?;
+
+        // Collect inlier points and matches
+        let inlier_indices: Vec<usize> = inlier_mask
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &is_inlier)| if is_inlier { Some(i) } else { None })
+            .collect();
+
+        let inlier_count = inlier_indices.len();
+        let inlier_ratio = inlier_count as f64 / valid_matches.len() as f64;
+
+        if inlier_count < self.config.min_matches || inlier_ratio < self.config.min_inlier_ratio {
+            return None;
+        }
+
+        // Decompose Essential matrix and choose valid pose via chirality check
+        let inlier_p1: Vec<Vec2> = inlier_indices.iter().map(|&i| points1[i]).collect();
+        let inlier_p2: Vec<Vec2> = inlier_indices.iter().map(|&i| points2[i]).collect();
+
+        let solutions = decompose_essential(&essential);
+        let best = choose_valid_pose(&solutions, &inlier_p1, &inlier_p2);
+
+        let inlier_matches: Vec<(usize, usize)> = inlier_indices
+            .iter()
+            .map(|&i| valid_matches[i])
+            .collect();
+
         Some(LoopClosure {
             query_kf: candidate.query_kf,
             match_kf: candidate.match_kf,
-            relative_rotation: Mat3::identity(),
-            relative_translation: Vec3::new(0.0, 0.0, 0.0),
-            inlier_matches: candidate.feature_matches.clone(),
-            num_inliers: candidate.feature_matches.len(),
+            relative_rotation: best.rotation,
+            relative_translation: best.translation,
+            inlier_matches,
+            num_inliers: inlier_count,
         })
     }
 
@@ -291,43 +349,127 @@ impl PoseGraph {
         });
     }
 
-    /// Optimize the pose graph.
+    /// Optimize the pose graph using SE(3) Gauss-Newton optimization.
     ///
-    /// Uses iterative relaxation to minimize the sum of squared constraint errors.
+    /// Fixes node 0 as gauge anchor. For each edge, computes a 6D error
+    /// (3 rotation + 3 translation in local frame) and accumulates into
+    /// a diagonal Hessian approximation. Converges when max(|delta|) < 1e-6.
+    ///
     /// Returns the optimized poses.
+    #[allow(clippy::needless_range_loop)]
     pub fn optimize(&mut self, max_iterations: usize) -> Vec<PoseGraphNode> {
-        // Simplified pose graph optimization
-        // In production, this would implement proper SE(3) optimization
+        if self.nodes.is_empty() || self.edges.is_empty() {
+            return self.nodes.clone();
+        }
+
+        // Build kf_id → node index lookup
+        let id_to_idx: HashMap<KeyFrameId, usize> = self.nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.kf_id, i))
+            .collect();
+
+        let n_nodes = self.nodes.len();
 
         for _ in 0..max_iterations {
-            // For each edge, compute error and update poses
-            for edge_idx in 0..self.edges.len() {
-                let from_kf = self.edges[edge_idx].from_kf;
-                let to_kf = self.edges[edge_idx].to_kf;
+            // 6D state per node: [rot_x, rot_y, rot_z, tx, ty, tz]
+            // Use diagonal Hessian approximation
+            let mut diag_h = vec![[0.0f64; 6]; n_nodes];
+            let mut gradient = vec![[0.0f64; 6]; n_nodes];
 
-                let from_idx = self.nodes.iter().position(|n| n.kf_id == from_kf);
-                let to_idx = self.nodes.iter().position(|n| n.kf_id == to_kf);
+            for edge in &self.edges {
+                let from_idx = match id_to_idx.get(&edge.from_kf) { Some(&i) => i, None => continue };
+                let to_idx = match id_to_idx.get(&edge.to_kf) { Some(&i) => i, None => continue };
 
-                if let (Some(from_idx), Some(to_idx)) = (from_idx, to_idx) {
-                    let correction_factor = 0.1 * self.edges[edge_idx].weight / (1.0 + self.edges[edge_idx].weight);
+                let r_from = &self.nodes[from_idx].rotation;
+                let t_from = &self.nodes[from_idx].translation;
+                let r_to = &self.nodes[to_idx].rotation;
+                let t_to = &self.nodes[to_idx].translation;
 
-                    // Compute expected position of 'to' node from 'from' node + relative translation
-                    let from_t = &self.nodes[from_idx].translation;
-                    let rel_t = &self.edges[edge_idx].relative_translation;
-                    let expected_t = Vec3::new(
-                        from_t.x + rel_t.x,
-                        from_t.y + rel_t.y,
-                        from_t.z + rel_t.z,
-                    );
+                // Translation error in from's local frame:
+                // e_t = R_from^T * (t_to - t_from) - rel_t
+                let dt = Vec3::new(
+                    t_to.x - t_from.x,
+                    t_to.y - t_from.y,
+                    t_to.z - t_from.z,
+                );
+                let r_from_t = r_from.transpose();
+                let local_dt = r_from_t.mul_vec(&dt);
+                let e_t = Vec3::new(
+                    local_dt.x - edge.relative_translation.x,
+                    local_dt.y - edge.relative_translation.y,
+                    local_dt.z - edge.relative_translation.z,
+                );
 
-                    // Error = expected - actual
-                    let current_t = &self.nodes[to_idx].translation;
-                    self.nodes[to_idx].translation = Vec3::new(
-                        current_t.x + correction_factor * (expected_t.x - current_t.x),
-                        current_t.y + correction_factor * (expected_t.y - current_t.y),
-                        current_t.z + correction_factor * (expected_t.z - current_t.z),
-                    );
+                // Rotation error: log(R_rel^T * R_from^T * R_to)
+                let expected_r = r_from.mul(&edge.relative_rotation);
+                let error_r = expected_r.transpose().mul(r_to);
+                let e_rot = log_rotation(&error_r);
+
+                let w = edge.weight;
+
+                // Accumulate gradient and diagonal Hessian for 'to' node
+                // (node 0 is fixed as gauge anchor)
+                if to_idx > 0 {
+                    for k in 0..3 {
+                        let er = [e_rot[0], e_rot[1], e_rot[2]][k];
+                        gradient[to_idx][k] += w * er;
+                        diag_h[to_idx][k] += w;
+                    }
+                    for k in 0..3 {
+                        let et = [e_t.x, e_t.y, e_t.z][k];
+                        gradient[to_idx][3 + k] += w * et;
+                        diag_h[to_idx][3 + k] += w;
+                    }
                 }
+
+                // Also accumulate for 'from' node (with negative gradient)
+                if from_idx > 0 {
+                    for k in 0..3 {
+                        let er = [e_rot[0], e_rot[1], e_rot[2]][k];
+                        gradient[from_idx][k] -= w * er;
+                        diag_h[from_idx][k] += w;
+                    }
+                    for k in 0..3 {
+                        let et = [e_t.x, e_t.y, e_t.z][k];
+                        gradient[from_idx][3 + k] -= w * et;
+                        diag_h[from_idx][3 + k] += w;
+                    }
+                }
+            }
+
+            // Solve diagonal system and apply updates
+            let mut max_delta = 0.0f64;
+            for i in 1..n_nodes {
+                // Skip node 0 (gauge anchor)
+                let mut delta = [0.0f64; 6];
+                for k in 0..6 {
+                    if diag_h[i][k] > 1e-10 {
+                        delta[k] = gradient[i][k] / diag_h[i][k];
+                    }
+                }
+
+                max_delta = max_delta.max(
+                    delta.iter().map(|d| d.abs()).fold(0.0f64, f64::max)
+                );
+
+                // Apply rotation update via exponential map
+                let angle = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
+                if angle > 1e-10 {
+                    let axis = [delta[0] / angle, delta[1] / angle, delta[2] / angle];
+                    let dr = exp_rotation(&axis, angle);
+                    self.nodes[i].rotation = self.nodes[i].rotation.mul(&dr);
+                }
+
+                // Apply translation update
+                self.nodes[i].translation.x += delta[3];
+                self.nodes[i].translation.y += delta[4];
+                self.nodes[i].translation.z += delta[5];
+            }
+
+            // Check convergence
+            if max_delta < 1e-6 {
+                break;
             }
         }
 
@@ -343,6 +485,47 @@ impl PoseGraph {
     pub fn num_edges(&self) -> usize {
         self.edges.len()
     }
+}
+
+/// Logarithm map: extract axis-angle vector from rotation matrix.
+/// Returns [wx, wy, wz] where the axis is normalized and angle = ||w||.
+fn log_rotation(r: &Mat3) -> [f64; 3] {
+    let trace = r.data[0][0] + r.data[1][1] + r.data[2][2];
+    let cos_theta = ((trace - 1.0) / 2.0).clamp(-1.0, 1.0);
+    let theta = cos_theta.acos();
+
+    if theta.abs() < 1e-6 {
+        // Near identity: use first-order approximation
+        return [
+            (r.data[2][1] - r.data[1][2]) / 2.0,
+            (r.data[0][2] - r.data[2][0]) / 2.0,
+            (r.data[1][0] - r.data[0][1]) / 2.0,
+        ];
+    }
+
+    let scale = theta / (2.0 * theta.sin());
+    [
+        scale * (r.data[2][1] - r.data[1][2]),
+        scale * (r.data[0][2] - r.data[2][0]),
+        scale * (r.data[1][0] - r.data[0][1]),
+    ]
+}
+
+/// Exponential map: construct rotation matrix from axis and angle.
+/// Uses Rodrigues formula: R = I + sin(θ)*K + (1-cos(θ))*K²
+fn exp_rotation(axis: &[f64; 3], angle: f64) -> Mat3 {
+    let c = angle.cos();
+    let s = angle.sin();
+    let t = 1.0 - c;
+    let x = axis[0];
+    let y = axis[1];
+    let z = axis[2];
+
+    Mat3::new(
+        t * x * x + c,     t * x * y - s * z, t * x * z + s * y,
+        t * x * y + s * z, t * y * y + c,     t * y * z - s * x,
+        t * x * z - s * y, t * y * z + s * x, t * z * z + c,
+    )
 }
 
 #[cfg(test)]

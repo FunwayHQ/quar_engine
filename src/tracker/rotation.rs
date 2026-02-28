@@ -55,15 +55,13 @@ pub fn estimate_rotation(
         // Compute rotation around image center
         let prev_angle = py.atan2(px);
         let curr_angle = cy_pt.atan2(cx_pt);
-        let mut angle_diff = curr_angle - prev_angle;
+        let angle_diff = curr_angle - prev_angle;
 
-        // Normalize angle
-        while angle_diff > std::f32::consts::PI {
-            angle_diff -= 2.0 * std::f32::consts::PI;
+        // Normalize angle to [-PI, PI] using rem_euclid
+        if !angle_diff.is_finite() {
+            continue;
         }
-        while angle_diff < -std::f32::consts::PI {
-            angle_diff += 2.0 * std::f32::consts::PI;
-        }
+        let angle_diff = (angle_diff + std::f32::consts::PI).rem_euclid(2.0 * std::f32::consts::PI) - std::f32::consts::PI;
 
         sum_rotation += angle_diff;
     }
@@ -110,185 +108,6 @@ fn euler_to_quaternion(roll: f32, pitch: f32, yaw: f32) -> [f32; 4] {
         cr * cp * sy - sr * sp * cy, // z
         cr * cp * cy + sr * sp * sy, // w
     ]
-}
-
-/// Compute the essential matrix from point correspondences (simplified).
-/// This is a placeholder for a full 5-point or 8-point algorithm.
-#[allow(dead_code)]
-fn compute_essential_matrix(
-    prev_points: &[Point2],
-    curr_points: &[Point2],
-    focal: f32,
-    cx: f32,
-    cy: f32,
-) -> Option<[[f32; 3]; 3]> {
-    if prev_points.len() < 8 {
-        return None;
-    }
-
-    // Normalize points
-    let normalize = |p: &Point2| -> (f32, f32) { ((p.x - cx) / focal, (p.y - cy) / focal) };
-
-    // Build the constraint matrix for 8-point algorithm
-    // For each point pair: x'T * E * x = 0
-    // This expands to a linear system Ae = 0
-
-    let mut a = [[0.0f32; 9]; 8];
-
-    for i in 0..8 {
-        let (x1, y1) = normalize(&prev_points[i]);
-        let (x2, y2) = normalize(&curr_points[i]);
-
-        a[i][0] = x2 * x1;
-        a[i][1] = x2 * y1;
-        a[i][2] = x2;
-        a[i][3] = y2 * x1;
-        a[i][4] = y2 * y1;
-        a[i][5] = y2;
-        a[i][6] = x1;
-        a[i][7] = y1;
-        a[i][8] = 1.0;
-    }
-
-    // For a full implementation, we would:
-    // 1. SVD of A to find null space
-    // 2. Enforce rank-2 constraint on E
-    // 3. Decompose E into R and t
-
-    // For now, return identity (placeholder)
-    Some([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-}
-
-/// RANSAC-based robust rotation estimation.
-/// Filters outliers by finding the largest consensus set.
-#[allow(dead_code)]
-pub fn estimate_rotation_ransac(
-    prev_points: &[Point2],
-    curr_points: &[Point2],
-    width: u32,
-    height: u32,
-    iterations: u32,
-    threshold: f32,
-) -> Option<[f32; 4]> {
-    if prev_points.len() < 4 {
-        return None;
-    }
-
-    let n = prev_points.len();
-    let mut best_inlier_count = 0;
-    let mut best_rotation = None;
-
-    // Simple random sampling (in production, use proper RNG)
-    for iter in 0..iterations {
-        // Select 4 random points (deterministic for reproducibility)
-        let indices: Vec<usize> = (0..4)
-            .map(|i| (iter as usize * 7 + i * 13) % n)
-            .collect();
-
-        let sample_prev: Vec<Point2> = indices.iter().map(|&i| prev_points[i]).collect();
-        let sample_curr: Vec<Point2> = indices.iter().map(|&i| curr_points[i]).collect();
-
-        // Estimate rotation from sample
-        if let Some(rot) = estimate_rotation(&sample_prev, &sample_curr, width, height) {
-            // Count inliers
-            let inlier_count = count_inliers(prev_points, curr_points, &rot, width, height, threshold);
-
-            if inlier_count > best_inlier_count {
-                best_inlier_count = inlier_count;
-                best_rotation = Some(rot);
-            }
-        }
-    }
-
-    // Refine with all inliers
-    if let Some(rot) = best_rotation {
-        let inlier_mask = get_inlier_mask(prev_points, curr_points, &rot, width, height, threshold);
-
-        let inlier_prev: Vec<Point2> = prev_points
-            .iter()
-            .zip(inlier_mask.iter())
-            .filter(|(_, &m)| m)
-            .map(|(p, _)| *p)
-            .collect();
-
-        let inlier_curr: Vec<Point2> = curr_points
-            .iter()
-            .zip(inlier_mask.iter())
-            .filter(|(_, &m)| m)
-            .map(|(p, _)| *p)
-            .collect();
-
-        if inlier_prev.len() >= 4 {
-            return estimate_rotation(&inlier_prev, &inlier_curr, width, height);
-        }
-    }
-
-    best_rotation
-}
-
-fn count_inliers(
-    prev_points: &[Point2],
-    curr_points: &[Point2],
-    _rotation: &[f32; 4],
-    _width: u32,
-    _height: u32,
-    threshold: f32,
-) -> usize {
-    // Simplified: count points with small motion difference from mean
-    let n = prev_points.len() as f32;
-
-    let mut sum_dx = 0.0f32;
-    let mut sum_dy = 0.0f32;
-
-    for (p, c) in prev_points.iter().zip(curr_points.iter()) {
-        sum_dx += c.x - p.x;
-        sum_dy += c.y - p.y;
-    }
-
-    let avg_dx = sum_dx / n;
-    let avg_dy = sum_dy / n;
-
-    prev_points
-        .iter()
-        .zip(curr_points.iter())
-        .filter(|(p, c)| {
-            let dx = c.x - p.x - avg_dx;
-            let dy = c.y - p.y - avg_dy;
-            (dx * dx + dy * dy).sqrt() < threshold
-        })
-        .count()
-}
-
-fn get_inlier_mask(
-    prev_points: &[Point2],
-    curr_points: &[Point2],
-    _rotation: &[f32; 4],
-    _width: u32,
-    _height: u32,
-    threshold: f32,
-) -> Vec<bool> {
-    let n = prev_points.len() as f32;
-
-    let mut sum_dx = 0.0f32;
-    let mut sum_dy = 0.0f32;
-
-    for (p, c) in prev_points.iter().zip(curr_points.iter()) {
-        sum_dx += c.x - p.x;
-        sum_dy += c.y - p.y;
-    }
-
-    let avg_dx = sum_dx / n;
-    let avg_dy = sum_dy / n;
-
-    prev_points
-        .iter()
-        .zip(curr_points.iter())
-        .map(|(p, c)| {
-            let dx = c.x - p.x - avg_dx;
-            let dy = c.y - p.y - avg_dy;
-            (dx * dx + dy * dy).sqrt() < threshold
-        })
-        .collect()
 }
 
 #[cfg(test)]

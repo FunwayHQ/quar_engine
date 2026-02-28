@@ -99,13 +99,18 @@ pub struct Tracker {
 }
 
 impl Tracker {
-    /// Create a new tracker with default configuration.
+    /// Create a new tracker with default configuration and VGA resolution.
     pub fn new() -> Self {
         Self::with_config(TrackerConfig::default())
     }
 
-    /// Create a new tracker with custom configuration.
+    /// Create a new tracker with custom configuration and default VGA resolution.
     pub fn with_config(config: TrackerConfig) -> Self {
+        Self::with_config_and_dimensions(config, 640, 480)
+    }
+
+    /// Create a new tracker with custom configuration and resolution.
+    pub fn with_config_and_dimensions(config: TrackerConfig, width: u32, height: u32) -> Self {
         Self {
             prev_gray: None,
             prev_points: Vec::new(),
@@ -115,13 +120,13 @@ impl Tracker {
             config,
             frame_count: 0,
             accumulated_translation: [0.0, 0.0, 0.0],
-            robust_tracker: RobustTracker::new(640, 480), // Default resolution
+            robust_tracker: RobustTracker::new(width, height),
             tracking_confidence: TrackingConfidence::Lost,
             last_inlier_count: 0,
-            flow_compensator: FlowCompensator::new(FlowCameraParams::from_fov(640, 480, 60.0)),
+            flow_compensator: FlowCompensator::new(FlowCameraParams::from_fov(width, height, 60.0)),
             gyro_compensation_enabled: false,
             motion_state: MotionState::new(),
-            kalman_enabled: true,  // Enable by default
+            kalman_enabled: true,
             last_frame_time: 0.0,
         }
     }
@@ -490,19 +495,34 @@ impl Tracker {
             let keypoints = self.fast_detector.detect(&gray.data, gray.width, gray.height);
             let filtered = non_maximum_suppression(&keypoints, 8);
 
-            // Add new points that are far from existing ones
+            // Build a spatial grid for O(1) proximity checks (20px cell size)
+            let cell_size = 20.0f32;
+            let grid_w = (gray.width as f32 / cell_size).ceil() as usize + 1;
+            let grid_h = (gray.height as f32 / cell_size).ceil() as usize + 1;
+            let mut grid = vec![false; grid_w * grid_h];
+
+            // Mark cells occupied by existing points
+            for p in &self.prev_points {
+                let gx = (p.x / cell_size) as usize;
+                let gy = (p.y / cell_size) as usize;
+                if gx < grid_w && gy < grid_h {
+                    grid[gy * grid_w + gx] = true;
+                }
+            }
+
+            // Add new points only in unoccupied cells
             for kp in filtered.iter().take(self.config.max_features) {
                 let new_point = Point2::new(kp.x as f32, kp.y as f32);
+                let gx = (new_point.x / cell_size) as usize;
+                let gy = (new_point.y / cell_size) as usize;
 
-                // Check if far enough from existing points
-                let is_far = self.prev_points.iter().all(|p| {
-                    let dx = p.x - new_point.x;
-                    let dy = p.y - new_point.y;
-                    dx * dx + dy * dy > 400.0 // 20px minimum distance
-                });
-
-                if is_far && self.prev_points.len() < self.config.max_features {
+                if gx < grid_w && gy < grid_h && !grid[gy * grid_w + gx] {
                     self.prev_points.push(new_point);
+                    grid[gy * grid_w + gx] = true;
+
+                    if self.prev_points.len() >= self.config.max_features {
+                        break;
+                    }
                 }
             }
         }

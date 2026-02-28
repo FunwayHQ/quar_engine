@@ -29,7 +29,7 @@ use crate::camera::CameraIntrinsics;
 use crate::features::rgba_to_grayscale;
 use crate::image_target::TargetPose;
 use crate::tracker::homography::{compute_homography, decompose_homography};
-use crate::tracker::linalg::{Mat3, Vec2};
+use crate::tracker::linalg::{Mat3, Vec2, rotation_matrix_to_quaternion};
 
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
@@ -187,53 +187,6 @@ impl Default for QrDetector {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Convert rotation matrix to quaternion [x, y, z, w].
-fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
-    let trace = r.get(0, 0) + r.get(1, 1) + r.get(2, 2);
-
-    let (w, x, y, z) = if trace > 0.0 {
-        let s = (trace + 1.0).sqrt() * 2.0;
-        (
-            0.25 * s,
-            (r.get(2, 1) - r.get(1, 2)) / s,
-            (r.get(0, 2) - r.get(2, 0)) / s,
-            (r.get(1, 0) - r.get(0, 1)) / s,
-        )
-    } else if r.get(0, 0) > r.get(1, 1) && r.get(0, 0) > r.get(2, 2) {
-        let s = (1.0 + r.get(0, 0) - r.get(1, 1) - r.get(2, 2)).sqrt() * 2.0;
-        (
-            (r.get(2, 1) - r.get(1, 2)) / s,
-            0.25 * s,
-            (r.get(0, 1) + r.get(1, 0)) / s,
-            (r.get(0, 2) + r.get(2, 0)) / s,
-        )
-    } else if r.get(1, 1) > r.get(2, 2) {
-        let s = (1.0 + r.get(1, 1) - r.get(0, 0) - r.get(2, 2)).sqrt() * 2.0;
-        (
-            (r.get(0, 2) - r.get(2, 0)) / s,
-            (r.get(0, 1) + r.get(1, 0)) / s,
-            0.25 * s,
-            (r.get(1, 2) + r.get(2, 1)) / s,
-        )
-    } else {
-        let s = (1.0 + r.get(2, 2) - r.get(0, 0) - r.get(1, 1)).sqrt() * 2.0;
-        (
-            (r.get(1, 0) - r.get(0, 1)) / s,
-            (r.get(0, 2) + r.get(2, 0)) / s,
-            (r.get(1, 2) + r.get(2, 1)) / s,
-            0.25 * s,
-        )
-    };
-
-    let len = (w * w + x * x + y * y + z * z).sqrt();
-    [
-        (x / len) as f32,
-        (y / len) as f32,
-        (z / len) as f32,
-        (w / len) as f32,
-    ]
 }
 
 // ============================================================================

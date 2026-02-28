@@ -490,13 +490,18 @@ export function slerp(a: Quaternion, b: Quaternion, t: number): Quaternion {
     bw = -bw;
   }
 
-  // If quaternions are close, use linear interpolation
+  // If quaternions are close, use linear interpolation (with normalization)
   if (dotProduct > 0.9995) {
+    const rx = a.x + (bx - a.x) * t;
+    const ry = a.y + (by - a.y) * t;
+    const rz = a.z + (bz - a.z) * t;
+    const rw = a.w + (bw - a.w) * t;
+    const len = Math.sqrt(rx * rx + ry * ry + rz * rz + rw * rw);
     return {
-      x: a.x + (bx - a.x) * t,
-      y: a.y + (by - a.y) * t,
-      z: a.z + (bz - a.z) * t,
-      w: a.w + (bw - a.w) * t,
+      x: rx / len,
+      y: ry / len,
+      z: rz / len,
+      w: rw / len,
     };
   }
 

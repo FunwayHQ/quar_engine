@@ -16,7 +16,7 @@ use std::collections::HashMap;
 pub struct BowVector {
     /// word_id -> TF-IDF weight
     words: HashMap<usize, f64>,
-    /// L2 norm for normalization
+    /// L1 norm for normalization
     norm: f64,
 }
 

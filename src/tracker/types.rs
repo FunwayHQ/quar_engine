@@ -153,6 +153,9 @@ impl Pose3D {
             self.rotation[1] /= len;
             self.rotation[2] /= len;
             self.rotation[3] /= len;
+        } else {
+            // Near-zero quaternion: reset to identity
+            self.rotation = [0.0, 0.0, 0.0, 1.0];
         }
     }
 
