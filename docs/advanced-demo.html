@@ -268,19 +268,19 @@
     // - beta:  pitch rate around X-axis (left-right axis of phone)
     //          POSITIVE = top of phone tilts TOWARD user (looking DOWN at screen)
     //          NEGATIVE = top of phone tilts AWAY from user (looking UP)
-    // - gamma: yaw rate around Y-axis (vertical axis of phone in portrait)
-    //          POSITIVE = phone turns LEFT (CCW from above)
-    // - alpha: roll rate around Z-axis (out of screen toward user)
-    //          POSITIVE = CCW roll from user's perspective (top tilts left)
+    // - gamma: roll rate around Y-axis (top-bottom axis of phone)
+    //          POSITIVE = phone tilts to the RIGHT
+    // - alpha: yaw rate around Z-axis (out of screen)
+    //          POSITIVE = counter-clockwise rotation from above
     //
     // Three.js camera rotation:
     // - rotation.x: pitch - POSITIVE = look DOWN, NEGATIVE = look UP
     // - rotation.y: yaw - POSITIVE = look LEFT, NEGATIVE = look RIGHT
-    // - rotation.z: roll - POSITIVE = CCW (top tilts left)
+    // - rotation.z: roll
     //
-    // AR mapping (phone in portrait mode):
-    //   Beta→pitch(x), Gamma→yaw(y), Alpha→roll(z)
-    //   Beta sign is inverted: +beta=tilt back, but +rotation.x=look down
+    // AR mapping for pitch:
+    //   Phone tilts UP (beta NEGATIVE) → gyro.x DECREASES → camera.rotation.x should be NEGATIVE
+    //   So: camera.rotation.x = fusedOrientation.x (NO inversion needed!)
 
     function handleGyro(event) {
       if (!event.rotationRate) return;
@@ -298,26 +298,28 @@
       const degToRad = Math.PI / 180;
 
       // Get rotation rates and convert to radians
-      const betaRate = (event.rotationRate.beta || 0) * degToRad;   // pitch (around X)
-      const gammaRate = (event.rotationRate.gamma || 0) * degToRad; // yaw (around Y)
-      const alphaRate = (event.rotationRate.alpha || 0) * degToRad; // roll (around Z)
+      const betaRate = (event.rotationRate.beta || 0) * degToRad;   // pitch
+      const gammaRate = (event.rotationRate.gamma || 0) * degToRad; // roll
+      const alphaRate = (event.rotationRate.alpha || 0) * degToRad; // yaw
 
-      // Integrate gyro (phone in portrait mode):
-      // Negate beta: +beta = tilt back (top toward user), but +rotation.x = look down (tilt forward)
-      gyroOrientation.x -= betaRate * dt;   // pitch (negated beta)
-      gyroOrientation.y += gammaRate * dt;   // yaw (gamma)
-      gyroOrientation.z += alphaRate * dt;   // roll (alpha)
+      // Integrate gyro - accumulate rotation
+      gyroOrientation.x += betaRate * dt;   // pitch: positive=look down, negative=look up
+      gyroOrientation.y += gammaRate * dt;  // roll
+      gyroOrientation.z += alphaRate * dt;  // yaw
 
       // Complementary filter: blend gyro (fast, drifts) with visual (slow, stable)
       fusedOrientation.x = GYRO_ALPHA * gyroOrientation.x + (1 - GYRO_ALPHA) * visualOrientation.x;
       fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
       fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
 
-      // Apply to camera: direct mapping (x=pitch, y=yaw, z=roll)
+      // Apply to camera with correct axis mapping (based on device testing):
+      // - Alpha (z) = pitch (tilt up/down) → camera.rotation.x
+      // - Beta (x) = yaw (rotate left/right) → camera.rotation.y
+      // - Gamma (y) = roll → camera.rotation.z
       if (isRunning && camera) {
-        camera.rotation.x = fusedOrientation.x * sensitivity;   // pitch from beta
-        camera.rotation.y = fusedOrientation.y * sensitivity;   // yaw from gamma
-        camera.rotation.z = fusedOrientation.z * sensitivity;   // roll from alpha
+        camera.rotation.x = fusedOrientation.z * sensitivity;   // pitch from alpha
+        camera.rotation.y = fusedOrientation.x * sensitivity;   // yaw from beta
+        camera.rotation.z = fusedOrientation.y * sensitivity;   // roll from gamma
 
         // Debug: show integrated gyro values (in degrees for readability)
         const toDeg = 180 / Math.PI;
@@ -504,23 +506,32 @@
             stateEl.textContent = 'tracking';
             stateEl.style.color = '#4ade80';
 
-            // Get quaternion from tracker and extract euler angles
             const q = pose.rotation;
-            // CV→Three.js quaternion: negate Y and Z (CV: Y-down Z-forward → Three.js: Y-up Z-backward)
-            const trackerQuat = new THREE.Quaternion(q[0], -q[1], -q[2], q[3]);
+            const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
             const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
-            // Update visual orientation with smoothing (direct Three.js Euler mapping)
-            // After CV→Three.js conversion: euler.x=pitch, euler.y=yaw, euler.z=roll
+            // Visual tracking provides euler angles from optical flow
+            // Tracker's coordinate system:
+            // - euler.x = pitch (vertical camera motion from optical flow)
+            // - euler.y = yaw (horizontal camera motion)
+            // - euler.z = roll
+            //
+            // We need to match gyro's coordinate system:
+            // - visualOrientation.x = pitch (matches gyroOrientation.x from beta)
+            // - visualOrientation.y = roll
+            // - visualOrientation.z = yaw
+            //
+            // The tracker already inverts some values, so we map directly:
             visualOrientation.x += (euler.x - visualOrientation.x) * VISUAL_SMOOTHING;
-            visualOrientation.y += (euler.y - visualOrientation.y) * VISUAL_SMOOTHING;
-            visualOrientation.z += (euler.z - visualOrientation.z) * VISUAL_SMOOTHING;
+            visualOrientation.y += (euler.z - visualOrientation.y) * VISUAL_SMOOTHING;
+            visualOrientation.z += (euler.y - visualOrientation.z) * VISUAL_SMOOTHING;
 
-            // If no gyro available, fall back to visual-only (direct mapping)
+            // If no gyro available, fall back to visual-only
+            // Use same convention as gyro: direct mapping (no inversion)
             if (!gyroActive) {
               camera.rotation.x = visualOrientation.x;
-              camera.rotation.y = visualOrientation.y;
-              camera.rotation.z = visualOrientation.z;
+              camera.rotation.y = visualOrientation.z;
+              camera.rotation.z = -visualOrientation.y;
             }
           } else {
             stateEl.textContent = tracked > 0 ? 'initializing' : 'searching';

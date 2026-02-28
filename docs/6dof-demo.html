@@ -955,10 +955,8 @@
         tracker6dof.push_imu(accelX, accelY, accelZ, betaRate, gammaRate, alphaRate, timestamp);
       }
 
-      // Integrate gyro (phone in portrait mode):
-      // Beta (around X axis) = pitch, Gamma (around Y axis) = yaw, Alpha (around Z axis) = roll
-      // Negate beta: +beta = tilt back (top toward user), but +rotation.x = look down (tilt forward)
-      gyroOrientation.x -= betaRate * dt;
+      // Integrate gyro
+      gyroOrientation.x += betaRate * dt;
       gyroOrientation.y += gammaRate * dt;
       gyroOrientation.z += alphaRate * dt;
 
@@ -967,12 +965,14 @@
       fusedOrientation.y = GYRO_ALPHA * gyroOrientation.y + (1 - GYRO_ALPHA) * visualOrientation.y;
       fusedOrientation.z = GYRO_ALPHA * gyroOrientation.z + (1 - GYRO_ALPHA) * visualOrientation.z;
 
-      // Apply to camera: direct mapping (x=pitch, y=yaw, z=roll)
-      // Phone portrait: Beta→pitch(x), Gamma→yaw(y), Alpha→roll(z)
+      // Apply to camera with correct axis mapping (from working advanced-demo.html):
+      // - Alpha (z) = pitch (tilt up/down) → camera.rotation.x
+      // - Beta (x) = yaw (rotate left/right) → camera.rotation.y
+      // - Gamma (y) = roll → camera.rotation.z
       if (isRunning && camera) {
-        camera.rotation.x = fusedOrientation.x * sensitivity;   // pitch from beta
-        camera.rotation.y = fusedOrientation.y * sensitivity;   // yaw from gamma
-        camera.rotation.z = fusedOrientation.z * sensitivity;   // roll from alpha
+        camera.rotation.x = fusedOrientation.z * sensitivity;   // pitch from alpha
+        camera.rotation.y = fusedOrientation.x * sensitivity;   // yaw from beta
+        camera.rotation.z = fusedOrientation.y * sensitivity;   // roll from gamma
       }
 
       gyroActive = true;
@@ -1339,20 +1339,20 @@
           if (pose && tracked >= 8) {
             // Get rotation from optical flow and update visual orientation
             const q = pose.rotation || [0, 0, 0, 1];
-            // CV→Three.js quaternion: negate Y and Z (CV: Y-down Z-forward → Three.js: Y-up Z-backward)
-            const trackerQuat = new THREE.Quaternion(q[0], -q[1], -q[2], q[3]);
+            const trackerQuat = new THREE.Quaternion(q[0], q[1], q[2], q[3]);
             const euler = new THREE.Euler().setFromQuaternion(trackerQuat);
 
-            // Update visual orientation with smoothing (direct mapping: euler x→pitch, y→yaw, z→roll)
+            // Update visual orientation with smoothing
             visualOrientation.x += (euler.x - visualOrientation.x) * VISUAL_SMOOTHING;
-            visualOrientation.y += (euler.y - visualOrientation.y) * VISUAL_SMOOTHING;
-            visualOrientation.z += (euler.z - visualOrientation.z) * VISUAL_SMOOTHING;
+            visualOrientation.y += (euler.z - visualOrientation.y) * VISUAL_SMOOTHING;
+            visualOrientation.z += (euler.y - visualOrientation.z) * VISUAL_SMOOTHING;
 
-            // If no gyro, use visual-only for camera rotation (direct mapping)
+            // If no gyro, use visual-only for camera rotation
+            // (same axis mapping as gyro - from advanced-demo.html)
             if (!gyroActive) {
-              camera.rotation.x = visualOrientation.x;
-              camera.rotation.y = visualOrientation.y;
-              camera.rotation.z = visualOrientation.z;
+              camera.rotation.x = visualOrientation.z;
+              camera.rotation.y = visualOrientation.x;
+              camera.rotation.z = -visualOrientation.y;
             }
 
             // 6DoF Translation tracking
