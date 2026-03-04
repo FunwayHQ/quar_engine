@@ -137,8 +137,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
 
   <script type="module">
-    import init, { Tracker6DoFHandle, version } from './pkg/quar_engine.js';
-
     // DOM elements
     const videoCanvas = document.getElementById('video-canvas');
     const threeCanvas = document.getElementById('three-canvas');
@@ -152,6 +150,7 @@
     const objectsEl = document.getElementById('objects');
 
     // State
+    let Tracker6DoFHandle = null;
     let tracker = null;
     let video = null;
     let videoCtx = null;
@@ -217,9 +216,11 @@
         startBtn.disabled = true;
         startBtn.textContent = 'Loading...';
 
-        // Init WASM
-        await init();
-        console.log('QUAR Engine:', version());
+        // Load WASM dynamically
+        const wasm = await import('./pkg/quar_engine.js');
+        await wasm.default();
+        Tracker6DoFHandle = wasm.Tracker6DoFHandle;
+        console.log('QUAR Engine:', wasm.version());
 
         // Setup Three.js
         setupThreeJS();

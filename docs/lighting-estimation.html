@@ -130,9 +130,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
 
   <script type="module">
-    // Import WASM module
-    import init, { LightingEstimatorHandle, version } from './pkg/quar_engine.js';
-
     // DOM elements
     const videoCanvas = document.getElementById('video-canvas');
     const threeCanvas = document.getElementById('three-canvas');
@@ -146,6 +143,7 @@
     const colorTempEl = document.getElementById('color-temp');
 
     // State
+    let LightingEstimatorHandle = null;
     let estimator = null;
     let video = null;
     let videoCtx = null;
@@ -209,9 +207,11 @@
         startBtn.disabled = true;
         startBtn.textContent = 'Loading...';
 
-        // Init WASM
-        await init();
-        console.log('QUAR Engine:', version());
+        // Load WASM dynamically
+        const wasm = await import('./pkg/quar_engine.js');
+        await wasm.default();
+        LightingEstimatorHandle = wasm.LightingEstimatorHandle;
+        console.log('QUAR Engine:', wasm.version());
 
         // Setup Three.js
         setupThreeJS();

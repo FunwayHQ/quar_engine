@@ -90,9 +90,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
 
   <script type="module">
-    // Import WASM module from docs/pkg (adjust path as needed)
-    import init, { Tracker6DoFHandle, version } from './pkg/quar_engine.js';
-
     // DOM elements
     const videoCanvas = document.getElementById('video-canvas');
     const threeCanvas = document.getElementById('three-canvas');
@@ -106,6 +103,7 @@
     const tzEl = document.getElementById('tz');
 
     // State
+    let Tracker6DoFHandle = null;
     let tracker = null;
     let video = null;
     let videoCtx = null;
@@ -114,7 +112,7 @@
     let lastFpsTime = 0;
     let isRunning = false;
 
-    // Attach button handler immediately (don't wait for WASM)
+    // Attach button handler immediately
     startBtn.addEventListener('click', startAR);
 
     function setupThreeJS() {
@@ -157,9 +155,11 @@
         startBtn.disabled = true;
         startBtn.textContent = 'Loading...';
 
-        // Init WASM
-        await init();
-        console.log('QUAR Engine:', version());
+        // Load WASM dynamically (static import would kill the module if it fails)
+        const wasm = await import('./pkg/quar_engine.js');
+        await wasm.default();
+        Tracker6DoFHandle = wasm.Tracker6DoFHandle;
+        console.log('QUAR Engine:', wasm.version());
 
         // Setup Three.js
         setupThreeJS();
