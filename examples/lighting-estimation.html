@@ -155,13 +155,8 @@
     let lastUpdateTime = 0;
     let isRunning = false;
 
-    // Initialize
-    async function initialize() {
-      await init();
-      console.log('QUAR Engine:', version());
-      setupThreeJS();
-      startBtn.addEventListener('click', startDemo);
-    }
+    // Attach button handler immediately (don't wait for WASM)
+    startBtn.addEventListener('click', startDemo);
 
     function setupThreeJS() {
       scene = new THREE.Scene();
@@ -211,6 +206,16 @@
 
     async function startDemo() {
       try {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Loading...';
+
+        // Init WASM
+        await init();
+        console.log('QUAR Engine:', version());
+
+        // Setup Three.js
+        setupThreeJS();
+
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
         });
@@ -233,6 +238,8 @@
         requestAnimationFrame(updateLoop);
       } catch (err) {
         console.error('Failed to start:', err);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start Demo';
         alert('Failed to start: ' + err.message);
       }
     }
@@ -309,7 +316,6 @@
       return (ri << 16) | (gi << 8) | bi;
     }
 
-    initialize().catch(console.error);
   </script>
 </body>
 </html>

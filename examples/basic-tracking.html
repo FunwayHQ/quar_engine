@@ -114,17 +114,8 @@
     let lastFpsTime = 0;
     let isRunning = false;
 
-    // Initialize
-    async function initialize() {
-      // Init WASM
-      await init();
-      console.log('QUAR Engine:', version());
-
-      // Setup Three.js
-      setupThreeJS();
-
-      startBtn.addEventListener('click', startAR);
-    }
+    // Attach button handler immediately (don't wait for WASM)
+    startBtn.addEventListener('click', startAR);
 
     function setupThreeJS() {
       scene = new THREE.Scene();
@@ -163,6 +154,16 @@
 
     async function startAR() {
       try {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Loading...';
+
+        // Init WASM
+        await init();
+        console.log('QUAR Engine:', version());
+
+        // Setup Three.js
+        setupThreeJS();
+
         // Request camera
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -194,6 +195,8 @@
         requestAnimationFrame(trackingLoop);
       } catch (err) {
         console.error('Failed to start AR:', err);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start AR';
         alert('Failed to start: ' + err.message);
       }
     }
@@ -247,8 +250,6 @@
       requestAnimationFrame(trackingLoop);
     }
 
-    // Start
-    initialize().catch(console.error);
   </script>
 </body>
 </html>

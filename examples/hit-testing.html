@@ -22,6 +22,7 @@
       top: 0; left: 0;
       width: 100%; height: 100%;
     }
+    #three-canvas { pointer-events: none; }
     #hud {
       position: absolute;
       top: 20px; left: 20px;
@@ -48,6 +49,7 @@
       z-index: 100;
     }
     #status.hidden { display: none; }
+    .hidden { display: none; }
     button {
       margin-top: 15px;
       padding: 12px 30px;
@@ -160,13 +162,9 @@
     let isRunning = false;
     let canPlace = false;
 
-    async function initialize() {
-      await init();
-      console.log('QUAR Engine:', version());
-      setupThreeJS();
-      startBtn.addEventListener('click', startAR);
-      placeBtn.addEventListener('click', placeObject);
-    }
+    // Attach button handlers immediately (don't wait for WASM)
+    startBtn.addEventListener('click', startAR);
+    placeBtn.addEventListener('click', placeObject);
 
     function setupThreeJS() {
       scene = new THREE.Scene();
@@ -216,6 +214,16 @@
 
     async function startAR() {
       try {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Loading...';
+
+        // Init WASM
+        await init();
+        console.log('QUAR Engine:', version());
+
+        // Setup Three.js
+        setupThreeJS();
+
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
         });
@@ -238,6 +246,8 @@
         requestAnimationFrame(trackingLoop);
       } catch (err) {
         console.error('Failed to start:', err);
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start AR';
         alert('Failed: ' + err.message);
       }
     }
@@ -326,7 +336,6 @@
       setTimeout(() => reticle.scale.set(1, 1, 1), 100);
     }
 
-    initialize().catch(console.error);
   </script>
 </body>
 </html>
