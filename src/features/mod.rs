@@ -24,7 +24,7 @@ pub use matcher::{
     filter_by_distance, sort_by_distance, BruteForceMatcher, Match, MatchStats,
     DEFAULT_MAX_DISTANCE, DEFAULT_RATIO,
 };
-pub use nms::non_maximum_suppression;
+pub use nms::{non_maximum_suppression, non_maximum_suppression_grid};
 pub use orientation::{compute_orientation, compute_orientations, DEFAULT_PATCH_RADIUS};
 
 use wasm_bindgen::prelude::*;
@@ -186,8 +186,10 @@ pub fn extract_features(
     let detector = FastDetector::new(config.threshold);
     let keypoints = detector.detect(grayscale, width as u32, height as u32);
 
-    // Apply NMS
-    let mut keypoints = non_maximum_suppression(&keypoints, config.nms_radius);
+    // Apply grid-based NMS — O(n) vs O(n²) for standard NMS
+    let mut keypoints = non_maximum_suppression_grid(
+        &keypoints, width as u32, height as u32, config.nms_radius,
+    );
 
     // Limit number of features
     if let Some(max) = config.max_features {

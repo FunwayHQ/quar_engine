@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QUAR Engine - Basic 6DoF Tracking Example</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    #video-canvas, #three-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #three-canvas { pointer-events: none; }
+    #hud {
+      position: absolute;
+      top: 20px; left: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      z-index: 100;
+      min-width: 200px;
+    }
+    #hud h3 { color: #4ade80; margin-bottom: 10px; }
+    .stat { margin: 4px 0; }
+    .label { color: #888; }
+    .value { color: #4ade80; }
+    #status {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9);
+      padding: 30px;
+      border-radius: 12px;
+      text-align: center;
+      z-index: 100;
+    }
+    #status.hidden { display: none; }
+    button {
+      margin-top: 15px;
+      padding: 12px 30px;
+      background: #4ade80;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #22c55e; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="three-canvas"></canvas>
+
+    <div id="hud">
+      <h3>6DoF Tracking</h3>
+      <div class="stat"><span class="label">FPS: </span><span id="fps" class="value">--</span></div>
+      <div class="stat"><span class="label">Features: </span><span id="features" class="value">--</span></div>
+      <div class="stat"><span class="label">State: </span><span id="state" class="value">--</span></div>
+      <hr style="margin: 10px 0; border-color: #333;">
+      <div class="stat"><span class="label">X: </span><span id="tx" class="value">0.00</span></div>
+      <div class="stat"><span class="label">Y: </span><span id="ty" class="value">0.00</span></div>
+      <div class="stat"><span class="label">Z: </span><span id="tz" class="value">0.00</span></div>
+    </div>
+
+    <div id="status">
+      <p>Basic 6DoF Tracking Example</p>
+      <p style="color: #888; margin-top: 10px;">Camera and motion sensors required</p>
+      <button id="start-btn">Start AR</button>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+
+  <script type="module">
+    // Import WASM module from docs/pkg (adjust path as needed)
+    import init, { Tracker6DoFHandle, version } from './pkg/quar_engine.js';
+
+    // DOM elements
+    const videoCanvas = document.getElementById('video-canvas');
+    const threeCanvas = document.getElementById('three-canvas');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('start-btn');
+    const fpsEl = document.getElementById('fps');
+    const featuresEl = document.getElementById('features');
+    const stateEl = document.getElementById('state');
+    const txEl = document.getElementById('tx');
+    const tyEl = document.getElementById('ty');
+    const tzEl = document.getElementById('tz');
+
+    // State
+    let tracker = null;
+    let video = null;
+    let videoCtx = null;
+    let scene, camera, renderer, cube;
+    let frameCount = 0;
+    let lastFpsTime = 0;
+    let isRunning = false;
+
+    // Initialize
+    async function initialize() {
+      // Init WASM
+      await init();
+      console.log('QUAR Engine:', version());
+
+      // Setup Three.js
+      setupThreeJS();
+
+      startBtn.addEventListener('click', startAR);
+    }
+
+    function setupThreeJS() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+      camera.position.set(0, 0, 0);
+
+      renderer = new THREE.WebGLRenderer({
+        canvas: threeCanvas,
+        alpha: true,
+        antialias: true
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+
+      // Add a simple cube
+      const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+      const material = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+      cube = new THREE.Mesh(geometry, material);
+      cube.position.set(0, 0, -0.5); // 50cm in front
+      scene.add(cube);
+
+      // Lighting
+      const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambient);
+      const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+      directional.position.set(1, 1, 1);
+      scene.add(directional);
+
+      // Handle resize
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    async function startAR() {
+      try {
+        // Request camera
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+
+        // Setup video
+        video = document.createElement('video');
+        video.srcObject = stream;
+        video.setAttribute('playsinline', '');
+        await video.play();
+
+        // Setup video canvas
+        videoCanvas.width = video.videoWidth;
+        videoCanvas.height = video.videoHeight;
+        videoCtx = videoCanvas.getContext('2d');
+
+        // Create tracker
+        tracker = new Tracker6DoFHandle(video.videoWidth, video.videoHeight);
+
+        // Hide status, start loop
+        statusEl.classList.add('hidden');
+        isRunning = true;
+        stateEl.textContent = 'Initializing...';
+
+        requestAnimationFrame(trackingLoop);
+      } catch (err) {
+        console.error('Failed to start AR:', err);
+        alert('Failed to start: ' + err.message);
+      }
+    }
+
+    function trackingLoop() {
+      if (!isRunning) return;
+
+      // Draw video to canvas
+      videoCtx.drawImage(video, 0, 0);
+      const imageData = videoCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
+
+      // Process frame
+      const pose = tracker.process_frame(imageData.data, videoCanvas.width, videoCanvas.height);
+
+      // Update FPS
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        fpsEl.textContent = frameCount;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      // Update feature count
+      const features = tracker.tracked_points();
+      featuresEl.textContent = features;
+
+      if (pose) {
+        stateEl.textContent = 'Tracking';
+        stateEl.style.color = '#4ade80';
+
+        // Apply pose to camera
+        const [qx, qy, qz, qw] = pose.rotation;
+        const [tx, ty, tz] = pose.translation;
+
+        camera.quaternion.set(qx, -qy, -qz, qw);
+        camera.position.set(tx, -ty, -tz);
+
+        // Update HUD
+        txEl.textContent = tx.toFixed(3);
+        tyEl.textContent = ty.toFixed(3);
+        tzEl.textContent = tz.toFixed(3);
+      } else {
+        stateEl.textContent = features > 10 ? 'Initializing' : 'Lost';
+        stateEl.style.color = features > 10 ? '#fbbf24' : '#ef4444';
+      }
+
+      // Render
+      renderer.render(scene, camera);
+
+      requestAnimationFrame(trackingLoop);
+    }
+
+    // Start
+    initialize().catch(console.error);
+  </script>
+</body>
+</html>

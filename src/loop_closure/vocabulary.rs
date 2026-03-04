@@ -118,10 +118,12 @@ impl Vocabulary {
             }
         }
 
-        // Recompute IDF weights: log(N / n_i)
+        // Recompute IDF weights with smoothing: ln((N+1) / (n_i+1)) + 1
+        // Smoothing ensures words in all images still have positive IDF weight
+        let n = self.total_images as f64;
         for (word_id, &count) in self.word_image_counts.iter().enumerate() {
             if count > 0 {
-                self.idf_weights[word_id] = (self.total_images as f64 / count as f64).ln();
+                self.idf_weights[word_id] = ((n + 1.0) / (count as f64 + 1.0)).ln() + 1.0;
             }
         }
     }
@@ -220,11 +222,16 @@ mod tests {
         vocab.update_idf(&[0, 3, 4]);
         assert_eq!(vocab.num_images(), 2);
 
-        // Word 0 appears in both images: IDF = log(2/2) = 0
-        assert!((vocab.idf(0) - 0.0).abs() < 1e-10);
+        // Word 0 appears in both images: IDF = ln((2+1)/(2+1)) + 1 = 1.0
+        // Smoothed IDF ensures words in all images still have positive weight
+        let expected_0 = (3.0_f64 / 3.0).ln() + 1.0; // = 1.0
+        assert!((vocab.idf(0) - expected_0).abs() < 1e-10,
+            "word in all images should have IDF={}, got {}", expected_0, vocab.idf(0));
 
-        // Word 1 appears in one image: IDF = log(2/1) = ln(2)
-        assert!((vocab.idf(1) - 2.0_f64.ln()).abs() < 1e-10);
+        // Word 1 appears in one image: IDF = ln((2+1)/(1+1)) + 1 = ln(1.5) + 1
+        let expected_1 = (3.0_f64 / 2.0).ln() + 1.0;
+        assert!((vocab.idf(1) - expected_1).abs() < 1e-10,
+            "word in 1 of 2 images should have IDF={}, got {}", expected_1, vocab.idf(1));
     }
 
     #[test]

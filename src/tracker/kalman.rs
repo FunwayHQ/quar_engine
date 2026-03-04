@@ -761,13 +761,13 @@ impl MotionState {
         // Gate check
         if mahalanobis_sq > gate_threshold {
             // Outlier detected - increase uncertainty but don't update
-            // Cap maximum covariance diagonal to prevent unbounded growth
+            // Scale covariance uniformly to preserve PSD property
             self.covariance = self.covariance.scale(1.1);
             let max_variance = 100.0;
-            for i in 0..6 {
-                if self.covariance.data[i][i] > max_variance {
-                    self.covariance.data[i][i] = max_variance;
-                }
+            let max_diag = (0..6).map(|i| self.covariance.data[i][i]).fold(0.0_f64, f64::max);
+            if max_diag > max_variance {
+                let scale_factor = max_variance / max_diag;
+                self.covariance = self.covariance.scale(scale_factor);
             }
             return false;
         }

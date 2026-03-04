@@ -114,6 +114,21 @@ impl LucasKanadeTracker {
             .collect()
     }
 
+    /// Track points using pre-built pyramids for both frames.
+    ///
+    /// This avoids rebuilding either pyramid when they're already available.
+    pub fn track_with_pyramids(
+        &self,
+        prev_pyramid: &[GrayImage],
+        curr_pyramid: &[GrayImage],
+        prev_points: &[Point2],
+    ) -> Vec<TrackResult> {
+        prev_points
+            .iter()
+            .map(|point| self.track_point(prev_pyramid, curr_pyramid, *point))
+            .collect()
+    }
+
     /// Track points with forward-backward consistency check.
     ///
     /// This method tracks points forward (prev → curr) and then backward (curr → prev),
@@ -291,8 +306,11 @@ impl LucasKanadeTracker {
         let mut iyy = 0.0f32;
         let mut ixy = 0.0f32;
 
-        // Pre-compute gradients for the window
-        let mut gradients = Vec::with_capacity((self.window_size * self.window_size) as usize);
+        // Pre-compute gradients for the window using fixed-size stack array
+        // Max window: 31x31 = 961 entries (window_size is bounded at creation)
+        const MAX_GRADIENT_BUF: usize = 961;
+        let mut gradients = [(0.0f32, 0.0f32, 0.0f32); MAX_GRADIENT_BUF];
+        let mut grad_count = 0usize;
 
         for dy in -half_win..=half_win {
             for dx in -half_win..=half_win {
@@ -300,7 +318,8 @@ impl LucasKanadeTracker {
                 let y = py + dy as f32;
 
                 let (gx, gy) = prev.gradient_at(x, y);
-                gradients.push((gx, gy, prev.get_pixel_bilinear(x, y)));
+                gradients[grad_count] = (gx, gy, prev.get_pixel_bilinear(x, y));
+                grad_count += 1;
 
                 ixx += gx * gx;
                 iyy += gy * gy;

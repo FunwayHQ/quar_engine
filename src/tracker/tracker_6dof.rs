@@ -124,6 +124,8 @@ pub struct LoopClosureResult {
 pub struct Tracker6DoF {
     /// Previous frame grayscale data
     prev_gray: Option<GrayImage>,
+    /// Cached pyramid from previous frame (avoids rebuilding every frame)
+    prev_pyramid: Option<Vec<GrayImage>>,
     /// Previously tracked points
     prev_points: Vec<Point2>,
 
@@ -237,6 +239,7 @@ impl Tracker6DoF {
 
         Self {
             prev_gray: None,
+            prev_pyramid: None,
             prev_points: Vec::new(),
 
             // Keyframe-based translation
@@ -317,18 +320,29 @@ impl Tracker6DoF {
                 self.keyframe_frame = self.frame_count;
                 self.keyframe_pose = Pose3D::identity();
             }
+            // Build and cache pyramid for first frame too
+            let first_pyramid = build_pyramid(&curr_gray, self.config.base.pyramid_levels);
+            self.prev_pyramid = Some(first_pyramid);
             self.prev_gray = Some(curr_gray);
             return Some(self.current_pose);
         }
 
-        let prev_gray = self.prev_gray.as_ref().unwrap();
-
         // Build current frame pyramid once — reused by both prev→curr and keyframe→curr tracking
         let curr_pyramid = build_pyramid(&curr_gray, self.config.base.pyramid_levels);
 
+        // Use cached prev pyramid if available, otherwise build it
+        let prev_pyramid_built;
+        let prev_pyramid_ref = if let Some(ref cached) = self.prev_pyramid {
+            cached.as_slice()
+        } else {
+            let prev_gray = self.prev_gray.as_ref().unwrap();
+            prev_pyramid_built = build_pyramid(prev_gray, self.config.base.pyramid_levels);
+            prev_pyramid_built.as_slice()
+        };
+
         // Track points from previous frame (for rotation estimation)
         if !self.prev_points.is_empty() {
-            let track_results = self.lk_tracker.track_with_curr_pyramid(prev_gray, &curr_pyramid, &self.prev_points);
+            let track_results = self.lk_tracker.track_with_pyramids(prev_pyramid_ref, &curr_pyramid, &self.prev_points);
 
             // Filter successfully tracked points
             let mut curr_points = Vec::new();
@@ -377,6 +391,8 @@ impl Tracker6DoF {
         }
 
         self.prev_gray = Some(curr_gray);
+        // Cache current pyramid as next frame's prev pyramid
+        self.prev_pyramid = Some(curr_pyramid);
         Some(self.current_pose)
     }
 
@@ -438,7 +454,10 @@ impl Tracker6DoF {
             let solutions = decompose_essential(&e);
 
             // Choose the solution with positive depth for most points
-            let best = choose_valid_pose(&solutions, &inlier_prev, &inlier_curr);
+            let best = match choose_valid_pose(&solutions, &inlier_prev, &inlier_curr) {
+                Some(b) => b,
+                None => return, // Degenerate/pure-rotation — skip pose update
+            };
 
             // Check minimum parallax for reliable translation
             let mut max_parallax: f64 = 0.0;
@@ -519,26 +538,40 @@ impl Tracker6DoF {
                     &best.translation,
                 );
 
-                    // Store triangulated points in camera frame (scaled)
-                // Note: Points are in camera 1's frame (previous frame)
-                // Plane detection will transform normals to world frame for classification
+                // Transform triangulated points from camera frame to world frame
+                // Camera pose: cam = R * world + t → world = R^T * (cam - t)
+                let r_cam = quaternion_to_mat3(&self.current_pose.rotation);
+                let r_cam_t = r_cam.transpose();
+                let t_cam = Vec3::new(
+                    self.current_pose.translation[0] as f64,
+                    self.current_pose.translation[1] as f64,
+                    self.current_pose.translation[2] as f64,
+                );
+
                 for (_idx, point_cam) in valid_points.iter() {
                     // Scale the point by our scale factor
-                    let scaled_point = Vec3::new(
+                    let scaled = Vec3::new(
                         point_cam.x * self.scale as f64,
                         point_cam.y * self.scale as f64,
                         point_cam.z * self.scale as f64,
                     );
 
                     // Only add if point is in reasonable depth range (0.1m to 20m)
-                    let depth = scaled_point.z;
+                    let depth = scaled.z;
                     if depth > 0.1 && depth < 20.0 {
+                        // Transform to world frame: world_point = R^T * (cam_point - t)
+                        let p_minus_t = Vec3::new(
+                            scaled.x - t_cam.x,
+                            scaled.y - t_cam.y,
+                            scaled.z - t_cam.z,
+                        );
+                        let world_point = r_cam_t.mul_vec(&p_minus_t);
+
                         // Add to map points, maintaining max size
                         if self.map_points_3d.len() >= self.max_map_points {
-                            // Remove oldest point (FIFO)
                             self.map_points_3d.pop_front();
                         }
-                        self.map_points_3d.push_back(scaled_point);
+                        self.map_points_3d.push_back(world_point);
                     }
                 }
             }
@@ -650,12 +683,12 @@ impl Tracker6DoF {
             let min_inliers = if self.config.use_5point { 5 } else { 8 };
             if inlier_prev.len() >= min_inliers {
                 let solutions = decompose_essential(&e);
-                let best = choose_valid_pose(&solutions, &inlier_prev, &inlier_curr);
-
-                // Apply rotation from consecutive frames (responsive)
-                let rotation_quat = rotation_matrix_to_quaternion(&best.rotation);
-                self.current_pose.apply_rotation(&rotation_quat);
-                self.last_rotation = Some(best.rotation);
+                if let Some(best) = choose_valid_pose(&solutions, &inlier_prev, &inlier_curr) {
+                    // Apply rotation from consecutive frames (responsive)
+                    let rotation_quat = rotation_matrix_to_quaternion(&best.rotation);
+                    self.current_pose.apply_rotation(&rotation_quat);
+                    self.last_rotation = Some(best.rotation);
+                }
             }
         }
 
@@ -724,7 +757,7 @@ impl Tracker6DoF {
                         let min_inliers = if self.config.use_5point { 5 } else { 8 };
                         if inlier_kf.len() >= min_inliers {
                             let solutions = decompose_essential(&e_kf);
-                            let best = choose_valid_pose(&solutions, &inlier_kf, &inlier_curr_kf);
+                            if let Some(best) = choose_valid_pose(&solutions, &inlier_kf, &inlier_curr_kf) {
 
                             // Compute parallax from keyframe to current
                             let mut max_parallax: f64 = 0.0;
@@ -767,19 +800,35 @@ impl Tracker6DoF {
                                         &best.translation,
                                     );
 
+                                    // Transform to world frame
+                                    let r_cam = quaternion_to_mat3(&self.current_pose.rotation);
+                                    let r_cam_t = r_cam.transpose();
+                                    let t_cam = Vec3::new(
+                                        self.current_pose.translation[0] as f64,
+                                        self.current_pose.translation[1] as f64,
+                                        self.current_pose.translation[2] as f64,
+                                    );
+
                                     for (_idx, point_cam) in valid_points.iter() {
-                                        let scaled_point = Vec3::new(
+                                        let scaled = Vec3::new(
                                             point_cam.x * self.scale as f64,
                                             point_cam.y * self.scale as f64,
                                             point_cam.z * self.scale as f64,
                                         );
 
-                                        let depth = scaled_point.z;
+                                        let depth = scaled.z;
                                         if depth > 0.1 && depth < 20.0 {
+                                            let p_minus_t = Vec3::new(
+                                                scaled.x - t_cam.x,
+                                                scaled.y - t_cam.y,
+                                                scaled.z - t_cam.z,
+                                            );
+                                            let world_point = r_cam_t.mul_vec(&p_minus_t);
+
                                             if self.map_points_3d.len() >= self.max_map_points {
                                                 self.map_points_3d.pop_front();
                                             }
-                                            self.map_points_3d.push_back(scaled_point);
+                                            self.map_points_3d.push_back(world_point);
                                         }
                                     }
                                 }
@@ -799,6 +848,7 @@ impl Tracker6DoF {
                                 self.keyframe_frame = self.frame_count;
                                 self.keyframe_pose = self.current_pose;
                             }
+                            } // end if let Some(best)
                         }
                     }
                 } else {
@@ -859,6 +909,7 @@ impl Tracker6DoF {
     /// Reset the tracker state.
     pub fn reset(&mut self) {
         self.prev_gray = None;
+        self.prev_pyramid = None;
         self.prev_points.clear();
         self.keyframe_gray = None;
         self.keyframe_points.clear();
@@ -1136,14 +1187,41 @@ impl Tracker6DoF {
         // Use IMU rotation as a prior/constraint
         let imu_rotation = preint.delta_rotation.to_quaternion();
 
-        // For now, we use IMU to validate visual rotation
-        // and help with scale estimation
-        let _rotation_diff = quaternion_angle_diff(&imu_rotation, &[
+        let visual_rotation = [
             self.current_pose.rotation[0] as f64,
             self.current_pose.rotation[1] as f64,
             self.current_pose.rotation[2] as f64,
             self.current_pose.rotation[3] as f64,
-        ]);
+        ];
+
+        let rotation_diff = quaternion_angle_diff(&imu_rotation, &visual_rotation);
+
+        // If visual and IMU rotations disagree significantly (~17°), blend toward IMU
+        if rotation_diff > 0.3 {
+            let alpha = 0.3_f32; // Conservative IMU weight
+            // Quaternion LERP with shortest-path correction
+            let dot = self.current_pose.rotation[0] * imu_rotation[0] as f32
+                + self.current_pose.rotation[1] * imu_rotation[1] as f32
+                + self.current_pose.rotation[2] * imu_rotation[2] as f32
+                + self.current_pose.rotation[3] * imu_rotation[3] as f32;
+            let sign = if dot < 0.0 { -1.0_f32 } else { 1.0 };
+
+            for (i, &imu_r) in imu_rotation.iter().enumerate() {
+                self.current_pose.rotation[i] = (1.0 - alpha) * self.current_pose.rotation[i]
+                    + alpha * sign * imu_r as f32;
+            }
+            // Re-normalize quaternion
+            let len = (self.current_pose.rotation[0].powi(2)
+                + self.current_pose.rotation[1].powi(2)
+                + self.current_pose.rotation[2].powi(2)
+                + self.current_pose.rotation[3].powi(2))
+            .sqrt();
+            if len > 1e-8 {
+                for r in &mut self.current_pose.rotation {
+                    *r /= len;
+                }
+            }
+        }
 
         // Update scale estimate using visual and IMU velocities
         if preint.delta_t > 0.01 {
@@ -1617,30 +1695,52 @@ impl Tracker6DoF {
             return None;
         }
 
-        // Take the best candidate
-        let best = &candidates[0];
+        // Try to verify candidates geometrically
+        // Extract current keypoint positions (pixel coords) for verification
+        let query_keypoints: Vec<(f64, f64)> = self.prev_points
+            .iter()
+            .map(|p| (p.x as f64, p.y as f64))
+            .collect();
 
-        // Find the matched keyframe
-        let match_kf = self.keyframes.iter().find(|kf| kf.id == best.match_kf)?;
+        for candidate in &candidates {
+            // Get matched keyframe's keypoint positions
+            let match_kf = match self.keyframes.iter().find(|kf| kf.id == candidate.match_kf) {
+                Some(kf) => kf,
+                None => continue,
+            };
 
-        // Store the matched keyframe's pose as the correction target.
-        // apply_loop_closure() will blend the current pose toward this target.
-        let correction = Pose3D {
-            rotation: match_kf.pose.rotation,
-            translation: match_kf.pose.translation,
-        };
+            // Convert normalized coords back to pixel coords for verify()
+            let match_keypoints: Vec<(f64, f64)> = match_kf.observations
+                .iter()
+                .map(|obs| (
+                    obs.x * self.camera.fx + self.camera.cx,
+                    obs.y * self.camera.fy + self.camera.cy,
+                ))
+                .collect();
 
-        let result = LoopClosureResult {
-            query_kf_id: self.next_keyframe_id.saturating_sub(1),
-            match_kf_id: best.match_kf,
-            pose_correction: correction,
-            confidence: best.bow_score,
-        };
+            // Verify with geometric check (Essential matrix RANSAC)
+            if self.loop_closer.verify(candidate, &query_keypoints, &match_keypoints).is_some() {
+                // Geometrically verified — use this candidate
+                let correction = Pose3D {
+                    rotation: match_kf.pose.rotation,
+                    translation: match_kf.pose.translation,
+                };
 
-        self.last_loop_closure = Some(result.clone());
-        self.loop_closure_count += 1;
+                let result = LoopClosureResult {
+                    query_kf_id: self.next_keyframe_id.saturating_sub(1),
+                    match_kf_id: candidate.match_kf,
+                    pose_correction: correction,
+                    confidence: candidate.bow_score,
+                };
 
-        Some(result)
+                self.last_loop_closure = Some(result.clone());
+                self.loop_closure_count += 1;
+
+                return Some(result);
+            }
+        }
+
+        None // No candidate passed geometric verification
     }
 
     /// Apply loop closure correction to the current pose.
@@ -1708,6 +1808,20 @@ impl Tracker6DoF {
 }
 
 /// Compute angle difference between two quaternions in radians.
+/// Convert quaternion [x, y, z, w] to a 3x3 rotation matrix.
+fn quaternion_to_mat3(q: &[f32; 4]) -> Mat3 {
+    let x = q[0] as f64;
+    let y = q[1] as f64;
+    let z = q[2] as f64;
+    let w = q[3] as f64;
+
+    Mat3::new(
+        1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - w * z),       2.0 * (x * z + w * y),
+        2.0 * (x * y + w * z),       1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - w * x),
+        2.0 * (x * z - w * y),       2.0 * (y * z + w * x),       1.0 - 2.0 * (x * x + y * y),
+    )
+}
+
 fn quaternion_angle_diff(q1: &[f64; 4], q2: &[f64; 4]) -> f64 {
     // Dot product of quaternions
     let dot = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3];

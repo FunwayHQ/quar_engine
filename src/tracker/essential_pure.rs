@@ -5,6 +5,58 @@
 
 use super::linalg::{self, EssentialSolution, Mat3, Matrix4x4, Vec2, Vec3};
 
+/// Compute Hartley normalization transform for a set of 2D points.
+///
+/// Translates points so centroid is at origin, scales so mean distance from origin is sqrt(2).
+/// Returns the normalized points and the 3x3 normalization matrix T.
+fn hartley_normalize(points: &[Vec2]) -> (Vec<Vec2>, Mat3) {
+    let n = points.len() as f64;
+    if n < 1.0 {
+        return (points.to_vec(), Mat3::identity());
+    }
+
+    // Compute centroid
+    let mut cx = 0.0;
+    let mut cy = 0.0;
+    for p in points {
+        cx += p.x;
+        cy += p.y;
+    }
+    cx /= n;
+    cy /= n;
+
+    // Compute mean distance from centroid
+    let mut mean_dist = 0.0;
+    for p in points {
+        let dx = p.x - cx;
+        let dy = p.y - cy;
+        mean_dist += (dx * dx + dy * dy).sqrt();
+    }
+    mean_dist /= n;
+
+    // Scale so mean distance = sqrt(2)
+    let scale = if mean_dist > 1e-12 {
+        std::f64::consts::SQRT_2 / mean_dist
+    } else {
+        1.0
+    };
+
+    // Build normalization matrix: T = [[s, 0, -s*cx], [0, s, -s*cy], [0, 0, 1]]
+    let t = Mat3::new(
+        scale, 0.0, -scale * cx,
+        0.0, scale, -scale * cy,
+        0.0, 0.0, 1.0,
+    );
+
+    // Apply normalization
+    let normalized: Vec<Vec2> = points
+        .iter()
+        .map(|p| Vec2::new(scale * (p.x - cx), scale * (p.y - cy)))
+        .collect();
+
+    (normalized, t)
+}
+
 /// Compute the Essential matrix from point correspondences using the 8-point algorithm.
 ///
 /// # Arguments
@@ -20,16 +72,20 @@ pub fn compute_essential_matrix(points1: &[Vec2], points2: &[Vec2]) -> Option<Ma
 
     let n = points1.len();
 
+    // Hartley normalization: translate points to centroid, scale so mean distance = sqrt(2)
+    let (norm_p1, t1) = hartley_normalize(points1);
+    let (norm_p2, t2) = hartley_normalize(points2);
+
     // Build the constraint matrix A where each row is:
     // [x2*x1, x2*y1, x2, y2*x1, y2*y1, y2, x1, y1, 1]
     // We compute A^T A = Σ (row_i^T * row_i) directly
     let mut ata_data = [[0.0f64; 9]; 9];
 
     for i in 0..n {
-        let x1 = points1[i].x;
-        let y1 = points1[i].y;
-        let x2 = points2[i].x;
-        let y2 = points2[i].y;
+        let x1 = norm_p1[i].x;
+        let y1 = norm_p1[i].y;
+        let x2 = norm_p2[i].x;
+        let y2 = norm_p2[i].y;
 
         let row = [
             x2 * x1,
@@ -84,13 +140,40 @@ pub fn compute_essential_matrix(points1: &[Vec2], points2: &[Vec2]) -> Option<Ma
         e_data
     };
 
+    let e_norm = Mat3::new(
+        e_data[0][0], e_data[0][1], e_data[0][2],
+        e_data[1][0], e_data[1][1], e_data[1][2],
+        e_data[2][0], e_data[2][1], e_data[2][2],
+    );
+
+    // Denormalize: E = T2^T * E_normalized * T1
+    let e_denorm = t2.transpose().mul(&e_norm).mul(&t1);
+
+    // Re-enforce rank-2 constraint after denormalization (floating point can break it)
+    let svd2 = linalg::svd_3x3(&e_denorm.to_matrix3x3());
+    let u2 = svd2.u;
+    let v_t2 = svd2.v_t;
+    let s2 = svd2.s;
+    let avg2 = (s2[0] + s2[1]) / 2.0;
+
+    #[allow(clippy::needless_range_loop)]
+    let e_final = {
+        let mut ef = [[0.0f64; 3]; 3];
+        for i in 0..3 {
+            for j in 0..3 {
+                ef[i][j] = u2.data[i][0] * avg2 * v_t2.data[0][j] + u2.data[i][1] * avg2 * v_t2.data[1][j];
+            }
+        }
+        ef
+    };
+
     // Normalize E for consistent scale
-    let norm = linalg::mat3::norm(&e_data);
+    let norm = linalg::mat3::norm(&e_final);
     if norm > 1e-10 {
         Some(Mat3::new(
-            e_data[0][0] / norm, e_data[0][1] / norm, e_data[0][2] / norm,
-            e_data[1][0] / norm, e_data[1][1] / norm, e_data[1][2] / norm,
-            e_data[2][0] / norm, e_data[2][1] / norm, e_data[2][2] / norm,
+            e_final[0][0] / norm, e_final[0][1] / norm, e_final[0][2] / norm,
+            e_final[1][0] / norm, e_final[1][1] / norm, e_final[1][2] / norm,
+            e_final[2][0] / norm, e_final[2][1] / norm, e_final[2][2] / norm,
         ))
     } else {
         None
@@ -144,11 +227,14 @@ pub fn decompose_essential(e: &Mat3) -> [EssentialSolution; 4] {
 }
 
 /// Choose the correct (R, t) solution by checking which gives positive depth.
+///
+/// Returns `None` when all four solutions have fewer than `min_positive` points
+/// with positive depth (degenerate/pure-rotation case).
 pub fn choose_valid_pose(
     solutions: &[EssentialSolution; 4],
     points1: &[Vec2],
     points2: &[Vec2],
-) -> EssentialSolution {
+) -> Option<EssentialSolution> {
     let mut best_solution = 0;
     let mut best_count = 0;
 
@@ -160,7 +246,13 @@ pub fn choose_valid_pose(
         }
     }
 
-    solutions[best_solution].clone()
+    // Require a minimum number of points with positive depth
+    let min_positive = 8.min(points1.len() / 4).max(1);
+    if best_count < min_positive {
+        return None;
+    }
+
+    Some(solutions[best_solution].clone())
 }
 
 /// Count points with positive depth in both cameras.
@@ -448,7 +540,8 @@ mod tests {
 
         let e = compute_essential_matrix(&points1, &points2).unwrap();
         let solutions = decompose_essential(&e);
-        let best = choose_valid_pose(&solutions, &points1, &points2);
+        let best = choose_valid_pose(&solutions, &points1, &points2)
+            .expect("choose_valid_pose should return Some for valid data");
 
         // Check that we get a valid rotation (det = 1)
         assert!((best.rotation.determinant() - 1.0).abs() < 0.1);
@@ -514,6 +607,123 @@ mod tests {
             }
         }
         assert!(constraint_violations <= 2, "Too many epipolar constraint violations: {}", constraint_violations);
+    }
+
+    #[test]
+    fn test_choose_valid_pose_degenerate_returns_none() {
+        // Construct solutions where all 4 produce 0 positive-depth points.
+        // A rotation that flips Z (180° about X) will put all points behind the camera.
+        let r = Mat3::new(
+            1.0, 0.0, 0.0,
+            0.0, -1.0, 0.0,
+            0.0, 0.0, -1.0,
+        );
+        let t = Vec3::new(1.0, 0.0, 0.0).normalize();
+
+        let solutions = [
+            EssentialSolution { rotation: r, translation: t },
+            EssentialSolution { rotation: r, translation: t.neg() },
+            EssentialSolution { rotation: r, translation: t },
+            EssentialSolution { rotation: r, translation: t.neg() },
+        ];
+
+        // Points in front of camera 1 but behind camera 2 (due to 180° flip)
+        let points1 = vec![
+            Vec2::new(0.1, 0.1), Vec2::new(-0.1, 0.1),
+            Vec2::new(0.1, -0.1), Vec2::new(-0.1, -0.1),
+            Vec2::new(0.2, 0.0), Vec2::new(0.0, 0.2),
+            Vec2::new(-0.2, 0.0), Vec2::new(0.0, -0.2),
+        ];
+        // Identical correspondences (no actual motion)
+        let points2 = points1.clone();
+
+        let result = choose_valid_pose(&solutions, &points1, &points2);
+        assert!(result.is_none(), "Should return None when no solution has enough positive-depth points");
+    }
+
+    #[test]
+    fn test_hartley_normalization() {
+        // Verify the normalization function works correctly
+        let points = vec![
+            Vec2::new(100.0, 200.0),
+            Vec2::new(300.0, 400.0),
+            Vec2::new(500.0, 100.0),
+            Vec2::new(200.0, 300.0),
+        ];
+
+        let (normalized, t) = hartley_normalize(&points);
+
+        // Centroid should be at origin
+        let mut cx = 0.0;
+        let mut cy = 0.0;
+        for p in &normalized {
+            cx += p.x;
+            cy += p.y;
+        }
+        cx /= normalized.len() as f64;
+        cy /= normalized.len() as f64;
+        assert!(cx.abs() < 1e-10, "centroid x should be 0, got {}", cx);
+        assert!(cy.abs() < 1e-10, "centroid y should be 0, got {}", cy);
+
+        // Mean distance should be sqrt(2)
+        let mean_dist: f64 = normalized.iter()
+            .map(|p| (p.x * p.x + p.y * p.y).sqrt())
+            .sum::<f64>() / normalized.len() as f64;
+        assert!((mean_dist - std::f64::consts::SQRT_2).abs() < 1e-10,
+            "mean distance should be sqrt(2), got {}", mean_dist);
+
+        // Verify T transforms correctly: T * [x, y, 1]^T = [x', y', 1]^T
+        for (orig, norm) in points.iter().zip(normalized.iter()) {
+            let transformed = t.mul_vec(&Vec3::new(orig.x, orig.y, 1.0));
+            assert!((transformed.x - norm.x).abs() < 1e-10);
+            assert!((transformed.y - norm.y).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_essential_widely_spaced_points() {
+        // Test with spread-out points to verify conditioning improvement from Hartley normalization
+        let r = Mat3::identity();
+        let t = Vec3::new(1.0, 0.0, 0.0).normalize();
+
+        // Points at moderate depths, spread across field of view
+        let points_3d = [
+            Vec3::new(-2.0, -2.0, 8.0),
+            Vec3::new(2.0, -2.0, 7.0),
+            Vec3::new(-2.0, 2.0, 9.0),
+            Vec3::new(2.0, 2.0, 8.0),
+            Vec3::new(0.0, 0.0, 6.0),
+            Vec3::new(-1.0, 1.0, 7.5),
+            Vec3::new(1.0, -1.0, 6.5),
+            Vec3::new(-0.5, 0.5, 8.5),
+        ];
+
+        let points1: Vec<Vec2> = points_3d.iter()
+            .map(|p| Vec2::new(p.x / p.z, p.y / p.z))
+            .collect();
+
+        let points2: Vec<Vec2> = points_3d.iter()
+            .map(|p| {
+                let p2 = r.mul_vec(p).add(&t);
+                Vec2::new(p2.x / p2.z, p2.y / p2.z)
+            })
+            .collect();
+
+        let e = compute_essential_matrix(&points1, &points2);
+        assert!(e.is_some(), "Essential matrix computation should succeed with spread-out points");
+
+        let e = e.unwrap();
+        let mut max_error = 0.0f64;
+        for i in 0..points1.len() {
+            let x1 = Vec3::new(points1[i].x, points1[i].y, 1.0);
+            let x2 = Vec3::new(points2[i].x, points2[i].y, 1.0);
+            let ex1 = e.mul_vec(&x1);
+            let error = x2.dot(&ex1).abs();
+            if error > max_error { max_error = error; }
+        }
+        // Tolerance is higher than close-up points since spread-out points have
+        // larger numerical range, but Hartley normalization keeps this manageable
+        assert!(max_error < 0.1, "Max epipolar error too large: {}", max_error);
     }
 
     #[test]

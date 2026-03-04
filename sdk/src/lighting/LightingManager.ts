@@ -6,7 +6,7 @@
  */
 
 import type { LightingEstimate } from './LightingEstimator';
-import { LightingEstimator, rgbToHex } from './LightingEstimator';
+import { LightingEstimator, rgbToHex, colorTemperatureToRgb } from './LightingEstimator';
 
 /**
  * Vector3-like type for light direction.
@@ -226,7 +226,10 @@ export class LightingManager {
       this.callbacks.updateAmbientLight(this._ambientLight, ambientColor, ambientIntensity);
     }
 
-    const directionalColor = rgbToHex(estimate.ambient_color);
+    // Derive directional light color from color temperature (not ambient color)
+    const directionalColor = estimate.color_temperature > 0
+      ? rgbToHex(colorTemperatureToRgb(estimate.color_temperature))
+      : rgbToHex(estimate.ambient_color);
     const directionalIntensity =
       estimate.directional_intensity * this.config.directionalIntensityScale;
     const direction: Vec3 = {

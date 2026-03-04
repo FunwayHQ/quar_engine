@@ -63,7 +63,6 @@ pub fn non_maximum_suppression(keypoints: &[KeyPoint], radius: u32) -> Vec<KeyPo
 ///
 /// # Returns
 /// Filtered keypoints (one per cell maximum)
-#[allow(dead_code)]
 pub fn non_maximum_suppression_grid(
     keypoints: &[KeyPoint],
     width: u32,

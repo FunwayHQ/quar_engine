@@ -175,6 +175,10 @@ function processSharedFrame(
       WorkerErrorCode.PROCESSING_ERROR,
       `Frame processing error: ${error}`
     );
+    // CRITICAL: Reset buffer state to prevent pipeline deadlock
+    if (bufferIndex < sharedBuffers.length) {
+      SharedFrameBuffer.markEmpty(sharedBuffers[bufferIndex]);
+    }
   } finally {
     isProcessing = false;
   }

@@ -74,7 +74,7 @@ pub fn choose_valid_pose(
     solutions: &[EssentialDecomposition; 4],
     points1: &[Vec2],
     points2: &[Vec2],
-) -> EssentialDecomposition {
+) -> Option<EssentialDecomposition> {
     // Convert to pure solutions for internal use
     let pure_solutions = [
         super::linalg::EssentialSolution {
@@ -95,7 +95,7 @@ pub fn choose_valid_pose(
         },
     ];
 
-    essential_pure::choose_valid_pose(&pure_solutions, points1, points2).into()
+    essential_pure::choose_valid_pose(&pure_solutions, points1, points2).map(|s| s.into())
 }
 
 /// Compute the Sampson distance (first-order approximation to geometric error).
@@ -214,7 +214,8 @@ mod tests {
 
         let e = compute_essential_matrix(&points1, &points2).unwrap();
         let solutions = decompose_essential(&e);
-        let best = choose_valid_pose(&solutions, &points1, &points2);
+        let best = choose_valid_pose(&solutions, &points1, &points2)
+            .expect("choose_valid_pose should return Some for valid data");
 
         // Check that we get a valid rotation (det ≈ 1)
         assert!((best.rotation.determinant() - 1.0).abs() < 0.1);

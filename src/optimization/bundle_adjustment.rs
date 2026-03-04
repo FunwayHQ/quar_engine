@@ -110,51 +110,60 @@ impl LocalBA {
             };
         }
 
-        // For simplicity, we'll optimize points only first, then poses
-        // This is a "structure-only" followed by "motion-only" approach
-        // A full implementation would do simultaneous optimization
+        // Alternating optimization: structure-only then motion-only, repeated
+        let mut opt_points = points.to_vec();
+        let mut opt_rotations = rotations.to_vec();
+        let mut opt_translations = translations.to_vec();
 
-        // Structure-only BA: optimize points with fixed cameras
-        let optimized_points = self.optimize_points(
-            rotations,
-            translations,
-            points,
-            observations,
+        let mut prev_error = compute_mean_reprojection_error(
+            rotations, translations, points, observations,
         );
+        let mut actual_iterations = 0;
 
-        // Motion-only BA: optimize cameras with fixed points
-        let (optimized_rotations, optimized_translations) = self.optimize_poses(
-            rotations,
-            translations,
-            &optimized_points,
-            observations,
-        );
+        for _iter in 0..self.config.max_iterations {
+            actual_iterations += 1;
 
-        // Compute initial and final errors for convergence check
-        let initial_error = compute_mean_reprojection_error(
-            rotations,
-            translations,
-            points,
-            observations,
-        );
+            // Structure-only BA: optimize points with fixed cameras
+            opt_points = self.optimize_points(
+                &opt_rotations,
+                &opt_translations,
+                &opt_points,
+                observations,
+            );
 
-        let mean_error = compute_mean_reprojection_error(
-            &optimized_rotations,
-            &optimized_translations,
-            &optimized_points,
-            observations,
-        );
+            // Motion-only BA: optimize cameras with fixed points
+            let (new_rots, new_trans) = self.optimize_poses(
+                &opt_rotations,
+                &opt_translations,
+                &opt_points,
+                observations,
+            );
+            opt_rotations = new_rots;
+            opt_translations = new_trans;
 
-        // Converged if error decreased or is below tolerance
-        let converged = mean_error < self.config.tolerance
-            || (initial_error - mean_error).abs() < self.config.tolerance;
+            let mean_error = compute_mean_reprojection_error(
+                &opt_rotations,
+                &opt_translations,
+                &opt_points,
+                observations,
+            );
+
+            if (prev_error - mean_error).abs() < self.config.tolerance {
+                prev_error = mean_error;
+                break;
+            }
+            prev_error = mean_error;
+        }
+
+        let converged = prev_error < self.config.tolerance
+            || actual_iterations < self.config.max_iterations;
 
         BAResult {
-            rotations: optimized_rotations,
-            translations: optimized_translations,
-            points: optimized_points,
-            mean_error,
-            iterations: 1, // Single pass of structure-only + motion-only
+            rotations: opt_rotations,
+            translations: opt_translations,
+            points: opt_points,
+            mean_error: prev_error,
+            iterations: actual_iterations,
             converged,
         }
     }
@@ -413,18 +422,41 @@ impl LocalBA {
 
             // Solve 6x6 system
             if let Some(delta) = solve_6x6(&jtj, &jtr) {
+                // Compute old cost before applying delta
+                let old_cost: f64 = observations.iter().map(|obs| {
+                    if obs.point_idx >= points.len() { return 0.0; }
+                    let e = reprojection_residual(&points[obs.point_idx], &rotation, &translation, &obs.observation);
+                    e.dx * e.dx + e.dy * e.dy
+                }).sum();
+
                 // Apply rotation update (using Rodrigues formula for small angles)
                 let angle_axis = [delta[0], delta[1], delta[2]];
                 let delta_rot = rodrigues(&angle_axis);
-                rotation = mat_mul(&delta_rot, &rotation);
+                let new_rotation = mat_mul(&delta_rot, &rotation);
 
                 // Apply translation update
-                translation.x += delta[3];
-                translation.y += delta[4];
-                translation.z += delta[5];
+                let new_translation = Vec3::new(
+                    translation.x + delta[3],
+                    translation.y + delta[4],
+                    translation.z + delta[5],
+                );
 
-                // Decrease lambda on success
-                lambda *= 0.1;
+                // Compute new cost after applying delta
+                let new_cost: f64 = observations.iter().map(|obs| {
+                    if obs.point_idx >= points.len() { return 0.0; }
+                    let e = reprojection_residual(&points[obs.point_idx], &new_rotation, &new_translation, &obs.observation);
+                    e.dx * e.dx + e.dy * e.dy
+                }).sum();
+
+                if new_cost < old_cost {
+                    // Step accepted
+                    rotation = new_rotation;
+                    translation = new_translation;
+                    lambda *= 0.1;
+                } else {
+                    // Step rejected — revert and increase lambda
+                    lambda *= 10.0;
+                }
 
                 // Check convergence
                 let delta_norm: f64 = delta.iter().map(|d| d * d).sum::<f64>().sqrt();

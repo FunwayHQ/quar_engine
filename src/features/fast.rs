@@ -126,8 +126,9 @@ impl FastDetector {
             + (p8 < center_i16 - threshold) as u8
             + (p12 < center_i16 - threshold) as u8;
 
-        // Need at least 3 pixels all brighter or all darker for any chance of 9 contiguous
-        brighter_count >= 3 || darker_count >= 3
+        // Need at least 2 pixels all brighter or all darker at cardinal points for any
+        // chance of 9 contiguous (a valid 9-arc can pass through only 2 of 4 cardinal points)
+        brighter_count >= 2 || darker_count >= 2
     }
 
     /// Full FAST-9 test: check for 9 contiguous pixels all brighter or darker.

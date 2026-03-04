@@ -137,6 +137,10 @@ export class ARSession {
    * Set the 6DoF tracker.
    */
   setTracker(tracker: Tracker6DoF): void {
+    // Destroy old tracker if replacing with a different one
+    if (this._tracker && this._tracker !== tracker) {
+      this._tracker.destroy();
+    }
     this._tracker = tracker;
 
     if (this._config.enableVIO) {

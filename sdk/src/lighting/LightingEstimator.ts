@@ -253,6 +253,9 @@ export class LightingEstimator {
    * Destroy the estimator and free resources.
    */
   destroy(): void {
+    if (this.handle) {
+      try { (this.handle as any).free?.(); } catch (_) { /* WASM may already be cleaned up */ }
+    }
     this.handle = null;
     this.wasmModule = null;
     this.lastEstimate = { ...DEFAULT_ESTIMATE };

@@ -445,6 +445,11 @@ impl PreintegratedImu {
 
         // Update Jacobians (simplified first-order approximation)
         // Use delta_rotation_prev (pre-update) per Forster et al.
+        // IMPORTANT: Save pre-update Jacobians before modification to avoid order-dependent errors
+
+        // Save J_R^g before update (needed for J_v^g computation)
+        let j_rotation_gyro_prev = self.j_rotation_gyro;
+
         // J_R^g += -Jr * dt
         for i in 0..3 {
             for j in 0..3 {
@@ -452,37 +457,41 @@ impl PreintegratedImu {
             }
         }
 
-        // J_v^g += -ΔR_prev * skew(a) * J_R^g * dt
+        // Save J_v^g before update (needed for J_p^g computation)
+        let j_velocity_gyro_prev = self.j_velocity_gyro;
+
+        // J_v^g += -ΔR_prev * skew(a) * J_R^g_prev * dt  (using PRE-update J_R^g)
         let accel_skew = skew(accel_corrected);
         for i in 0..3 {
             for j in 0..3 {
                 for k in 0..3 {
                     for l in 0..3 {
                         self.j_velocity_gyro[i][j] -=
-                            delta_rotation_prev.data[i][k] * accel_skew[k][l] * self.j_rotation_gyro[l][j] * dt;
+                            delta_rotation_prev.data[i][k] * accel_skew[k][l] * j_rotation_gyro_prev[l][j] * dt;
                     }
                 }
             }
         }
 
         // J_v^a += -ΔR_prev * dt
+        let j_velocity_accel_prev = self.j_velocity_accel;
         for i in 0..3 {
             for j in 0..3 {
                 self.j_velocity_accel[i][j] -= delta_rotation_prev.data[i][j] * dt;
             }
         }
 
-        // J_p^g += J_v^g * dt
+        // J_p^g += J_v^g_prev * dt  (using PRE-update J_v^g)
         for i in 0..3 {
             for j in 0..3 {
-                self.j_position_gyro[i][j] += self.j_velocity_gyro[i][j] * dt;
+                self.j_position_gyro[i][j] += j_velocity_gyro_prev[i][j] * dt;
             }
         }
 
-        // J_p^a += J_v^a * dt
+        // J_p^a += J_v^a_prev * dt  (using PRE-update J_v^a)
         for i in 0..3 {
             for j in 0..3 {
-                self.j_position_accel[i][j] += self.j_velocity_accel[i][j] * dt;
+                self.j_position_accel[i][j] += j_velocity_accel_prev[i][j] * dt;
             }
         }
 

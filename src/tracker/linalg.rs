@@ -995,11 +995,17 @@ pub struct EssentialSolution {
 /// Convert a 3x3 rotation matrix to a quaternion [x, y, z, w].
 ///
 /// Uses Shepperd's method for numerical stability.
+/// Guards against division by zero at 180° rotations by clamping sqrt arguments
+/// and falling back to axis-aligned quaternions when s ≈ 0.
 pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
     let trace = r.data[0][0] + r.data[1][1] + r.data[2][2];
 
     let (w, x, y, z) = if trace > 0.0 {
-        let s = (trace + 1.0).sqrt() * 2.0;
+        let s = (trace + 1.0).max(0.0).sqrt() * 2.0;
+        if s < 1e-12 {
+            // Degenerate: return identity
+            return [0.0, 0.0, 0.0, 1.0];
+        }
         (
             0.25 * s,
             (r.data[2][1] - r.data[1][2]) / s,
@@ -1007,7 +1013,11 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
             (r.data[1][0] - r.data[0][1]) / s,
         )
     } else if r.data[0][0] > r.data[1][1] && r.data[0][0] > r.data[2][2] {
-        let s = (1.0 + r.data[0][0] - r.data[1][1] - r.data[2][2]).sqrt() * 2.0;
+        let s = (1.0 + r.data[0][0] - r.data[1][1] - r.data[2][2]).max(0.0).sqrt() * 2.0;
+        if s < 1e-12 {
+            // 180° about X axis
+            return [1.0, 0.0, 0.0, 0.0];
+        }
         (
             (r.data[2][1] - r.data[1][2]) / s,
             0.25 * s,
@@ -1015,7 +1025,11 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
             (r.data[0][2] + r.data[2][0]) / s,
         )
     } else if r.data[1][1] > r.data[2][2] {
-        let s = (1.0 + r.data[1][1] - r.data[0][0] - r.data[2][2]).sqrt() * 2.0;
+        let s = (1.0 + r.data[1][1] - r.data[0][0] - r.data[2][2]).max(0.0).sqrt() * 2.0;
+        if s < 1e-12 {
+            // 180° about Y axis
+            return [0.0, 1.0, 0.0, 0.0];
+        }
         (
             (r.data[0][2] - r.data[2][0]) / s,
             (r.data[0][1] + r.data[1][0]) / s,
@@ -1023,7 +1037,11 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
             (r.data[1][2] + r.data[2][1]) / s,
         )
     } else {
-        let s = (1.0 + r.data[2][2] - r.data[0][0] - r.data[1][1]).sqrt() * 2.0;
+        let s = (1.0 + r.data[2][2] - r.data[0][0] - r.data[1][1]).max(0.0).sqrt() * 2.0;
+        if s < 1e-12 {
+            // 180° about Z axis
+            return [0.0, 0.0, 1.0, 0.0];
+        }
         (
             (r.data[1][0] - r.data[0][1]) / s,
             (r.data[0][2] + r.data[2][0]) / s,
@@ -1033,6 +1051,9 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
     };
 
     let len = (w * w + x * x + y * y + z * z).sqrt();
+    if len < 1e-12 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
     [
         (x / len) as f32,
         (y / len) as f32,
@@ -1613,5 +1634,95 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ==================== rotation_matrix_to_quaternion Tests ====================
+
+    #[test]
+    fn test_rotation_to_quat_identity() {
+        let r = Mat3::identity();
+        let q = rotation_matrix_to_quaternion(&r);
+        // Identity rotation → quaternion [0, 0, 0, 1]
+        assert!((q[0]).abs() < 1e-6, "x should be ~0, got {}", q[0]);
+        assert!((q[1]).abs() < 1e-6, "y should be ~0, got {}", q[1]);
+        assert!((q[2]).abs() < 1e-6, "z should be ~0, got {}", q[2]);
+        assert!((q[3] - 1.0).abs() < 1e-6, "w should be ~1, got {}", q[3]);
+    }
+
+    #[test]
+    fn test_rotation_to_quat_180_about_x() {
+        // 180° about X: diag(1, -1, -1)
+        let r = Mat3::new(
+            1.0, 0.0, 0.0,
+            0.0, -1.0, 0.0,
+            0.0, 0.0, -1.0,
+        );
+        let q = rotation_matrix_to_quaternion(&r);
+        let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+        assert!((len - 1.0).abs() < 1e-6, "quaternion should be unit, len={}", len);
+        // Should be ±[1,0,0,0]
+        assert!((q[0].abs() - 1.0).abs() < 1e-4, "x should be ±1, got {}", q[0]);
+        assert!(q[3].abs() < 1e-4, "w should be ~0, got {}", q[3]);
+    }
+
+    #[test]
+    fn test_rotation_to_quat_180_about_y() {
+        // 180° about Y: diag(-1, 1, -1)
+        let r = Mat3::new(
+            -1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, -1.0,
+        );
+        let q = rotation_matrix_to_quaternion(&r);
+        let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+        assert!((len - 1.0).abs() < 1e-6, "quaternion should be unit, len={}", len);
+        assert!((q[1].abs() - 1.0).abs() < 1e-4, "y should be ±1, got {}", q[1]);
+        assert!(q[3].abs() < 1e-4, "w should be ~0, got {}", q[3]);
+    }
+
+    #[test]
+    fn test_rotation_to_quat_180_about_z() {
+        // 180° about Z: diag(-1, -1, 1)
+        let r = Mat3::new(
+            -1.0, 0.0, 0.0,
+            0.0, -1.0, 0.0,
+            0.0, 0.0, 1.0,
+        );
+        let q = rotation_matrix_to_quaternion(&r);
+        let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+        assert!((len - 1.0).abs() < 1e-6, "quaternion should be unit, len={}", len);
+        assert!((q[2].abs() - 1.0).abs() < 1e-4, "z should be ±1, got {}", q[2]);
+        assert!(q[3].abs() < 1e-4, "w should be ~0, got {}", q[3]);
+    }
+
+    #[test]
+    fn test_rotation_to_quat_near_180() {
+        // 179.9° about X — should not produce NaN
+        let angle = 179.9_f64.to_radians();
+        let c = angle.cos();
+        let s = angle.sin();
+        let r = Mat3::new(
+            1.0, 0.0, 0.0,
+            0.0, c, -s,
+            0.0, s, c,
+        );
+        let q = rotation_matrix_to_quaternion(&r);
+        let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+        assert!((len - 1.0).abs() < 1e-4, "quaternion should be unit, len={}", len);
+        assert!(!q[0].is_nan() && !q[1].is_nan() && !q[2].is_nan() && !q[3].is_nan());
+    }
+
+    #[test]
+    fn test_rotation_to_quat_degenerate_zero_matrix() {
+        // Zero matrix (degenerate, not a valid rotation) — should not panic
+        let r = Mat3::new(
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0,
+        );
+        let q = rotation_matrix_to_quaternion(&r);
+        let len = (q[0]*q[0] + q[1]*q[1] + q[2]*q[2] + q[3]*q[3]).sqrt();
+        assert!((len - 1.0).abs() < 1e-4, "quaternion should be unit even for degenerate input, len={}", len);
+        assert!(!q[0].is_nan() && !q[1].is_nan() && !q[2].is_nan() && !q[3].is_nan());
     }
 }

@@ -28,7 +28,7 @@ pub use finder::{FinderPattern, QrCandidate, QrFinderConfig, QrFinderDetector};
 use crate::camera::CameraIntrinsics;
 use crate::features::rgba_to_grayscale;
 use crate::image_target::TargetPose;
-use crate::tracker::homography::{compute_homography, decompose_homography};
+use crate::tracker::homography::{compute_homography, decompose_homography_full};
 use crate::tracker::linalg::{Mat3, Vec2, rotation_matrix_to_quaternion};
 
 use serde::{Deserialize, Serialize};
@@ -165,13 +165,17 @@ impl QrDetector {
             0.0, 0.0, 1.0,
         );
 
-        // Decompose homography
-        let solutions = decompose_homography(&h, &k);
+        // Decompose homography into up to 4 (R, t, n) solutions
+        let solutions = decompose_homography_full(&h, &k);
         if solutions.is_empty() {
             return None;
         }
 
-        let (r, t, _n) = &solutions[0];
+        // Choose valid solution: normal faces camera (n.z > 0) and object in front (t.z > 0)
+        let (r, t, _n) = solutions.iter()
+            .find(|(_, t, n)| n.z > 0.0 && t.z > 0.0)
+            .or_else(|| solutions.iter().find(|(_, t, _)| t.z > 0.0))
+            .unwrap_or(&solutions[0]);
 
         // Convert rotation to quaternion
         let quat = rotation_matrix_to_quaternion(r);

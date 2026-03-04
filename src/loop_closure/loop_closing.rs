@@ -132,7 +132,7 @@ impl LoopCloser {
     /// Detect loop closure candidates.
     ///
     /// Returns a list of potential loop candidates sorted by score.
-    pub fn detect(&self, query_descriptors: &[OrbDescriptor]) -> Vec<LoopCandidate> {
+    pub fn detect(&mut self, query_descriptors: &[OrbDescriptor]) -> Vec<LoopCandidate> {
         if query_descriptors.is_empty() {
             return vec![];
         }
@@ -176,7 +176,7 @@ impl LoopCloser {
 
     /// Detect loop closure for a specific keyframe.
     pub fn detect_for_keyframe(
-        &self,
+        &mut self,
         query_kf: KeyFrameId,
         query_descriptors: &[OrbDescriptor],
     ) -> Vec<LoopCandidate> {
@@ -250,7 +250,7 @@ impl LoopCloser {
         let inlier_p2: Vec<Vec2> = inlier_indices.iter().map(|&i| points2[i]).collect();
 
         let solutions = decompose_essential(&essential);
-        let best = choose_valid_pose(&solutions, &inlier_p1, &inlier_p2);
+        let best = choose_valid_pose(&solutions, &inlier_p1, &inlier_p2)?;
 
         let inlier_matches: Vec<(usize, usize)> = inlier_indices
             .iter()

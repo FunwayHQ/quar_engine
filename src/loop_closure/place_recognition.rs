@@ -36,6 +36,8 @@ pub struct PlaceRecognitionDB {
     num_keyframes: usize,
     /// Raw descriptors per keyframe (for recomputing BoW when IDF changes)
     keyframe_descriptors: HashMap<KeyFrameId, Vec<OrbDescriptor>>,
+    /// Whether IDF weights have changed since last BoW recomputation
+    idf_dirty: bool,
 }
 
 impl PlaceRecognitionDB {
@@ -47,6 +49,7 @@ impl PlaceRecognitionDB {
             inverted_index: HashMap::new(),
             num_keyframes: 0,
             keyframe_descriptors: HashMap::new(),
+            idf_dirty: false,
         }
     }
 
@@ -80,15 +83,19 @@ impl PlaceRecognitionDB {
         self.keyframe_bows.insert(kf_id, bow);
         self.num_keyframes += 1;
 
-        // Recompute all existing BoW vectors with updated IDF weights
-        // Collect IDs first to avoid borrow conflict
-        let existing_ids: Vec<KeyFrameId> = self
-            .keyframe_descriptors
-            .keys()
-            .copied()
-            .filter(|id| *id != kf_id)
-            .collect();
-        for id in existing_ids {
+        // Mark IDF as dirty — existing BoW vectors will be recomputed lazily on next query()
+        self.idf_dirty = true;
+    }
+
+    /// Recompute all BoW vectors if IDF weights have changed.
+    fn recompute_bows_if_dirty(&mut self) {
+        if !self.idf_dirty {
+            return;
+        }
+        self.idf_dirty = false;
+
+        let all_ids: Vec<KeyFrameId> = self.keyframe_descriptors.keys().copied().collect();
+        for id in all_ids {
             if let Some(descs) = self.keyframe_descriptors.get(&id) {
                 let new_bow = BowVector::from_descriptors(descs, &self.vocab);
                 self.keyframe_bows.insert(id, new_bow);
@@ -107,12 +114,14 @@ impl PlaceRecognitionDB {
     /// # Returns
     /// Vector of (keyframe_id, score) pairs, sorted by score descending
     pub fn query(
-        &self,
+        &mut self,
         query_descriptors: &[OrbDescriptor],
         exclude: &HashSet<KeyFrameId>,
         top_k: usize,
         min_score: f64,
     ) -> Vec<PlaceMatch> {
+        // Recompute BoW vectors if IDF weights have changed since last query
+        self.recompute_bows_if_dirty();
         if query_descriptors.is_empty() || self.keyframe_bows.is_empty() {
             return vec![];
         }
@@ -380,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_db_query_empty_db() {
-        let db = PlaceRecognitionDB::with_defaults();
+        let mut db = PlaceRecognitionDB::with_defaults();
         let descriptors = create_test_descriptors(20, 42);
 
         let matches = db.query(&descriptors, &HashSet::new(), 5, 0.0);

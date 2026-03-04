@@ -194,6 +194,22 @@ pub fn ransac_flow_filter(
     width: u32,
     height: u32,
 ) -> (Vec<bool>, AffineModel) {
+    ransac_flow_filter_seeded(prev_points, curr_points, threshold, iterations, width, height, 0)
+}
+
+/// RANSAC-based flow outlier rejection with frame-derived seed.
+///
+/// Uses frame_count to vary the RANSAC sample sequence across frames,
+/// avoiding the degenerate case where the same samples are always picked.
+pub fn ransac_flow_filter_seeded(
+    prev_points: &[Point2],
+    curr_points: &[Point2],
+    threshold: f32,
+    iterations: usize,
+    width: u32,
+    height: u32,
+    frame_count: u64,
+) -> (Vec<bool>, AffineModel) {
     let n = prev_points.len();
     if n < 3 {
         return (vec![true; n], AffineModel::default());
@@ -204,8 +220,8 @@ pub fn ransac_flow_filter(
     let mut best_inlier_count = 0;
     let mut best_model = AffineModel::default();
 
-    // Simple RANSAC: sample 2 points, fit model, count inliers
-    let mut seed: u64 = 12345;
+    // Deterministic RANSAC with frame-derived seed for varied sampling
+    let mut seed: u64 = frame_count.wrapping_mul(6364136223846793005).wrapping_add(12345);
     for _iter in 0..iterations {
         // Deterministic sampling via LCG
         seed = seed.wrapping_mul(1103515245).wrapping_add(12345);

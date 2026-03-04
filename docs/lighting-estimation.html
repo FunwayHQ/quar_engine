@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QUAR Engine - Lighting Estimation Example</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    #video-canvas, #three-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #three-canvas { pointer-events: none; }
+    #hud {
+      position: absolute;
+      top: 20px; left: 20px;
+      background: rgba(0,0,0,0.85);
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      z-index: 100;
+      min-width: 240px;
+    }
+    #hud h3 { color: #fbbf24; margin-bottom: 10px; }
+    .section { margin-top: 12px; padding-top: 8px; border-top: 1px solid #333; }
+    .section-title { color: #888; font-size: 11px; margin-bottom: 6px; }
+    .stat { margin: 3px 0; display: flex; justify-content: space-between; }
+    .label { color: #888; }
+    .value { color: #4ade80; }
+    #color-preview {
+      width: 100%;
+      height: 24px;
+      border-radius: 4px;
+      margin-top: 6px;
+      border: 1px solid #333;
+    }
+    #status {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9);
+      padding: 30px;
+      border-radius: 12px;
+      text-align: center;
+      z-index: 100;
+    }
+    #status.hidden { display: none; }
+    button {
+      margin-top: 15px;
+      padding: 12px 30px;
+      background: #fbbf24;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #f59e0b; }
+    .direction-indicator {
+      width: 80px;
+      height: 80px;
+      border: 2px solid #333;
+      border-radius: 50%;
+      margin: 10px auto;
+      position: relative;
+    }
+    .direction-arrow {
+      position: absolute;
+      width: 4px;
+      height: 30px;
+      background: #fbbf24;
+      left: 50%;
+      top: 50%;
+      transform-origin: bottom center;
+      border-radius: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="video-canvas"></canvas>
+    <canvas id="three-canvas"></canvas>
+
+    <div id="hud">
+      <h3>Lighting Estimation</h3>
+      <div class="stat"><span class="label">Confidence:</span><span id="confidence" class="value">--</span></div>
+
+      <div class="section">
+        <div class="section-title">AMBIENT LIGHT</div>
+        <div class="stat"><span class="label">Intensity:</span><span id="ambient-int" class="value">--</span></div>
+        <div id="color-preview"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">DIRECTIONAL LIGHT</div>
+        <div class="stat"><span class="label">Intensity:</span><span id="dir-int" class="value">--</span></div>
+        <div class="direction-indicator">
+          <div id="direction-arrow" class="direction-arrow"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">COLOR TEMPERATURE</div>
+        <div class="stat"><span class="label">Kelvin:</span><span id="color-temp" class="value">--</span></div>
+      </div>
+    </div>
+
+    <div id="status">
+      <p>Lighting Estimation Example</p>
+      <p style="color: #888; margin-top: 10px;">Estimates ambient and directional light from camera</p>
+      <button id="start-btn">Start Demo</button>
+    </div>
+  </div>
+
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r152/three.min.js"></script>
+
+  <script type="module">
+    // Import WASM module
+    import init, { LightingEstimatorHandle, version } from './pkg/quar_engine.js';
+
+    // DOM elements
+    const videoCanvas = document.getElementById('video-canvas');
+    const threeCanvas = document.getElementById('three-canvas');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('start-btn');
+    const confidenceEl = document.getElementById('confidence');
+    const ambientIntEl = document.getElementById('ambient-int');
+    const colorPreview = document.getElementById('color-preview');
+    const dirIntEl = document.getElementById('dir-int');
+    const directionArrow = document.getElementById('direction-arrow');
+    const colorTempEl = document.getElementById('color-temp');
+
+    // State
+    let estimator = null;
+    let video = null;
+    let videoCtx = null;
+    let scene, camera, renderer;
+    let ambientLight, directionalLight;
+    let sphere;
+    let lastUpdateTime = 0;
+    let isRunning = false;
+
+    // Initialize
+    async function initialize() {
+      await init();
+      console.log('QUAR Engine:', version());
+      setupThreeJS();
+      startBtn.addEventListener('click', startDemo);
+    }
+
+    function setupThreeJS() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+      camera.position.set(0, 0, 0.8);
+
+      renderer = new THREE.WebGLRenderer({
+        canvas: threeCanvas,
+        alpha: true,
+        antialias: true
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+
+      // Add a sphere to show lighting
+      const geometry = new THREE.SphereGeometry(0.15, 32, 32);
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xcccccc,
+        roughness: 0.3,
+        metalness: 0.1
+      });
+      sphere = new THREE.Mesh(geometry, material);
+      scene.add(sphere);
+
+      // Add a floor plane
+      const floorGeom = new THREE.PlaneGeometry(2, 2);
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8 });
+      const floor = new THREE.Mesh(floorGeom, floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -0.2;
+      scene.add(floor);
+
+      // Lighting (will be updated by estimator)
+      ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+      scene.add(ambientLight);
+
+      directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+      directionalLight.position.set(1, 1, 1);
+      scene.add(directionalLight);
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    }
+
+    async function startDemo() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } }
+        });
+
+        video = document.createElement('video');
+        video.srcObject = stream;
+        video.setAttribute('playsinline', '');
+        await video.play();
+
+        videoCanvas.width = video.videoWidth;
+        videoCanvas.height = video.videoHeight;
+        videoCtx = videoCanvas.getContext('2d');
+
+        // Create lighting estimator with smoothing
+        estimator = LightingEstimatorHandle.with_smoothing(0.85);
+
+        statusEl.classList.add('hidden');
+        isRunning = true;
+
+        requestAnimationFrame(updateLoop);
+      } catch (err) {
+        console.error('Failed to start:', err);
+        alert('Failed to start: ' + err.message);
+      }
+    }
+
+    function updateLoop() {
+      if (!isRunning) return;
+
+      // Draw video
+      videoCtx.drawImage(video, 0, 0);
+
+      // Rate limit estimation (every 100ms)
+      const now = performance.now();
+      if (now - lastUpdateTime >= 100) {
+        lastUpdateTime = now;
+
+        const imageData = videoCtx.getImageData(0, 0, videoCanvas.width, videoCanvas.height);
+        const estimate = estimator.analyze_frame(imageData.data, videoCanvas.width, videoCanvas.height);
+
+        if (estimate && estimate.confidence > 0.2) {
+          updateLighting(estimate);
+          updateHUD(estimate);
+        }
+      }
+
+      // Animate sphere
+      sphere.rotation.y += 0.005;
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(updateLoop);
+    }
+
+    function updateLighting(estimate) {
+      // Update ambient light
+      const ambientColor = rgbToHex(estimate.ambient_color);
+      ambientLight.color.setHex(ambientColor);
+      ambientLight.intensity = estimate.ambient_intensity * 0.5;
+
+      // Update directional light
+      directionalLight.color.setHex(ambientColor);
+      directionalLight.intensity = estimate.directional_intensity * 0.8;
+
+      // Update directional light position (opposite of direction = where light comes from)
+      const [dx, dy, dz] = estimate.directional_direction;
+      directionalLight.position.set(-dx * 5, -dy * 5, -dz * 5);
+    }
+
+    function updateHUD(estimate) {
+      // Confidence
+      confidenceEl.textContent = (estimate.confidence * 100).toFixed(0) + '%';
+      confidenceEl.style.color = estimate.confidence > 0.5 ? '#4ade80' : '#fbbf24';
+
+      // Ambient
+      ambientIntEl.textContent = (estimate.ambient_intensity * 100).toFixed(0) + '%';
+      const [r, g, b] = estimate.ambient_color;
+      colorPreview.style.background = `rgb(${Math.round(r*255)}, ${Math.round(g*255)}, ${Math.round(b*255)})`;
+
+      // Directional
+      dirIntEl.textContent = (estimate.directional_intensity * 100).toFixed(0) + '%';
+
+      // Direction arrow (rotate based on XY direction)
+      const [dx, dy] = estimate.directional_direction;
+      const angle = Math.atan2(dx, -dy) * (180 / Math.PI);
+      directionArrow.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+
+      // Color temperature
+      colorTempEl.textContent = Math.round(estimate.color_temperature) + 'K';
+    }
+
+    function rgbToHex(rgb) {
+      const [r, g, b] = rgb;
+      const ri = Math.round(Math.max(0, Math.min(1, r)) * 255);
+      const gi = Math.round(Math.max(0, Math.min(1, g)) * 255);
+      const bi = Math.round(Math.max(0, Math.min(1, b)) * 255);
+      return (ri << 16) | (gi << 8) | bi;
+    }
+
+    initialize().catch(console.error);
+  </script>
+</body>
+</html>

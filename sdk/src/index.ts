@@ -298,6 +298,11 @@ export class QuarEngine {
     this.pause();
     this.cameraManager.destroy();
     this.frameCapture.destroy();
+    // Free WASM tracker handle to prevent memory leak
+    if (this.trackerHandle) {
+      try { (this.trackerHandle as any).free?.(); } catch (_) { /* WASM may already be cleaned up */ }
+      this.trackerHandle = null;
+    }
     this.connectedCamera = null;
     this.wasmModule = null;
     this.eventHandlers.clear();

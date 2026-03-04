@@ -7,10 +7,10 @@ use super::template::ImageTemplate;
 use crate::camera::CameraIntrinsics;
 use crate::features::{
     compute_descriptors_filtered, non_maximum_suppression, rgba_to_grayscale,
-    BruteForceMatcher, FastDetector, KeyPoint, OrbDescriptor, DEFAULT_RATIO,
+    FastDetector, KeyPoint, OrbDescriptor, DEFAULT_RATIO,
 };
 use crate::tracker::homography::{
-    compute_homography_ransac, decompose_homography, project_corners,
+    compute_homography_ransac, decompose_homography_full, project_corners,
 };
 use crate::tracker::linalg::{Mat3, Vec2, rotation_matrix_to_quaternion};
 
@@ -91,8 +91,6 @@ pub struct ImageTargetDetector {
     templates: Vec<ImageTemplate>,
     /// Configuration
     config: DetectorConfig,
-    /// Feature matcher
-    matcher: BruteForceMatcher,
     /// FAST detector for frame features
     fast_detector: FastDetector,
     /// Camera intrinsics (optional, for pose estimation)
@@ -109,7 +107,6 @@ impl ImageTargetDetector {
     pub fn with_config(config: DetectorConfig) -> Self {
         Self {
             templates: Vec::new(),
-            matcher: BruteForceMatcher::with_max_distance(config.max_descriptor_distance),
             fast_detector: FastDetector::new(config.fast_threshold),
             intrinsics: None,
             config,
@@ -241,8 +238,13 @@ impl ImageTargetDetector {
         frame_width: u32,
         frame_height: u32,
     ) -> Option<DetectedTarget> {
-        // Match descriptors
-        let matches = self.matcher.match_descriptors(&template.descriptors, frame_descriptors);
+        // Match descriptors with ratio test for better quality
+        let matches = crate::features::match_with_ratio_test(
+            &template.descriptors,
+            frame_descriptors,
+            self.config.max_descriptor_distance,
+            self.config.ratio_threshold,
+        );
 
         if matches.len() < self.config.min_matches {
             return None;
@@ -317,14 +319,19 @@ impl ImageTargetDetector {
             0.0, 0.0, 1.0,
         );
 
-        // Decompose homography
-        let solutions = decompose_homography(homography, &k);
+        // Decompose homography into up to 4 (R, t, n) solutions
+        let solutions = decompose_homography_full(homography, &k);
         if solutions.is_empty() {
             return None;
         }
 
-        // Take first solution (for planar targets, should be correct)
-        let (r, t, _n) = &solutions[0];
+        // Choose the physically valid solution via chirality check:
+        // - Normal should face the camera (n.z > 0)
+        // - Target should be in front of camera (t.z > 0)
+        let (r, t, _n) = solutions.iter()
+            .find(|(_, t, n)| n.z > 0.0 && t.z > 0.0)
+            .or_else(|| solutions.iter().find(|(_, t, _)| t.z > 0.0))
+            .unwrap_or(&solutions[0]);
 
         // Convert rotation matrix to quaternion
         let quat = rotation_matrix_to_quaternion(r);
