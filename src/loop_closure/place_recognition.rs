@@ -158,7 +158,7 @@ impl PlaceRecognitionDB {
             .collect();
 
         // Sort by score descending
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
         // Return top k
         matches.truncate(top_k);
@@ -192,6 +192,7 @@ impl PlaceRecognitionDB {
             // Remove stored descriptors
             self.keyframe_descriptors.remove(&kf_id);
             self.num_keyframes -= 1;
+            self.idf_dirty = true;
             true
         } else {
             false

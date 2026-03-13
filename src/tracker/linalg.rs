@@ -1002,7 +1002,7 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
 
     let (w, x, y, z) = if trace > 0.0 {
         let s = (trace + 1.0).max(0.0).sqrt() * 2.0;
-        if s < 1e-12 {
+        if s < 1e-6 {
             // Degenerate: return identity
             return [0.0, 0.0, 0.0, 1.0];
         }
@@ -1014,7 +1014,7 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
         )
     } else if r.data[0][0] > r.data[1][1] && r.data[0][0] > r.data[2][2] {
         let s = (1.0 + r.data[0][0] - r.data[1][1] - r.data[2][2]).max(0.0).sqrt() * 2.0;
-        if s < 1e-12 {
+        if s < 1e-6 {
             // 180° about X axis
             return [1.0, 0.0, 0.0, 0.0];
         }
@@ -1026,7 +1026,7 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
         )
     } else if r.data[1][1] > r.data[2][2] {
         let s = (1.0 + r.data[1][1] - r.data[0][0] - r.data[2][2]).max(0.0).sqrt() * 2.0;
-        if s < 1e-12 {
+        if s < 1e-6 {
             // 180° about Y axis
             return [0.0, 1.0, 0.0, 0.0];
         }
@@ -1038,7 +1038,7 @@ pub fn rotation_matrix_to_quaternion(r: &Mat3) -> [f32; 4] {
         )
     } else {
         let s = (1.0 + r.data[2][2] - r.data[0][0] - r.data[1][1]).max(0.0).sqrt() * 2.0;
-        if s < 1e-12 {
+        if s < 1e-6 {
             // 180° about Z axis
             return [0.0, 0.0, 1.0, 0.0];
         }

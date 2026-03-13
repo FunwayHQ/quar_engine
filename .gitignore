@@ -37,7 +37,6 @@ coverage/
 *.lcov
 
 # Rust
-Cargo.lock
 **/*.rs.bk
 
 # Dev certificates

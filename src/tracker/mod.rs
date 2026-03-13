@@ -131,28 +131,6 @@ impl Tracker {
         }
     }
 
-    /// Create tracker with specific image dimensions for robust tracking.
-    pub fn with_dimensions(config: TrackerConfig, width: u32, height: u32) -> Self {
-        Self {
-            prev_gray: None,
-            prev_points: Vec::new(),
-            lk_tracker: LucasKanadeTracker::new(config.window_size, config.pyramid_levels),
-            fast_detector: FastDetector::new(config.fast_threshold),
-            current_pose: Pose3D::identity(),
-            config,
-            frame_count: 0,
-            accumulated_translation: [0.0, 0.0, 0.0],
-            robust_tracker: RobustTracker::new(width, height),
-            tracking_confidence: TrackingConfidence::Lost,
-            last_inlier_count: 0,
-            flow_compensator: FlowCompensator::new(FlowCameraParams::from_fov(width, height, 60.0)),
-            gyro_compensation_enabled: false,
-            motion_state: MotionState::new(),
-            kalman_enabled: true,
-            last_frame_time: 0.0,
-        }
-    }
-
     /// Process a new frame and return the estimated pose.
     ///
     /// # Arguments

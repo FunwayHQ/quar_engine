@@ -119,6 +119,7 @@ impl LocalBA {
             rotations, translations, points, observations,
         );
         let mut actual_iterations = 0;
+        let mut converged = false;
 
         for _iter in 0..self.config.max_iterations {
             actual_iterations += 1;
@@ -150,13 +151,11 @@ impl LocalBA {
 
             if (prev_error - mean_error).abs() < self.config.tolerance {
                 prev_error = mean_error;
+                converged = true;
                 break;
             }
             prev_error = mean_error;
         }
-
-        let converged = prev_error < self.config.tolerance
-            || actual_iterations < self.config.max_iterations;
 
         BAResult {
             rotations: opt_rotations,

@@ -533,7 +533,7 @@
     // Use Tracker6DoFHandle with VIO support and PlaneDetectorHandle
     let init, Tracker6DoFHandle, PlaneDetectorHandle, version;
     try {
-      const wasm = await import('./pkg/quar_engine.js?v=18');
+      const wasm = await import('./pkg/quar_engine.js');
       init = wasm.default;
       Tracker6DoFHandle = wasm.Tracker6DoFHandle;
       PlaneDetectorHandle = wasm.PlaneDetectorHandle;

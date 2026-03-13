@@ -35,7 +35,12 @@ pub struct CameraIntrinsics {
 
 impl CameraIntrinsics {
     /// Create camera intrinsics with explicit parameters.
+    ///
+    /// # Panics
+    /// Panics if fx or fy are not positive.
     pub fn new(fx: f64, fy: f64, cx: f64, cy: f64, width: u32, height: u32) -> Self {
+        assert!(fx > 0.0, "Focal length fx must be positive, got {}", fx);
+        assert!(fy > 0.0, "Focal length fy must be positive, got {}", fy);
         Self {
             fx,
             fy,
@@ -132,7 +137,12 @@ impl CameraIntrinsics {
     }
 
     /// Get the inverse intrinsic matrix K^(-1).
+    ///
+    /// Returns identity if fx or fy are near zero (should not happen if constructed via `new()`).
     pub fn matrix_inverse(&self) -> Mat3 {
+        if self.fx.abs() < f64::EPSILON || self.fy.abs() < f64::EPSILON {
+            return Mat3::identity();
+        }
         Mat3::new(
             1.0 / self.fx, 0.0, -self.cx / self.fx,
             0.0, 1.0 / self.fy, -self.cy / self.fy,

@@ -300,16 +300,26 @@ export class WorkerBridge {
    */
   terminate(): void {
     if (this.worker) {
+      // Immediately detach event handlers to prevent stale callbacks
+      this.worker.onmessage = null;
+      this.worker.onerror = null;
+
       const message: MainToWorkerMessage = { type: 'terminate' };
       this.worker.postMessage(message);
 
       // Give worker time to clean up, then force terminate
+      const workerRef = this.worker;
+      this.worker = null;
       setTimeout(() => {
-        if (this.worker) {
-          this.worker.terminate();
-          this.worker = null;
-        }
+        workerRef.terminate();
       }, 100);
+    }
+
+    // Reject pending init promise if terminate() called during initialization
+    if (this.initReject) {
+      this.initReject(new Error('Worker terminated during initialization'));
+      this.initResolve = null;
+      this.initReject = null;
     }
 
     this.sharedBuffer?.destroy();
@@ -397,12 +407,12 @@ export class WorkerBridge {
       let sharedBuffers = [];
       let isProcessing = false;
 
-      async function initWasm(wasmPath) {
+      async function initWasm(wasmPath, width, height) {
         try {
           const module = await import(wasmPath);
           await module.default();
           wasmModule = module;
-          trackerHandle = new module.TrackerHandle();
+          trackerHandle = new module.Tracker6DoFHandle(width || 640, height || 480);
           return true;
         } catch (error) {
           self.postMessage({ type: 'error', code: 'WASM_LOAD_FAILED', message: String(error) });
@@ -455,7 +465,7 @@ export class WorkerBridge {
         switch (msg.type) {
           case 'init':
             self.postMessage({ type: 'status', status: 'initializing' });
-            const success = await initWasm(msg.wasmPath);
+            const success = await initWasm(msg.wasmPath, msg.width, msg.height);
             if (success) {
               self.postMessage({ type: 'ready', version: wasmModule.version() });
             }

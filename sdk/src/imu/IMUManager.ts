@@ -210,9 +210,21 @@ export class IMUManager {
     this.calibrationGyroSamples = [];
     this.calibrationStartTime = performance.now();
 
+    const timeoutMs = this.config.calibrationDuration * 2;
+
     return new Promise((resolve, reject) => {
       this.calibrationResolve = resolve;
       this.calibrationReject = reject;
+
+      setTimeout(() => {
+        if (this.calibrationState === CalibrationState.Calibrating) {
+          this.calibrationState = CalibrationState.Idle;
+          this.emitCalibration(CalibrationState.Idle);
+          this.calibrationReject?.(new Error(`Calibration timed out after ${timeoutMs}ms`));
+          this.calibrationResolve = null;
+          this.calibrationReject = null;
+        }
+      }, timeoutMs);
     });
   }
 
@@ -274,30 +286,46 @@ export class IMUManager {
 
   /**
    * Register callback for new readings.
+   * @returns Unsubscribe function
    */
-  onReading(callback: (reading: IMUReading) => void): void {
+  onReading(callback: (reading: IMUReading) => void): () => void {
     this.onReadingCallbacks.push(callback);
+    return () => {
+      this.onReadingCallbacks = this.onReadingCallbacks.filter(cb => cb !== callback);
+    };
   }
 
   /**
    * Register callback for state changes.
+   * @returns Unsubscribe function
    */
-  onStateChange(callback: (state: IMUState) => void): void {
+  onStateChange(callback: (state: IMUState) => void): () => void {
     this.onStateChangeCallbacks.push(callback);
+    return () => {
+      this.onStateChangeCallbacks = this.onStateChangeCallbacks.filter(cb => cb !== callback);
+    };
   }
 
   /**
    * Register callback for calibration state changes.
+   * @returns Unsubscribe function
    */
-  onCalibration(callback: (state: CalibrationState, bias?: IMUBias) => void): void {
+  onCalibration(callback: (state: CalibrationState, bias?: IMUBias) => void): () => void {
     this.onCalibrationCallbacks.push(callback);
+    return () => {
+      this.onCalibrationCallbacks = this.onCalibrationCallbacks.filter(cb => cb !== callback);
+    };
   }
 
   /**
    * Register callback for errors.
+   * @returns Unsubscribe function
    */
-  onError(callback: (error: Error) => void): void {
+  onError(callback: (error: Error) => void): () => void {
     this.onErrorCallbacks.push(callback);
+    return () => {
+      this.onErrorCallbacks = this.onErrorCallbacks.filter(cb => cb !== callback);
+    };
   }
 
   /**
@@ -370,6 +398,7 @@ export class IMUManager {
     // Apply bias correction
     if (this.calibrationState === CalibrationState.Calibrated) {
       acceleration = subtract(acceleration, this.bias.accelerometer);
+      accelerationIncludingGravity = subtract(accelerationIncludingGravity, this.bias.accelerometer);
       rotationRate = subtract(rotationRate, this.bias.gyroscope);
     }
 

@@ -47,7 +47,7 @@ pub fn init() {
     console_error_panic_hook::set_once();
 }
 
-/// Returns the version of the Aether engine.
+/// Returns the version of the QUAR engine.
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()

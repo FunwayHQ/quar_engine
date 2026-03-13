@@ -40,9 +40,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Sprint 13: Image Target & QR Detection** - Homography DLT/RANSAC/decomposition, image target detection with ORB matching, QR finder pattern detection (1:1:3:1:1 ratio), pose estimation from planar targets (39 tests)
 
 ### Current Status
-- **Full 6DoF tracking with VIO, mapping, BA, loop closure, plane detection, image targets, and QR detection in WASM** (~288KB uncompressed, ~51KB gzipped)
+- **Full 6DoF tracking with VIO, mapping, BA, loop closure, plane detection, image targets, and QR detection in WASM** (~378KB uncompressed, ~161KB gzipped)
 - **TypeScript SDK** with Web Worker support in `/sdk/` (builds to ES/CJS modules)
-- 532 unit tests passing (Rust) + 440+ SDK tests (TypeScript)
+- 543 unit tests passing (Rust) + 494 SDK tests (TypeScript)
 - Bundle Adjustment integrated into tracker (39 BA tests)
 - Loop Closure integrated into tracker (38 LC tests)
 - Pure-Rust linear algebra (no external math dependencies)
@@ -188,7 +188,7 @@ Based on ORB-SLAM3 (Campos et al., IEEE T-RO 2021) - see `docs/ORB-SLAM3-REFEREN
 
 ### Performance Targets
 - Tracking loop: <16ms (60 FPS) on high-end devices
-- WASM binary: <3MB gzipped (currently ~68KB with VIO!)
+- WASM binary: <3MB gzipped (currently ~161KB with VIO, BA, loop closure, image targets)
 - Motion-to-photon latency: <30ms
 
 ## API Design

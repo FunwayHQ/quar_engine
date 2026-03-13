@@ -438,6 +438,12 @@ impl PoseGraph {
                 }
             }
 
+            // Check for NaN/Inf in gradient (divergence guard)
+            let has_nan = gradient.iter().any(|g| g.iter().any(|d| !d.is_finite()));
+            if has_nan {
+                break;
+            }
+
             // Solve diagonal system and apply updates
             let mut max_delta = 0.0f64;
             for i in 1..n_nodes {
@@ -501,6 +507,18 @@ fn log_rotation(r: &Mat3) -> [f64; 3] {
             (r.data[0][2] - r.data[2][0]) / 2.0,
             (r.data[1][0] - r.data[0][1]) / 2.0,
         ];
+    }
+
+    // Near 180°: sin(theta) ≈ 0, extract axis from diagonal of R
+    if (std::f64::consts::PI - theta).abs() < 1e-6 {
+        // R ≈ 2*n*n^T - I, so diagonal gives n²
+        let nx = ((r.data[0][0] + 1.0) / 2.0).max(0.0).sqrt();
+        let ny = ((r.data[1][1] + 1.0) / 2.0).max(0.0).sqrt();
+        let nz = ((r.data[2][2] + 1.0) / 2.0).max(0.0).sqrt();
+        // Resolve sign ambiguity from off-diagonal elements
+        let ny = if r.data[0][1] + r.data[1][0] < 0.0 { -ny } else { ny };
+        let nz = if r.data[0][2] + r.data[2][0] < 0.0 { -nz } else { nz };
+        return [nx * theta, ny * theta, nz * theta];
     }
 
     let scale = theta / (2.0 * theta.sin());

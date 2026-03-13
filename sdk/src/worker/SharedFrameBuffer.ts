@@ -118,9 +118,6 @@ export class SharedFrameBuffer {
     // Atomically transition WRITING → FILLED
     Atomics.store(controlView, 0, BUFFER_CONTROL_FILLED);
 
-    // Notify waiting worker
-    Atomics.notify(controlView, 0);
-
     // Switch to other buffer for next write
     this.currentWriteIndex = (writeIndex + 1) % 2;
 

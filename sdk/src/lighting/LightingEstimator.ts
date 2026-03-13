@@ -108,7 +108,7 @@ export class LightingEstimator {
         with_smoothing: (smoothing: number) => WasmLightingEstimatorHandle;
       };
 
-      if (this.config.smoothing !== 0.8) {
+      if (this.config.smoothing !== 0.8 && typeof HandleClass.with_smoothing === 'function') {
         this.handle = HandleClass.with_smoothing(this.config.smoothing);
       } else {
         this.handle = new HandleClass();

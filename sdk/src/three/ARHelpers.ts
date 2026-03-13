@@ -609,7 +609,7 @@ export function createARSceneFactory(THREE: {
     const scene = new THREE.Scene();
 
     // Create camera
-    const aspect = canvas.clientWidth / canvas.clientHeight;
+    const aspect = canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1;
     const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
 
     // Create renderer
@@ -634,6 +634,16 @@ export function createARSceneFactory(THREE: {
 
     // Dispose function
     const dispose = () => {
+      scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) {
+          const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const mat of materials) {
+            mat.dispose();
+          }
+        }
+      });
       renderer.dispose();
       scene.clear();
     };

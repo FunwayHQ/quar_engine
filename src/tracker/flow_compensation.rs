@@ -47,8 +47,10 @@ impl FlowCameraParams {
     }
 
     /// Create with explicit focal length.
+    ///
+    /// Clamps fx and fy to a minimum of 1.0 to prevent division by zero.
     pub fn new(fx: f32, fy: f32, cx: f32, cy: f32) -> Self {
-        Self { fx, fy, cx, cy }
+        Self { fx: fx.max(1.0), fy: fy.max(1.0), cx, cy }
     }
 
     /// Normalize a pixel coordinate to camera coordinates.
@@ -238,8 +240,14 @@ impl GyroBuffer {
         }
     }
 
-    /// Add a new gyro reading.
+    /// Add a new gyro reading. Discards out-of-order timestamps.
     pub fn push(&mut self, reading: GyroReading) {
+        // Validate monotonic timestamps: discard out-of-order samples
+        if let Some(last) = self.readings.back() {
+            if reading.timestamp_ms < last.timestamp_ms {
+                return;
+            }
+        }
         if self.readings.len() >= self.max_readings {
             self.readings.pop_front();
         }

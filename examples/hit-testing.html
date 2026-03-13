@@ -224,7 +224,7 @@
         startBtn.textContent = 'Loading...';
 
         // Load WASM dynamically
-        const wasm = await import('./pkg/quar_engine.js');
+        const wasm = await import('../docs/pkg/quar_engine.js');
         await wasm.default();
         Tracker6DoFHandle = wasm.Tracker6DoFHandle;
         console.log('QUAR Engine:', wasm.version());

@@ -242,7 +242,7 @@ pub fn median_reprojection_error(
         return f64::MAX;
     }
 
-    errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    errors.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     errors[errors.len() / 2]
 }
 

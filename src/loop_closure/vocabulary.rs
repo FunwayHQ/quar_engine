@@ -81,7 +81,7 @@ impl Vocabulary {
     pub fn transform(&self, descriptor: &OrbDescriptor) -> usize {
         let mut word_id: usize = 0;
 
-        for (proj_idx, bits) in self.projection_bits.iter().enumerate() {
+        for bits in self.projection_bits.iter() {
             let mut proj_value: usize = 0;
             for (bit_idx, &bit_pos) in bits.iter().enumerate() {
                 let byte_idx = bit_pos / 8;
@@ -90,8 +90,8 @@ impl Vocabulary {
                     proj_value |= 1 << bit_idx;
                 }
             }
-            // Combine projections using XOR
-            word_id ^= proj_value.wrapping_mul(proj_idx + 1);
+            // Combine projections using multiplicative hash (better distribution than XOR)
+            word_id = word_id.wrapping_mul(2654435761).wrapping_add(proj_value);
         }
 
         word_id % self.num_words

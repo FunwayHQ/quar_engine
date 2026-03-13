@@ -16,6 +16,7 @@
 //! 3. Robust estimation with outlier rejection
 
 use super::imu_preintegration::{PreintegratedImu, GRAVITY_MAGNITUDE};
+use std::collections::VecDeque;
 
 /// Scale estimation result
 #[derive(Debug, Clone, Copy)]
@@ -68,7 +69,7 @@ struct VelocitySample {
 /// Scale estimator using visual-inertial velocity matching
 pub struct ScaleEstimator {
     /// Velocity samples for scale estimation
-    samples: Vec<VelocitySample>,
+    samples: VecDeque<VelocitySample>,
     /// Maximum samples to keep
     max_samples: usize,
     /// Current scale estimate
@@ -84,7 +85,7 @@ pub struct ScaleEstimator {
 impl ScaleEstimator {
     pub fn new() -> Self {
         Self {
-            samples: Vec::with_capacity(100),
+            samples: VecDeque::with_capacity(100),
             max_samples: 100,
             current_estimate: ScaleEstimate::default_scale(),
             min_speed: 0.1, // 10 cm/s minimum
@@ -175,6 +176,11 @@ impl ScaleEstimator {
             visual_velocity[2] * imu_velocity[2];
         let directional_imu_speed = dot_product / visual_speed;
 
+        // Reject samples where IMU and visual directions disagree
+        if directional_imu_speed <= 0.0 {
+            return;
+        }
+
         let sample = VelocitySample {
             visual_speed,
             imu_speed: directional_imu_speed,
@@ -183,9 +189,9 @@ impl ScaleEstimator {
         };
 
         if self.samples.len() >= self.max_samples {
-            self.samples.remove(0);
+            self.samples.pop_front();
         }
-        self.samples.push(sample);
+        self.samples.push_back(sample);
 
         // Update scale estimate
         self.update_estimate();
@@ -312,7 +318,7 @@ impl Default for ScaleEstimator {
 /// accelerometer readings during low-motion periods.
 pub struct GravityEstimator {
     /// Accumulated gravity estimates
-    gravity_samples: Vec<[f64; 3]>,
+    gravity_samples: VecDeque<[f64; 3]>,
     /// Current best estimate
     gravity: [f64; 3],
     /// Maximum samples
@@ -324,7 +330,7 @@ pub struct GravityEstimator {
 impl GravityEstimator {
     pub fn new() -> Self {
         Self {
-            gravity_samples: Vec::with_capacity(50),
+            gravity_samples: VecDeque::with_capacity(50),
             gravity: [0.0, -GRAVITY_MAGNITUDE, 0.0],
             max_samples: 50,
             initialized: false,
@@ -348,9 +354,9 @@ impl GravityEstimator {
         ];
 
         if self.gravity_samples.len() >= self.max_samples {
-            self.gravity_samples.remove(0);
+            self.gravity_samples.pop_front();
         }
-        self.gravity_samples.push(normalized);
+        self.gravity_samples.push_back(normalized);
 
         self.update_estimate();
     }

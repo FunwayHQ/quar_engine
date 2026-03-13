@@ -41,6 +41,7 @@ pub fn estimate_rotation(
 
     // Also compute rotation component from motion
     let mut sum_rotation = 0.0f32;
+    let mut valid_rotation_count = 0u32;
 
     for (prev, curr) in prev_points.iter().zip(curr_points.iter()) {
         // Normalize to image center
@@ -64,11 +65,16 @@ pub fn estimate_rotation(
         let angle_diff = (angle_diff + std::f32::consts::PI).rem_euclid(2.0 * std::f32::consts::PI) - std::f32::consts::PI;
 
         sum_rotation += angle_diff;
+        valid_rotation_count += 1;
     }
 
     let avg_dx = sum_dx / n;
     let avg_dy = sum_dy / n;
-    let avg_rotation = sum_rotation / n;
+    let avg_rotation = if valid_rotation_count > 0 {
+        sum_rotation / valid_rotation_count as f32
+    } else {
+        0.0
+    };
 
     // Convert motion to rotation angles
     // Horizontal motion -> rotation around Y axis (yaw)

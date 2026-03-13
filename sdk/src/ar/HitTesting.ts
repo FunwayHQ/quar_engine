@@ -144,6 +144,14 @@ export class HitTester {
   }
 
   /**
+   * Destroy the hit tester and free WASM resources.
+   */
+  destroy(): void {
+    (this.planeDetector as { free?: () => void })?.free?.();
+    this.planeDetector = null;
+  }
+
+  /**
    * Check if hit testing is available.
    */
   isAvailable(): boolean {
@@ -363,6 +371,13 @@ export class HitTester {
 
     // Normalize direction
     const len = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+
+    if (len < 1e-10) {
+      return {
+        origin: { x: originX, y: originY, z: originZ },
+        direction: { x: 0, y: 0, z: -1 },
+      };
+    }
 
     return {
       origin: { x: originX, y: originY, z: originZ },

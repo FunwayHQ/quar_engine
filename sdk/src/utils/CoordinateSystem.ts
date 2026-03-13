@@ -331,6 +331,10 @@ export function multiplyMat4(a: Mat4, b: Mat4): Mat4 {
 export function transformPoint(mat: Mat4, point: Vec3): Vec3 {
   const w = mat[3] * point.x + mat[7] * point.y + mat[11] * point.z + mat[15];
 
+  if (Math.abs(w) < 1e-10) {
+    return { x: 0, y: 0, z: 0 };
+  }
+
   return {
     x: (mat[0] * point.x + mat[4] * point.y + mat[8] * point.z + mat[12]) / w,
     y: (mat[1] * point.x + mat[5] * point.y + mat[9] * point.z + mat[13]) / w,

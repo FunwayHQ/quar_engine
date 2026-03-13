@@ -224,17 +224,8 @@ export class QuarEngine {
       );
     }
 
-    // Load WASM module
-    try {
-      await engine.loadWasm();
-    } catch (error) {
-      throw new QuarError(
-        QuarErrorCode.WASM_LOAD_FAILED,
-        `Failed to load WASM module: ${error}`,
-        false,
-        'Check that the WASM file is accessible'
-      );
-    }
+    // Load WASM module (errors handled internally, falls back to camera-only mode)
+    await engine.loadWasm();
 
     engine.log('info', 'QUAR Engine initialized');
     return engine;
@@ -429,8 +420,10 @@ export class QuarEngine {
       await module.default();
 
       this.wasmModule = module;
-      const { width, height } = this.canvas;
-      this.trackerHandle = new module.Tracker6DoFHandle(width || 640, height || 480);
+      const { width, height } = this.cameraManager.isReady()
+        ? this.cameraManager.getResolution()
+        : { width: this.canvas.width || 640, height: this.canvas.height || 480 };
+      this.trackerHandle = new module.Tracker6DoFHandle(width, height);
 
       this.log('info', `WASM loaded (v${module.version()})`);
     } catch (error) {

@@ -235,7 +235,10 @@ export class Anchor {
   serialize(): SerializedAnchor {
     return {
       id: this.id,
-      pose: this._pose,
+      pose: {
+        position: { ...this._pose.position },
+        rotation: { ...this._pose.rotation },
+      },
       label: this.label,
       createdAt: this.createdAt,
     };
@@ -409,8 +412,8 @@ export class AnchorManager {
    */
   clearAnchors(): void {
     for (const anchor of this.anchors.values()) {
-      anchor.notifyRemoved();
       anchor.updateState('lost');
+      anchor.notifyRemoved();
     }
     this.anchors.clear();
   }

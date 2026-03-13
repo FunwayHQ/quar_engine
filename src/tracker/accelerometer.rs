@@ -573,7 +573,7 @@ impl TranslationFusion {
                 // Update scale as median of samples
                 if self.scale_samples.len() >= 5 {
                     let mut sorted: Vec<_> = self.scale_samples.iter().copied().collect();
-                    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     self.scale = sorted[sorted.len() / 2];
                 }
             }

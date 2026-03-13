@@ -268,6 +268,9 @@ function handleTerminate(): void {
     clearInterval(metricsIntervalId);
     metricsIntervalId = null;
   }
+  try {
+    (trackerHandle as { free?: () => void })?.free?.();
+  } catch { /* ignore errors during cleanup */ }
   trackerHandle = null;
   wasmModule = null;
   sharedBuffers = [];

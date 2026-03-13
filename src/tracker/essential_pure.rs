@@ -352,7 +352,11 @@ pub fn sampson_distance(p1: &Vec2, p2: &Vec2, e: &Mat3) -> f64 {
         return f64::MAX;
     }
 
-    (x2_e_x1 * x2_e_x1) / denom
+    let result = (x2_e_x1 * x2_e_x1) / denom;
+    if !result.is_finite() {
+        return f64::MAX;
+    }
+    result
 }
 
 /// Simple deterministic RNG for WASM compatibility.
@@ -385,8 +389,8 @@ pub fn compute_essential_ransac(
     let mut sample2 = Vec::with_capacity(8);
     let mut inliers = vec![false; n];
 
-    // Use simple deterministic RNG
-    let mut seed: u64 = 42;
+    // Derive seed from input data for varied RANSAC sampling across different inputs
+    let mut seed: u64 = (n as u64).wrapping_mul(2654435761) ^ points1[0].x.to_bits();
 
     for _iter in 0..max_iterations {
         // Sample 8 random points

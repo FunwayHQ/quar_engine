@@ -214,8 +214,6 @@ impl AdaptiveController {
     /// Returns true if quality changed.
     fn try_adjust_quality(&mut self) -> bool {
         let target_time_ms = 1000.0 / self.config.target_fps as f32;
-        let _min_time_ms = 1000.0 / self.config.min_fps as f32;
-
         // Check if we need to degrade quality
         if self.avg_frame_time_ms > target_time_ms * 1.1 {
             // 10% over target
